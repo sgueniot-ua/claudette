@@ -918,6 +918,7 @@ mod tests {
 
     #[test]
     fn workspace_kind_repository_round_trips() {
+        // FR-006, SC-004: the project chat workspace persists across restarts.
         let db = Database::open_in_memory().unwrap();
         db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
             .unwrap();

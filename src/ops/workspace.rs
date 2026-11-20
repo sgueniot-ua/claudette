@@ -1563,16 +1563,45 @@ mod tests {
 
     #[tokio::test]
     async fn open_project_chat_reuses_workspace_and_adds_session() {
-        // FR-004
+        // FR-004, SC-003: three project chats share one workspace, each with
+        // its own session.
         let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
         let a = open_project_chat(&mut db, &repo.id).await.unwrap();
         let b = open_project_chat(&mut db, &repo.id).await.unwrap();
+        let c = open_project_chat(&mut db, &repo.id).await.unwrap();
         assert_eq!(a.workspace.id, b.workspace.id);
+        assert_eq!(a.workspace.id, c.workspace.id);
         assert_ne!(a.session.id, b.session.id);
+        assert_ne!(b.session.id, c.session.id);
+        assert_ne!(a.session.id, c.session.id);
         let sessions = db
             .list_chat_sessions_for_workspace(&a.workspace.id, false)
             .unwrap();
-        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn rename_project_chat_leaves_branches_and_workspace_unchanged() {
+        // FR-007
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let p = repo_dir.path();
+        let chat = open_project_chat(&mut db, &repo.id).await.unwrap();
+        let branches_before = git_out(p, &["branch", "--list"]).await;
+
+        db.rename_chat_session(&chat.session.id, "Investigate flaky test")
+            .unwrap();
+
+        let session = db.get_chat_session(&chat.session.id).unwrap().unwrap();
+        assert_eq!(session.name, "Investigate flaky test");
+        let ws = db
+            .list_workspaces()
+            .unwrap()
+            .into_iter()
+            .find(|w| w.id == chat.workspace.id)
+            .unwrap();
+        assert_eq!(ws.name, "@project");
+        assert_eq!(ws.branch_name, chat.workspace.branch_name);
+        assert_eq!(branches_before, git_out(p, &["branch", "--list"]).await);
     }
 
     #[tokio::test]
