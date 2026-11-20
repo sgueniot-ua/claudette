@@ -30,7 +30,11 @@ cd src/ui-mobile && bunx tsc -b
 | 7 | Renommer un chat, archiver le dernier chat actif | nom changé ; chat archivé disparu, aucun « New chat » recréé ; fichiers et branches inchangés | US3, FR-007 |
 | 8 | Rollback d'un checkpoint avec « restaurer les fichiers » | avertissement « dossier partagé » ; « Annuler » ne change rien, « Confirmer » restaure | FR-014 |
 | 9 | Même chose pendant qu'un autre chat du projet tourne | avertissement supplémentaire avec le nombre de chats en cours | FR-017 |
-| 10 | « Effacer la conversation » avec restauration, puis fork depuis un checkpoint | confirmation de dossier partagé ; le fork crée un workspace classique avec worktree | FR-015, FR-016 |
+| 10 | Modifier un fichier à la main, envoyer 2 messages qui modifient des fichiers, puis « Effacer la conversation » avec restauration | confirmation « retour à l'état d'avant le premier message » ; fichiers revenus à l'état d'avant le 1er message (la modification manuelle faite avant est conservée) ; aucun commit retiré, `git log` inchangé | FR-015 |
+| 10b | Fork depuis un checkpoint d'un chat de projet | workspace classique `<dépôt>-fork` avec worktree | FR-016 |
+| 10c | Nouveau chat sans message, « Effacer la conversation » | option « restaurer les fichiers » absente | FR-015 |
+| 16 | Ouvrir un terminal dans un chat de projet, `pwd` | dossier du dépôt | FR-010 |
+| 17 | Renommer le dossier du dépôt hors de Claudette, envoyer un message | « Le dossier du projet est introuvable » ; historique lisible | cas limite |
 | 11 | `git checkout -b autre` dans le dépôt, puis un message | le chat continue ; la branche affichée devient `autre` | cas limite |
 | 12 | Créer une routine sur un chat de projet | elle s'exécute et n'est pas désactivée | FR-011 |
 | 13 | Créer, archiver et supprimer un workspace classique | comportement identique à `main` | FR-012, SC-005 |
@@ -45,4 +49,7 @@ cd src/ui-mobile && bunx tsc -b
   `remove_repository` ne touche ni worktree ni branche.
 - Migration : les lignes existantes valent `worktree` ; l'index unique partiel est respecté.
 - Diff : base `HEAD` pour `repository`.
+- Snapshot de référence : capturé avant le 1er tour, non élagué, restauré par `clear_conversation`.
+- Fork depuis `repository` : nom `<dépôt>-fork`.
+- `rename_workspace` refusé pour `repository` ; `open_project_chat` concurrent sans doublon.
 - Front : filtre sidebar, section « Chats » de la vue du projet, avertissements de `RollbackModal`.

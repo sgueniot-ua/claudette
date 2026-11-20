@@ -31,6 +31,7 @@ Méthode modèle : `Workspace::is_repository_rooted(&self) -> bool` (`kind == Re
 ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'worktree';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_repository_kind
   ON workspaces(repository_id) WHERE kind = 'repository';
+ALTER TABLE conversation_checkpoints ADD COLUMN is_session_baseline INTEGER NOT NULL DEFAULT 0;
 ```
 
 ## Chat de projet = ChatSession (existant, inchangé)
@@ -44,6 +45,13 @@ workspace est `repository`. Aucun nouveau champ.
 | renommer | `rename_chat_session` existant (base de données seulement) |
 | archiver | `archive_chat_session_only` : zéro session active autorisée (R5) |
 | lister | sessions `active` du workspace, dans la vue du projet |
+
+## Snapshot de référence de session (nouveau, R9)
+
+Un checkpoint marqué référence (`conversation_checkpoints`, nouveau booléen `is_session_baseline`,
+défaut `0`, ajouté par la même migration). Il est créé avant le premier tour d'une session de workspace
+`repository`, au plus un par session, exclu de l'élagage par rétention et du fil de la conversation
+(non affiché comme tour). Il est supprimé avec la session archivée ou le dépôt retiré.
 
 ## Checkpoints (existants, inchangés)
 

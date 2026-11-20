@@ -20,6 +20,9 @@
   une confirmation explicite (dossier partagé).
 - Q: Restauration de fichiers pendant qu'un autre chat du même projet travaille ? → A: autorisée
   après un avertissement renforcé signalant les autres chats en cours.
+- Q: Effet de « effacer la conversation en restaurant les fichiers » dans un chat de projet ? → A:
+  le dossier revient à son état au début de cette conversation (avant le premier message du chat) ;
+  aucun commit n'est retiré, rien n'est réinitialisé vers la branche par défaut.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -114,6 +117,9 @@ projet, ses fichiers et ses branches sont inchangés.
 - Restauration de fichiers (checkpoint ou effacement de la conversation) pendant qu'un autre chat du
   même projet travaille : la confirmation signale en plus que d'autres chats du projet sont en cours
   et peuvent être perturbés ; l'utilisateur peut alors confirmer ou annuler.
+- « Effacer la conversation en restaurant les fichiers » dans un chat de projet : le dossier revient à
+  son état d'avant le premier message de ce chat ; les modifications faites depuis, y compris par
+  l'utilisateur ou d'autres chats, sont annulées après confirmation.
 - Fork depuis un checkpoint d'un chat de projet : crée un workspace classique, avec sa worktree et sa
   branche, comme le fork depuis un workspace.
 - Une tâche planifiée (routine, réveil) cible un chat de projet : elle s'exécute dans le dossier du
@@ -146,8 +152,10 @@ projet, ses fichiers et ses branches sont inchangés.
   confirmation explicite mentionnant que le dossier partagé du projet sera modifié ; un refus
   n'effectue aucune restauration.
 - **FR-015**: « Effacer la conversation en restaurant les fichiers » DOIT rester disponible dans un
-  chat de projet, avec le même effet que dans un workspace, après une confirmation explicite
-  mentionnant que le dossier partagé du projet sera modifié.
+  chat de projet, après une confirmation explicite mentionnant que le dossier partagé du projet sera
+  modifié. Il DOIT ramener les fichiers du dossier à leur état au début de cette conversation (avant
+  son premier message), sans retirer de commit ni revenir à la branche par défaut. Un chat qui n'a
+  encore reçu aucun message ne propose pas de restauration.
 - **FR-016**: Le fork depuis un checkpoint d'un chat de projet DOIT rester disponible et créer un
   workspace avec worktree, comme depuis un workspace.
 - **FR-017**: Quand une restauration de fichiers est demandée dans un chat de projet alors qu'un autre

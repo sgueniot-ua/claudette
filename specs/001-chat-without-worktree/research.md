@@ -36,7 +36,9 @@ tournent déjà en parallèle (`AppState.agents` indexé par `chat_session_id`).
   | `commands/workspace.rs:885` restore | `git worktree add` | sans objet (jamais archivé) : refus explicite |
   | `commands/workspace.rs:238`, `:510` setup script | script utilisateur dans le checkout | jamais lancé (FR-003) |
   | `chat/naming.rs:84` auto-rename | `git branch -m` de la branche extraite de l'utilisateur | `branch_auto_rename_claimed = 1` à la création, plus une garde par kind |
-  | `fork.rs` | crée une worktree depuis le workspace source | conservé (FR-016) : le fork produit un workspace `worktree` |
+  | `fork.rs` | crée une worktree depuis le workspace source ; nom demandé `format!("{}-fork", source_ws.name)` (`fork.rs:180`) | conservé (FR-016) : le fork produit un workspace `worktree`, nommé `<nom du dépôt>-fork` pour une source `repository` (`@project-fork` serait refusé) |
+| `rename_workspace` (`commands/workspace.rs:1510`) | renommerait le nom réservé `@project` | refusé pour `repository` |
+| `clear_conversation` restore (`checkpoint.rs:231`) | `reset --hard` + `clean -fd` vers le merge-base | remplacé par la restauration du snapshot de référence (R9) |
   | `env_watcher.unregister` dans les chemins de suppression | désenregistre la surveillance env du dépôt (même chemin) | sautée pour `repository` |
   | `storage.rs:115` taille | compterait tout le dépôt comme « workspace » | exclu des stats de stockage |
   | `relink_repository` (`repository.rs:226`) | `worktree_path` du workspace `repository` resterait sur l'ancien chemin | mise à jour du `worktree_path` dans la même opération |
@@ -51,9 +53,8 @@ tournent déjà en parallèle (`AppState.agents` indexé par `chat_session_id`).
 - **Decision**: `branch_name` du workspace `repository` = branche extraite au moment de la création.
   La synchronisation existante (`workspace_sync.rs:60`, `:129`) la remet à jour depuis `git rev-parse`
   sans changement, ce qui couvre le cas limite « l'utilisateur change de branche ».
-- **Rationale**: `clear_conversation` (FR-015, « comme un workspace ») calcule
-  `merge_base(wt, branch_name, base)`. Une `branch_name` à jour garde exactement le même comportement
-  que dans un workspace.
+- **Rationale**: la branche affichée (FR-008) et les forks (FR-016) partent de la branche réelle.
+  `clear_conversation` n'utilise plus `branch_name` pour un workspace `repository` (voir R9).
 
 ## R4. Diff
 
@@ -76,7 +77,9 @@ tournent déjà en parallèle (`AppState.agents` indexé par `chat_session_id`).
 - **Decision**: réutiliser `RollbackModal.tsx`, qui sert déjà au rollback de checkpoint et à
   l'effacement de la conversation, avec une case « restaurer les fichiers » décochée par défaut.
   Pour un workspace `repository`, quand la case est cochée, la modale affiche :
-  - un avertissement « le dossier du projet, partagé avec vous et les autres chats, sera modifié » ;
+  - un avertissement « le dossier du projet, partagé avec vous et les autres chats, sera modifié ».
+    Pour l'effacement, il précise « retour à l'état d'avant le premier message de ce chat ; les
+    modifications faites depuis, y compris les vôtres et celles des autres chats, seront annulées » ;
   - en plus, si une autre session du même workspace est en cours, « N autres chats de ce projet
     travaillent en ce moment et peuvent être perturbés ».
 
@@ -97,6 +100,44 @@ tournent déjà en parallèle (`AppState.agents` indexé par `chat_session_id`).
 - **Pas d'IPC de création**: la spec exclut la création depuis le mobile. La CLI et les clients
   distants pilotent les sessions existantes avec les méthodes actuelles (`list_chat_sessions`,
   `send_chat_message`…).
+
+## R9. Restauration à l'effacement (FR-015)
+
+- **Constat**: les checkpoints sont capturés **à la fin** de chaque tour (`send.rs:3311`,
+  `create_turn_checkpoint`). La rétention (`checkpoint_retention_count`) garde les N derniers snapshots
+  **par workspace**, donc partagés entre tous les chats du projet. L'état « avant le premier message »
+  n'existe pas aujourd'hui, et le premier checkpoint peut perdre ses fichiers.
+- **Decision**: pour un workspace `repository`, juste avant le premier tour d'une session, un snapshot
+  de référence est capturé (même mécanisme `snapshot::save_snapshot`), marqué comme référence de
+  session et exclu de l'élagage par rétention. `clear_conversation` avec `restore_files` restaure ce
+  snapshot (`snapshot::restore_snapshot`) au lieu de `git::restore_to_commit(merge_base)`. Sans snapshot
+  de référence (aucun message envoyé), l'option n'est pas proposée.
+- **Coût**: un snapshot complet du dossier par chat de projet. Il est supprimé quand la session est
+  archivée ou que le dépôt est retiré.
+- **Alternatives considered**:
+  - premier checkpoint existant : état *après* le premier tour, et élagable ;
+  - commit `HEAD` au début de la conversation : ne capture pas les fichiers non commités de
+    l'utilisateur.
+
+## R10. Dossier du projet absent (cas limite)
+
+- **Decision**: le chemin d'envoi (`send.rs:1121`, et steer `:969`) vérifie, pour un workspace
+  `repository`, que `worktree_path` existe. Sinon il renvoie « Le dossier du projet est introuvable :
+  <path> » avant de lancer l'agent. L'historique reste lisible (aucune écriture).
+
+## R11. Création concurrente et chevauchements de chemins
+
+- `open_project_chat` crée la ligne par `INSERT … ON CONFLICT DO NOTHING` puis la relit, dans une
+  transaction, contre l'index unique partiel.
+- `claude_teammate_bridge.rs:235` choisit déjà le préfixe de chemin le plus long. Un test vérifie
+  qu'un cwd situé dans une worktree placée sous le dépôt reste attribué à cette worktree et pas au
+  workspace `repository`.
+
+## R12. Capacités de chat inchangées (FR-010)
+
+- Le terminal (`pty.rs:132`, cwd = `worktree_path`), le mode plan, les questions de l'agent, les pièces
+  jointes et le choix du modèle sont indexés par session ou par workspace et prennent le dossier du
+  dépôt sans changement.
 
 ## R8. Visibilité (FR-013) et contrats existants
 

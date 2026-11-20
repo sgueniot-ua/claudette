@@ -21,13 +21,15 @@ invoke("open_project_chat", { repositoryId: string })
 
 | Commande | Contrat |
 |---|---|
-| `archive_workspace`, `restore_workspace`, `delete_workspace`, `delete_workspaces_bulk`, `run_workspace_setup` | erreur « Opération non disponible pour un chat de projet », sans effet de bord |
+| `archive_workspace`, `restore_workspace`, `delete_workspace`, `delete_workspaces_bulk`, `run_workspace_setup`, `rename_workspace` | erreur « Opération non disponible pour un chat de projet », sans effet de bord |
 | `remove_repository` | supprime la ligne `repository` et ses sessions, sans `git worktree remove` ni `branch_delete` |
 | `relink_repository` | met aussi à jour `worktree_path` du workspace `repository` |
 | `archive_chat_session` | archive sans recréer de session vide |
-| `rollback_to_checkpoint`, `clear_conversation` (`restore_files`) | inchangés : les confirmations sont côté UI (R6) |
+| `rollback_to_checkpoint` (`restore_files`) | inchangé ; confirmation côté UI (R6) |
+| `clear_conversation` (`restore_files`) | restaure le snapshot de référence de la session (R9) ; erreur si absent ; confirmation côté UI |
+| `send_chat_message`, steer | erreur explicite si le dossier du projet est absent (R10) |
 | `load_diff_files` et merge-base | base = `HEAD` (modifications non commitées) |
-| `fork_workspace_at_checkpoint` | inchangé : crée un workspace `worktree` |
+| `fork_workspace_at_checkpoint` | crée un workspace `worktree` nommé `<nom du dépôt>-fork` pour une source `repository` |
 | `create_workspace`, `rename_workspace` et toutes les commandes pour `kind = worktree` | inchangés (FR-012) |
 
 ## 3. Payload `Workspace` (IPC, serveur WSS, mobile)
@@ -45,8 +47,10 @@ Ajout du champ `"kind": "worktree" | "repository"`. Aucun champ retiré ou renom
 - **Vue du projet** (`Dashboard.tsx`, branche `scopedRepo`) :
   - section « Chats » qui liste les sessions actives du workspace `repository` (nom, statut de l'agent) ;
   - bouton « Nouveau chat » qui appelle `openProjectChat`, sélectionne le workspace et la session ;
-  - au premier chat, mention que tous les chats du projet travaillent dans le dossier du projet, sans
-    isolation (FR-005).
+  - mention permanente dans la section, donc visible à chaque création : tous les chats du projet
+    travaillent dans le dossier du projet, sans isolation (FR-005).
+  - « Effacer la conversation » : option « restaurer les fichiers » masquée tant que la session n'a
+    pas de snapshot de référence (FR-015).
 - **Sidebar, raccourcis ⌘1–9, Dashboard global, FuzzyFinder** : le workspace `repository` n'y apparaît
   jamais (FR-013).
 - **En-tête du chat** : badge « Projet » et nom du dépôt au lieu du nom de workspace ; branche live

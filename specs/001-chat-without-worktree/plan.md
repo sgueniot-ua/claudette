@@ -12,7 +12,9 @@ colonne `workspaces.kind`. Un seul workspace `repository` par dépôt, avec
 `worktree_path = Repository.path`. Chaque chat de projet est une session (onglet) de ce workspace.
 
 Toute la mécanique existante (cwd de l'agent, sessions concurrentes, routines, terminal, env, MCP,
-checkpoints) fonctionne telle quelle. Des gardes explicites, dans le crate `claudette`, protègent le
+checkpoints) fonctionne telle quelle. Un snapshot de référence pris avant le premier message de chaque
+chat de projet permet « effacer la conversation en restaurant les fichiers » sans toucher aux commits
+(FR-015, R9). Des gardes explicites, dans le crate `claudette`, protègent le
 checkout principal des chemins pensés pour une worktree : archive, suppression, scripts, renommage
 automatique de branche. Voir [research.md](./research.md).
 
@@ -22,7 +24,8 @@ automatique de branche. Voir [research.md](./research.md).
 
 **Primary Dependencies**: Tauri 2, rusqlite (bundled), Tokio, Zustand, react-i18next. Aucune nouvelle dépendance.
 
-**Storage**: SQLite. Une migration additive (`workspaces.kind` + index unique partiel).
+**Storage**: SQLite. Une migration additive : `workspaces.kind`, index unique partiel,
+`conversation_checkpoints.is_session_baseline`.
 
 **Testing**: `cargo test` (dépôts `tempfile::tempdir()`, `#[tokio::test]`) ; vitest + `bunx tsc -b`
 
@@ -78,11 +81,15 @@ src/
 ├── db/workspace.rs                          # kind en lecture/écriture, get_repository_workspace()
 ├── db/chat.rs                               # (réutilise archive_chat_session_only)
 ├── ops/workspace.rs                         # open_project_chat ; gardes archive/restore/delete
-└── diff.rs                                  # base HEAD pour repository (changement minimal)
+├── diff.rs                                  # base HEAD pour repository (changement minimal)
+├── snapshot.rs / chat.rs                    # snapshot de référence de session, exclu de la rétention (R9)
+└── fork.rs                                  # nom <dépôt>-fork pour une source repository
 src-tauri/src/commands/
 ├── workspace.rs                             # open_project_chat (wrapper) ; gardes delete/bulk/setup
 ├── repository.rs                            # remove_repository / relink_repository
 ├── chat/session.rs                          # archive sans recréation pour repository
+├── chat/send.rs                             # snapshot de référence avant le 1er tour ; dossier absent (R10)
+├── chat/checkpoint.rs                       # clear_conversation : restauration du snapshot de référence
 ├── chat/naming.rs                           # garde auto-rename
 └── storage.rs                               # exclusion des stats
 src-cli/src/commands/workspace.rs            # filtre du tableau
