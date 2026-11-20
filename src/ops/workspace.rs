@@ -948,6 +948,10 @@ pub struct ArchiveOutput {
     pub repository_id: String,
 }
 
+/// Refusal message for worktree-only operations attempted on a project chat
+/// (a `repository`-kind workspace rooted in the user's own checkout).
+pub const PROJECT_CHAT_REFUSAL: &str = "Not available for project chats";
+
 /// Archive a workspace: remove its worktree, optionally delete its branch,
 /// clear its terminal-tab and SCM-status cache rows, mark it
 /// [`WorkspaceStatus::Archived`], and fire hooks.
@@ -975,6 +979,9 @@ pub async fn archive(
         .iter()
         .find(|w| w.id == params.workspace_id)
         .ok_or_else(|| OpsError::NotFound("Workspace not found".to_string()))?;
+    if ws.is_repository_rooted() {
+        return Err(OpsError::Validation(PROJECT_CHAT_REFUSAL.to_string()));
+    }
 
     let repos = db.list_repositories()?;
     let repo = repos
@@ -1160,13 +1167,20 @@ pub fn delete_workspaces_bulk(
                 cancelled: true,
             }
         } else {
-            let error = match db.try_delete_archived_workspace_with_summary(id) {
-                Ok(true) => {
-                    deleted_ids.push(id.clone());
-                    None
+            let is_project_chat = workspaces
+                .iter()
+                .any(|w| &w.id == id && w.is_repository_rooted());
+            let error = if is_project_chat {
+                Some(PROJECT_CHAT_REFUSAL.to_string())
+            } else {
+                match db.try_delete_archived_workspace_with_summary(id) {
+                    Ok(true) => {
+                        deleted_ids.push(id.clone());
+                        None
+                    }
+                    Ok(false) => Some("workspace no longer archived".to_string()),
+                    Err(e) => Some(e.to_string()),
                 }
-                Ok(false) => Some("workspace no longer archived".to_string()),
-                Err(e) => Some(e.to_string()),
             };
             DeleteWorkspaceOutcome {
                 id: id.clone(),
@@ -1236,6 +1250,9 @@ pub async fn restore(
         .iter()
         .find(|w| w.id == params.workspace_id)
         .ok_or_else(|| OpsError::NotFound("Workspace not found".to_string()))?;
+    if ws.is_repository_rooted() {
+        return Err(OpsError::Validation(PROJECT_CHAT_REFUSAL.to_string()));
+    }
 
     let repos = db.list_repositories()?;
     let repo = repos
@@ -1386,6 +1403,119 @@ mod tests {
             .collect();
         v.sort();
         v
+    }
+
+    #[tokio::test]
+    async fn project_chat_guard_archive_refused_and_checkout_untouched() {
+        // FR-003, FR-012, Review Focus 3
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let p = repo_dir.path();
+        let hooks = RecordingHooks::default();
+        let chat = open_project_chat(&mut db, &repo.id).await.unwrap();
+        let before = (
+            git_out(p, &["worktree", "list", "--porcelain"]).await,
+            git_out(p, &["branch", "--list"]).await,
+            dir_listing(p),
+        );
+
+        let res = archive(
+            &mut db,
+            &hooks,
+            ArchiveParams {
+                workspace_id: &chat.workspace.id,
+                delete_branch: true,
+            },
+        )
+        .await;
+
+        assert!(
+            matches!(&res, Err(OpsError::Validation(m)) if m == "Not available for project chats"),
+            "got {res:?}"
+        );
+        let ws = db
+            .list_workspaces()
+            .unwrap()
+            .into_iter()
+            .find(|w| w.id == chat.workspace.id)
+            .unwrap();
+        assert_eq!(ws.status, WorkspaceStatus::Active);
+        assert_eq!(ws.worktree_path.as_deref(), Some(repo.path.as_str()));
+        let after = (
+            git_out(p, &["worktree", "list", "--porcelain"]).await,
+            git_out(p, &["branch", "--list"]).await,
+            dir_listing(p),
+        );
+        assert_eq!(before, after);
+        assert!(hooks.changes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn project_chat_guard_restore_refused() {
+        // FR-003, FR-012
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let p = repo_dir.path();
+        let hooks = RecordingHooks::default();
+        let base = tempfile::tempdir().unwrap();
+        let chat = open_project_chat(&mut db, &repo.id).await.unwrap();
+        let before = git_out(p, &["worktree", "list", "--porcelain"]).await;
+
+        let res = restore(
+            &mut db,
+            &hooks,
+            base.path(),
+            RestoreParams {
+                workspace_id: &chat.workspace.id,
+            },
+        )
+        .await;
+
+        assert!(
+            matches!(&res, Err(OpsError::Validation(m)) if m == "Not available for project chats"),
+            "got {res:?}"
+        );
+        assert_eq!(
+            before,
+            git_out(p, &["worktree", "list", "--porcelain"]).await
+        );
+        assert!(hooks.changes().is_empty());
+        assert!(dir_listing(base.path()).is_empty());
+    }
+
+    #[tokio::test]
+    async fn project_chat_guard_bulk_delete_skips_repository_row() {
+        // FR-003, FR-012
+        let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let worktree_base = tempfile::tempdir().unwrap();
+        let hooks = RecordingHooks::default();
+        let chat = open_project_chat(&mut db, &repo.id).await.unwrap();
+        let created = create(
+            &mut db,
+            &hooks,
+            worktree_base.path(),
+            CreateParams {
+                repo_id: &repo.id,
+                name: "feature",
+                branch_prefix: "test/",
+                input_values: None,
+            },
+        )
+        .await
+        .unwrap();
+        let wt_id = created.workspace.id.clone();
+        db.update_workspace_status(&wt_id, &WorkspaceStatus::Archived, None)
+            .unwrap();
+        let ids = vec![chat.workspace.id.clone(), wt_id.clone()];
+
+        let outcomes = delete_workspaces_bulk(&db, &hooks, &ids, None, None).unwrap();
+
+        assert_eq!(
+            outcomes[0].error.as_deref(),
+            Some("Not available for project chats")
+        );
+        assert!(outcomes[1].error.is_none(), "{:?}", outcomes[1]);
+        let remaining = db.list_workspaces().unwrap();
+        assert!(remaining.iter().any(|w| w.id == chat.workspace.id));
+        assert!(!remaining.iter().any(|w| w.id == wt_id));
     }
 
     #[tokio::test]

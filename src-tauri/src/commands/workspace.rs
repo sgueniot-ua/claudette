@@ -518,6 +518,17 @@ pub async fn fork_workspace_at_checkpoint(
     })
 }
 
+/// Guard for worktree-only operations: a project chat runs in the user's own
+/// repository checkout, so it must never be set up, renamed, archived or
+/// deleted like a worktree workspace.
+fn reject_if_repository_rooted(ws: &Workspace) -> Result<(), String> {
+    if ws.is_repository_rooted() {
+        Err(ops_workspace::PROJECT_CHAT_REFUSAL.to_string())
+    } else {
+        Ok(())
+    }
+}
+
 #[tauri::command]
 pub async fn run_workspace_setup(
     workspace_id: String,
@@ -531,6 +542,7 @@ pub async fn run_workspace_setup(
         .iter()
         .find(|w| w.id == workspace_id)
         .ok_or("Workspace not found")?;
+    reject_if_repository_rooted(ws)?;
     let worktree_path = ws
         .worktree_path
         .as_ref()
@@ -715,6 +727,16 @@ pub(crate) async fn archive_workspace_inner(
     supervisor: &McpSupervisor,
 ) -> Result<ArchiveWorkspaceOutput, String> {
     let mut db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+
+    // Refuse before any side effect (agent stop, archive script, git).
+    if let Some(ws) = db
+        .list_workspaces()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .find(|w| w.id == id)
+    {
+        reject_if_repository_rooted(ws)?;
+    }
 
     // The user-visible "delete branch on archive" setting lives in app
     // settings; we read it sync before the op so we can pass the boolean
@@ -1017,6 +1039,8 @@ pub async fn delete_workspace(
         return Ok(());
     };
 
+    reject_if_repository_rooted(ws)?;
+
     let repo_id = ws.repository_id.clone();
 
     let repos = db.list_repositories().map_err(|e| e.to_string())?;
@@ -1269,7 +1293,7 @@ async fn delete_workspaces_bulk_body(
     let targets: Vec<&Workspace> = ids
         .iter()
         .filter_map(|id| workspaces.iter().find(|w| &w.id == id))
-        .filter(|w| w.status == WorkspaceStatus::Archived)
+        .filter(|w| w.status == WorkspaceStatus::Archived && !w.is_repository_rooted())
         .collect();
 
     // Snapshot per-target git metadata BEFORE the DB delete so we can
@@ -1534,6 +1558,14 @@ pub async fn rename_workspace(
     }
 
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    if let Some(ws) = db
+        .list_workspaces()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .find(|w| w.id == id)
+    {
+        reject_if_repository_rooted(ws)?;
+    }
     db.update_workspace_name(&id, &trimmed).map_err(|e| {
         if e.to_string().contains("UNIQUE constraint failed") {
             "A workspace with this name already exists in this repository".into()
@@ -2230,7 +2262,7 @@ pub async fn notify_workspace_selected(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_fork_prelude, validate_purge_target};
+    use super::{apply_fork_prelude, reject_if_repository_rooted, validate_purge_target};
     use crate::state::{AgentSessionState, ClaudeRemoteControlStatus};
     use claudette::git::WorktreeInfo;
     use claudette::model::{ChatMessage, ChatRole};
@@ -2244,6 +2276,41 @@ mod tests {
             branch: Some(branch.to_string()),
             is_bare: false,
         }
+    }
+
+    fn guard_fixture(kind: claudette::model::WorkspaceKind) -> claudette::model::Workspace {
+        claudette::model::Workspace {
+            id: "w".into(),
+            repository_id: "r".into(),
+            name: "n".into(),
+            branch_name: "main".into(),
+            worktree_path: Some("/tmp/repo".into()),
+            status: claudette::model::WorkspaceStatus::Active,
+            kind,
+            agent_status: claudette::model::AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: "0".into(),
+            sort_order: 0,
+            input_values: None,
+        }
+    }
+
+    #[test]
+    fn project_chat_guard_refuses_repository_workspace() {
+        // FR-003, FR-012: delete_workspace, run_workspace_setup, rename_workspace,
+        // archive_workspace_inner all call this guard before any effect.
+        let ws = guard_fixture(claudette::model::WorkspaceKind::Repository);
+        assert_eq!(
+            reject_if_repository_rooted(&ws),
+            Err("Not available for project chats".to_string())
+        );
+    }
+
+    #[test]
+    fn project_chat_guard_allows_worktree_workspace() {
+        // FR-012
+        let ws = guard_fixture(claudette::model::WorkspaceKind::Worktree);
+        assert_eq!(reject_if_repository_rooted(&ws), Ok(()));
     }
 
     #[test]
