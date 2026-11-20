@@ -34,6 +34,18 @@ export function RollbackModal() {
   const messageContent = (modalData.messageContent as string) ?? "";
   const hasFileChanges = modalData.hasFileChanges as boolean;
   const isClearAll = !checkpointId;
+  const isProjectChat = useAppStore(
+    (s) => s.workspaces.find((w) => w.id === workspaceId)?.kind === "repository",
+  );
+  const sessions = useAppStore((s) => s.sessionsByWorkspace[workspaceId]);
+  const currentSession = sessions?.find((x) => x.id === sessionId);
+  const othersRunning =
+    sessions?.filter((x) => x.id !== sessionId && x.agent_status === "Running")
+      .length ?? 0;
+  const showRestore =
+    isProjectChat && isClearAll
+      ? (currentSession?.turn_count ?? 0) > 0
+      : hasFileChanges;
 
   const handleRollback = async () => {
     setLoading(true);
@@ -106,15 +118,30 @@ export function RollbackModal() {
           </div>
         )}
       </div>
-      {hasFileChanges && (
+      {showRestore && (
         <label className={shared.checkboxRow}>
           <input
             type="checkbox"
             checked={restoreFiles}
             onChange={(e) => setRestoreFiles(e.target.checked)}
           />
-          <span>{t("rollback_restore_files")}</span>
+          <span>
+            {isProjectChat && isClearAll
+              ? t("rollback_project_restore_start")
+              : t("rollback_restore_files")}
+          </span>
         </label>
+      )}
+      {isProjectChat && showRestore && restoreFiles && (
+        <div className={shared.warning}>
+          <div>{t("rollback_project_shared_warning")}</div>
+          {isClearAll && <div>{t("rollback_project_clear_warning")}</div>}
+          {othersRunning > 0 && (
+            <div>
+              {t("rollback_project_others_running", { count: othersRunning })}
+            </div>
+          )}
+        </div>
       )}
       {error && <div className={shared.error}>{error}</div>}
       <div className={shared.actions}>
