@@ -6,6 +6,7 @@ import {
   listChatSessions,
   scheduleWakeup,
 } from "../../services/tauri";
+import { workspaceDisplayName } from "../../utils/workspaceDisplayName";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
 import styles from "./CreateScheduledTaskModal.module.css";
@@ -56,10 +57,29 @@ export function CreateScheduledTaskModal() {
       ? (modalData.mode as TaskType)
       : null;
 
-  // Active (non-archived) workspaces for a repo, in sidebar order.
+  // The workspace the modal opens on (a `/schedule` from a chat, else the
+  // open workspace). A project chat workspace stays selectable only when it
+  // is this one.
+  const [preselectedWsId] = useState<string>(() => {
+    const s = useAppStore.getState();
+    const fromSession =
+      prefillSessionId &&
+      Object.entries(s.sessionsByWorkspace).find(([, list]) =>
+        list.some((cs) => cs.id === prefillSessionId),
+      )?.[0];
+    return fromSession || s.selectedWorkspaceId || "";
+  });
+
+  // Active (non-archived) workspaces for a repo, in sidebar order. Project
+  // chat workspaces are hidden unless preselected.
   const workspacesForRepo = (repoId: string) =>
     workspaces
-      .filter((w) => w.repository_id === repoId && w.status !== "Archived")
+      .filter(
+        (w) =>
+          w.repository_id === repoId &&
+          w.status !== "Archived" &&
+          (w.kind !== "repository" || w.id === preselectedWsId),
+      )
       .sort((a, b) => a.sort_order - b.sort_order);
 
   // Resolve the initial repo/workspace once, at mount, from the prefilled
@@ -73,7 +93,7 @@ export function CreateScheduledTaskModal() {
           list.some((cs) => cs.id === prefillSessionId),
         )?.[0]) ||
       s.selectedWorkspaceId ||
-      s.workspaces.find((w) => w.status !== "Archived")?.id ||
+      s.workspaces.find((w) => w.status !== "Archived" && w.kind !== "repository")?.id ||
       "";
     return s.workspaces.find((w) => w.id === seedWsId)?.repository_id ?? s.repositories[0]?.id ?? "";
   });
@@ -87,7 +107,7 @@ export function CreateScheduledTaskModal() {
     }
     return (
       s.selectedWorkspaceId ||
-      s.workspaces.find((w) => w.status !== "Archived")?.id ||
+      s.workspaces.find((w) => w.status !== "Archived" && w.kind !== "repository")?.id ||
       ""
     );
   });
@@ -279,7 +299,10 @@ export function CreateScheduledTaskModal() {
             )}
             {repoWorkspaces.map((w) => (
               <option key={w.id} value={w.id}>
-                {w.name}
+                {workspaceDisplayName(
+                  w,
+                  repositories.find((r) => r.id === w.repository_id)?.name,
+                )}
               </option>
             ))}
           </select>

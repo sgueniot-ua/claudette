@@ -48,7 +48,7 @@ export const WelcomeEmptyState = memo(function WelcomeEmptyState({
   const activeWorkspaceCountByRepo = useMemo(() => {
     const counts = new Map<string, number>();
     for (const ws of workspaces) {
-      if (ws.status !== "Active") continue;
+      if (ws.status !== "Active" || ws.kind === "repository") continue;
       counts.set(ws.repository_id, (counts.get(ws.repository_id) ?? 0) + 1);
     }
     return counts;

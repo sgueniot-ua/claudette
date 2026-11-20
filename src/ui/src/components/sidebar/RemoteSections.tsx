@@ -213,7 +213,7 @@ function RemoteConnectionGroup({
     (r) => r.remote_connection_id === conn.id
   );
   const remoteWorkspaces = workspaces.filter(
-    (w) => w.remote_connection_id === conn.id
+    (w) => w.remote_connection_id === conn.id && w.kind !== "repository"
   );
 
   const handleCreateWorkspace = async (repoId: string) => {

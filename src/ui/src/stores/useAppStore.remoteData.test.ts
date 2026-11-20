@@ -66,3 +66,18 @@ describe("replaceLocalData", () => {
     expect(s.defaultBranches).toEqual({ "local-repo": "main", "remote-repo": "trunk" });
   });
 });
+
+describe("mergeRemoteData", () => {
+  it("defaults a missing workspace kind to worktree", () => {
+    useAppStore.setState({ repositories: [], workspaces: [], defaultBranches: {} });
+    const legacy = makeWorkspace("legacy", "r", null) as Partial<Workspace>;
+    delete legacy.kind; // older paired servers omit `kind`
+    useAppStore.getState().mergeRemoteData("c1", {
+      repositories: [makeRepository("r", null)],
+      workspaces: [legacy as Workspace],
+    } as Parameters<ReturnType<typeof useAppStore.getState>["mergeRemoteData"]>[1]);
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === "legacy");
+    expect(ws?.kind).toBe("worktree");
+    expect(ws?.remote_connection_id).toBe("c1");
+  });
+});

@@ -13,6 +13,7 @@ import {
   History,
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
+import { workspaceDisplayName } from "../../utils/workspaceDisplayName";
 import { PanelHeader } from "../shared/PanelHeader";
 import { PanelToggles } from "../shared/PanelToggles";
 import { BoundedScrollPane } from "../shared/BoundedScrollPane";
@@ -47,6 +48,7 @@ export function SchedulerPage() {
   const loadScheduledTasks = useAppStore((s) => s.loadScheduledTasks);
   const openModal = useAppStore((s) => s.openModal);
   const workspaces = useAppStore((s) => s.workspaces);
+  const repositories = useAppStore((s) => s.repositories);
   const agentBackends = useAppStore((s) => s.agentBackends);
   const sessionsByWorkspace = useAppStore((s) => s.sessionsByWorkspace);
 
@@ -313,7 +315,12 @@ export function SchedulerPage() {
               <option value="">{t("filter_all_workspaces")}</option>
               {filterWorkspaces.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.branch_name}
+                  {w.kind === "repository"
+                    ? workspaceDisplayName(
+                        w,
+                        repositories.find((r) => r.id === w.repository_id)?.name,
+                      )
+                    : w.branch_name}
                 </option>
               ))}
             </select>
