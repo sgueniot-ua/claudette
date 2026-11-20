@@ -72,8 +72,15 @@ export function ProjectChatsSection({ repoId }: { repoId: string }) {
       const { workspace, session } = await openProjectChat(repoId);
       const s = useAppStore.getState();
       // The backend emits no workspace-changed event for project chats.
-      if (!s.workspaces.some((w) => w.id === workspace.id)) {
-        s.addWorkspace(workspace);
+      // Stamp the UI-only `remote_connection_id: null` (the Rust model
+      // doesn't serialize it): without it the env-prep hook treats the
+      // row as unhydrated and the chat stays at "Preparing workspace
+      // environment". Mirrors useCreateWorkspace / ChatPanel's fork path.
+      const existing = s.workspaces.find((w) => w.id === workspace.id);
+      if (!existing) {
+        s.addWorkspace({ ...workspace, remote_connection_id: null });
+      } else if (existing.remote_connection_id === undefined) {
+        s.updateWorkspace(workspace.id, { remote_connection_id: null });
       }
       s.addChatSession(session);
       openSession(workspace.id, session.id);

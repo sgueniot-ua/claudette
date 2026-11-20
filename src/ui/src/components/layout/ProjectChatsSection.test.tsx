@@ -155,6 +155,49 @@ describe("ProjectChatsSection", () => {
     expect(s.selectedSessionIdByWorkspaceId[workspace.id]).toBe("s9");
   });
 
+  it("stamps remote_connection_id so environment preparation runs", async () => {
+    // FR-001: the Rust Workspace model doesn't serialize the UI-only
+    // `remote_connection_id`; an unstamped row makes the env-prep hook
+    // bail and strands the chat at "Preparing workspace environment".
+    const { remote_connection_id: _omit, ...raw } = makeWorkspace();
+    openProjectChat.mockResolvedValue({
+      workspace: raw as Workspace,
+      session: makeSession({ id: "s9" }),
+    });
+    const c = await renderSection();
+    const btn = Array.from(c.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("project_chats_new"),
+    )!;
+    await act(async () => {
+      btn.click();
+    });
+    const row = useAppStore
+      .getState()
+      .workspaces.find((w) => w.id === "w-project");
+    expect(row?.remote_connection_id).toBeNull();
+  });
+
+  it("repairs an existing unstamped project row on new chat", async () => {
+    const { remote_connection_id: _omit, ...raw } = makeWorkspace();
+    useAppStore.setState({ workspaces: [raw as Workspace] });
+    openProjectChat.mockResolvedValue({
+      workspace: raw as Workspace,
+      session: makeSession({ id: "s9" }),
+    });
+    const c = await renderSection();
+    const btn = Array.from(c.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("project_chats_new"),
+    )!;
+    await act(async () => {
+      btn.click();
+    });
+    const rows = useAppStore
+      .getState()
+      .workspaces.filter((w) => w.id === "w-project");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].remote_connection_id).toBeNull();
+  });
+
   it("clicking a chat opens it", async () => {
     // US3-1
     useAppStore.setState({ workspaces: [makeWorkspace()] });
