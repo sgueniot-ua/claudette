@@ -108,14 +108,6 @@ pub async fn create_workspace(
     .await
 }
 
-/// Shared implementation of the GUI's `create_workspace` command.
-///
-/// The IPC handler (`src-tauri/src/ipc.rs::handle_create_workspace`)
-/// calls this directly so CLI- and remote-driven creates run the same
-/// setup-script + env-provider pipeline as the GUI button. Without
-/// this, `claudette workspace create` (and `claudette batch run`)
-/// would dispatch agent prompts into worktrees that haven't had their
-/// `.claudette.json` setup script run.
 /// Open a chat on the repository folder itself (no worktree, no git write).
 #[tauri::command]
 pub async fn open_project_chat(
@@ -128,6 +120,14 @@ pub async fn open_project_chat(
         .map_err(|e| e.to_string())
 }
 
+/// Shared implementation of the GUI's `create_workspace` command.
+///
+/// The IPC handler (`src-tauri/src/ipc.rs::handle_create_workspace`)
+/// calls this directly so CLI- and remote-driven creates run the same
+/// setup-script + env-provider pipeline as the GUI button. Without
+/// this, `claudette workspace create` (and `claudette batch run`)
+/// would dispatch agent prompts into worktrees that haven't had their
+/// `.claudette.json` setup script run.
 pub(crate) async fn create_workspace_inner(
     repo_id: &str,
     name: &str,

@@ -380,7 +380,14 @@ pub async fn open_project_chat(
         return Ok(ProjectChatOutput { workspace, session });
     }
 
-    let branch_name = git::current_branch(&repo.path).await?;
+    let branch_name = match git::current_branch(&repo.path).await {
+        Ok(branch) => branch,
+        // Detached HEAD: record what `git rev-parse --abbrev-ref HEAD` reports.
+        Err(git::GitError::CommandFailed(msg)) if msg.contains("detached HEAD") => {
+            "HEAD".to_string()
+        }
+        Err(e) => return Err(e.into()),
+    };
     let candidate = Workspace {
         id: uuid::Uuid::new_v4().to_string(),
         repository_id: repo.id.clone(),
@@ -1481,16 +1488,30 @@ mod tests {
 
     #[tokio::test]
     async fn open_project_chat_workspace_is_schedulable() {
-        // FR-011: passes the filters of db/scheduling.rs (active + non-empty path).
+        // FR-011: the real due-task selection (active + non-empty worktree_path) returns it.
         let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
         let out = open_project_chat(&mut db, &repo.id).await.unwrap();
-        assert_eq!(out.workspace.status, WorkspaceStatus::Active);
-        assert!(
-            out.workspace
-                .worktree_path
-                .as_deref()
-                .is_some_and(|p| !p.trim().is_empty())
-        );
+        let now = chrono::Utc::now();
+        let wakeup = db
+            .create_agent_wakeup(
+                &crate::scheduling::ScheduleTarget::Session(out.session.id.clone()),
+                now - chrono::Duration::minutes(1),
+                "check",
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let due = db.due_agent_scheduled_tasks(now).unwrap();
+        assert!(due.iter().any(|t| t.id == wakeup.id));
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_detached_head_uses_head_branch_name() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        run_git_in(repo_dir.path(), &["checkout", "--detach", "HEAD"]).await;
+        let out = open_project_chat(&mut db, &repo.id).await.unwrap();
+        assert_eq!(out.workspace.branch_name, "HEAD");
     }
 
     #[tokio::test]
