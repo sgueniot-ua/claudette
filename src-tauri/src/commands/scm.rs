@@ -2804,6 +2804,7 @@ mod tests {
             branch_name: branch.into(),
             worktree_path: None,
             status: claudette::model::WorkspaceStatus::Active,
+            kind: claudette::model::WorkspaceKind::Worktree,
             agent_status: claudette::model::AgentStatus::Idle,
             status_line: String::new(),
             created_at: String::new(),

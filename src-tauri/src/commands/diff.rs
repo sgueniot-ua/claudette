@@ -300,6 +300,7 @@ mod tests {
             branch_name: format!("branch-{id}"),
             worktree_path: Some(worktree.into()),
             status: WorkspaceStatus::Active,
+            kind: claudette::model::WorkspaceKind::Worktree,
             agent_status: AgentStatus::Idle,
             status_line: String::new(),
             created_at: String::new(),

@@ -257,6 +257,7 @@ async fn create_inner(
         branch_name: allocation.branch_name.clone(),
         worktree_path: Some(actual_path.clone()),
         status: WorkspaceStatus::Active,
+        kind: crate::model::WorkspaceKind::Worktree,
         agent_status: AgentStatus::Idle,
         status_line: String::new(),
         created_at: now_iso(),

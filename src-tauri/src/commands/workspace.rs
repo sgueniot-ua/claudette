@@ -1959,6 +1959,7 @@ pub async fn import_worktrees(
             branch_name: imp.branch_name.clone(),
             worktree_path: Some(canon_str),
             status: WorkspaceStatus::Active,
+            kind: claudette::model::WorkspaceKind::Worktree,
             agent_status: AgentStatus::Idle,
             status_line: String::new(),
             created_at: now_iso(),

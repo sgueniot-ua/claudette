@@ -304,4 +304,9 @@ pub const MIGRATIONS: &[Migration] = &[
         sql: include_str!("20261030150003_agent_scheduled_task_runs.sql"),
         legacy_version: None,
     },
+    Migration {
+        id: "20261120120000_workspace_kind",
+        sql: include_str!("20261120120000_workspace_kind.sql"),
+        legacy_version: None,
+    },
 ];

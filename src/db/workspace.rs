@@ -10,7 +10,7 @@
 
 use rusqlite::{OptionalExtension, params};
 
-use crate::model::{Workspace, WorkspaceStatus};
+use crate::model::{Workspace, WorkspaceKind, WorkspaceStatus};
 
 use super::{Database, PostDeleteHousekeeping, retry_on_busy};
 
@@ -35,8 +35,8 @@ impl Database {
             |row| row.get(0),
         )?;
         tx.execute(
-            "INSERT INTO workspaces (id, repository_id, name, branch_name, worktree_path, status, status_line, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO workspaces (id, repository_id, name, branch_name, worktree_path, status, status_line, sort_order, kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 ws.id,
                 ws.repository_id,
@@ -46,6 +46,7 @@ impl Database {
                 ws.status.as_str(),
                 ws.status_line,
                 next_sort_order,
+                ws.kind.as_str(),
             ],
         )?;
         // Every workspace starts with one active session so the multi-session
@@ -92,9 +93,10 @@ impl Database {
             // transaction because subsequent rows see the just-inserted
             // values.
             let mut ws_stmt = tx.prepare(
-                "INSERT INTO workspaces (id, repository_id, name, branch_name, worktree_path, status, status_line, sort_order)
+                "INSERT INTO workspaces (id, repository_id, name, branch_name, worktree_path, status, status_line, sort_order, kind)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                    (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM workspaces WHERE repository_id = ?2))",
+                    (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM workspaces WHERE repository_id = ?2),
+                    ?8)",
             )?;
             let mut session_stmt = tx.prepare(
                 "INSERT INTO chat_sessions
@@ -111,6 +113,7 @@ impl Database {
                     ws.worktree_path,
                     ws.status.as_str(),
                     ws.status_line,
+                    ws.kind.as_str(),
                 ])?;
                 session_stmt.execute(params![uuid::Uuid::new_v4().to_string(), ws.id])?;
             }
@@ -121,7 +124,7 @@ impl Database {
 
     pub fn list_workspaces(&self) -> Result<Vec<Workspace>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, repository_id, name, branch_name, worktree_path, status, status_line, created_at, sort_order, input_values
+            "SELECT id, repository_id, name, branch_name, worktree_path, status, status_line, created_at, sort_order, input_values, kind
              FROM workspaces ORDER BY repository_id, sort_order, created_at",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -129,6 +132,14 @@ impl Database {
             let status: WorkspaceStatus = status_str.parse().map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
                     5,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+            let kind_str: String = row.get(10)?;
+            let kind: WorkspaceKind = kind_str.parse().map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    10,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
@@ -160,6 +171,7 @@ impl Database {
                 branch_name: row.get(3)?,
                 worktree_path: row.get(4)?,
                 status,
+                kind,
                 agent_status,
                 status_line: row.get(6)?,
                 created_at: row.get(7)?,
@@ -786,10 +798,118 @@ impl Database {
 mod tests {
     use super::*;
     use crate::db::test_support::*;
-    use crate::model::{ChatRole, WorkspaceStatus};
+    use crate::model::{ChatRole, WorkspaceKind, WorkspaceStatus};
 
     fn count_rows(db: &Database, sql: &str) -> i64 {
         db.conn.query_row(sql, [], |r| r.get(0)).unwrap()
+    }
+
+    fn repo_rooted(id: &str, repo_id: &str) -> Workspace {
+        let mut ws = make_workspace(id, repo_id, id);
+        ws.kind = WorkspaceKind::Repository;
+        ws.worktree_path = Some("/tmp/repo1".into());
+        ws
+    }
+
+    #[test]
+    fn workspace_kind_defaults_to_worktree_for_existing_rows() {
+        // FR-012, SC-005
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspace(&make_workspace("w1", "r1", "fix-bug"))
+            .unwrap();
+        assert_eq!(
+            db.list_workspaces().unwrap()[0].kind,
+            WorkspaceKind::Worktree
+        );
+    }
+
+    #[test]
+    fn workspace_kind_migration_backfills_existing_rows_as_worktree() {
+        // FR-012, SC-005
+        use crate::migrations::MIGRATIONS;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let db = Database { conn };
+        let (last, earlier) = MIGRATIONS.split_last().unwrap();
+        assert_eq!(last.id, "20261120120000_workspace_kind");
+        db.migrate_with(earlier).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO repositories (id, path, name, path_slug) VALUES ('r1', '/tmp/r', 'r', 'r')",
+                [],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO workspaces (id, repository_id, name, branch_name, status, status_line)
+                 VALUES ('w1', 'r1', 'old', 'b', 'active', '')",
+                [],
+            )
+            .unwrap();
+        db.migrate_with(MIGRATIONS).unwrap();
+        let kind: String = db
+            .conn
+            .query_row("SELECT kind FROM workspaces WHERE id = 'w1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(kind, "worktree");
+    }
+
+    #[test]
+    fn workspace_kind_repository_round_trips() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspace(&repo_rooted("w1", "r1")).unwrap();
+        let ws = &db.list_workspaces().unwrap()[0];
+        assert_eq!(ws.kind, WorkspaceKind::Repository);
+        assert!(ws.is_repository_rooted());
+    }
+
+    #[test]
+    fn workspace_kind_batch_insert_persists_kind() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspaces_batch(&[repo_rooted("w1", "r1"), make_workspace("w2", "r1", "b")])
+            .unwrap();
+        let kinds: Vec<_> = db
+            .list_workspaces()
+            .unwrap()
+            .iter()
+            .map(|w| w.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![WorkspaceKind::Repository, WorkspaceKind::Worktree]
+        );
+    }
+
+    #[test]
+    fn workspace_kind_second_repository_row_for_same_repo_fails() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspace(&repo_rooted("w1", "r1")).unwrap();
+        let err = db.insert_workspace(&repo_rooted("w2", "r1")).unwrap_err();
+        assert!(matches!(
+            err,
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: rusqlite::ErrorCode::ConstraintViolation,
+                    ..
+                },
+                _
+            )
+        ));
+    }
+
+    #[test]
+    fn workspace_kind_serializes_lowercase() {
+        let ws = repo_rooted("w1", "r1");
+        assert_eq!(serde_json::to_value(&ws).unwrap()["kind"], "repository");
     }
 
     #[test]

@@ -67,6 +67,48 @@ impl std::str::FromStr for WorkspaceStatus {
     }
 }
 
+/// How a workspace is rooted: in its own git worktree, or directly in the
+/// repository's checkout (at most one per repository).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkspaceKind {
+    Worktree,
+    Repository,
+}
+
+impl WorkspaceKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Worktree => "worktree",
+            Self::Repository => "repository",
+        }
+    }
+}
+
+/// Returned when a string doesn't correspond to any known [`WorkspaceKind`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseWorkspaceKindError(pub String);
+
+impl std::fmt::Display for ParseWorkspaceKindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown WorkspaceKind value: {:?}", self.0)
+    }
+}
+
+impl std::error::Error for ParseWorkspaceKindError {}
+
+impl std::str::FromStr for WorkspaceKind {
+    type Err = ParseWorkspaceKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "worktree" => Ok(Self::Worktree),
+            "repository" => Ok(Self::Repository),
+            other => Err(ParseWorkspaceKindError(other.to_string())),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[allow(dead_code)]
 pub struct Workspace {
@@ -76,6 +118,7 @@ pub struct Workspace {
     pub branch_name: String,
     pub worktree_path: Option<String>,
     pub status: WorkspaceStatus,
+    pub kind: WorkspaceKind,
     pub agent_status: AgentStatus,
     pub status_line: String,
     pub created_at: String,
@@ -87,4 +130,25 @@ pub struct Workspace {
     /// already coerced to strings on the way in. `None` when the repo had
     /// no inputs declared (the common case).
     pub input_values: Option<std::collections::HashMap<String, String>>,
+}
+
+impl Workspace {
+    /// True when the workspace runs in the repository checkout itself
+    /// rather than in a dedicated worktree.
+    pub fn is_repository_rooted(&self) -> bool {
+        self.kind == WorkspaceKind::Repository
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_kind_round_trips_through_str() {
+        for k in [WorkspaceKind::Worktree, WorkspaceKind::Repository] {
+            assert_eq!(k.as_str().parse::<WorkspaceKind>().unwrap(), k);
+        }
+        assert!("bogus".parse::<WorkspaceKind>().is_err());
+    }
 }

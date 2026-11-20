@@ -243,6 +243,7 @@ mod tests {
             branch_name: format!("claudette/{id}"),
             worktree_path: None,
             status: WorkspaceStatus::Active,
+            kind: claudette::model::WorkspaceKind::Worktree,
             agent_status: AgentStatus::Idle,
             status_line: String::new(),
             created_at: String::new(),

@@ -34,4 +34,4 @@ pub use repository_input::{
     validate_schema as validate_input_schema,
 };
 pub use terminal_tab::{TerminalTab, TerminalTabKind};
-pub use workspace::{AgentStatus, Workspace, WorkspaceStatus};
+pub use workspace::{AgentStatus, Workspace, WorkspaceKind, WorkspaceStatus};

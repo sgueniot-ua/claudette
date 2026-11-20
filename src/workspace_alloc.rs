@@ -152,6 +152,7 @@ mod tests {
             branch_name: branch.into(),
             worktree_path: Some(path.to_string_lossy().to_string()),
             status: WorkspaceStatus::Active,
+            kind: crate::model::WorkspaceKind::Worktree,
             agent_status: AgentStatus::Idle,
             status_line: String::new(),
             created_at: String::new(),

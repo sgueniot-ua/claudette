@@ -66,6 +66,7 @@ fn make_workspace(id: &str, repo_id: &str) -> Workspace {
         branch_name: "main".into(),
         worktree_path: Some(format!("/tmp/{id}")),
         status: WorkspaceStatus::Active,
+        kind: claudette::model::WorkspaceKind::Worktree,
         agent_status: claudette::model::AgentStatus::Idle,
         status_line: String::new(),
         created_at: String::new(),

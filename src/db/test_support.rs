@@ -37,6 +37,7 @@ pub(crate) fn make_workspace(id: &str, repo_id: &str, name: &str) -> Workspace {
         branch_name: format!("claudette/{name}"),
         worktree_path: None,
         status: WorkspaceStatus::Active,
+        kind: crate::model::WorkspaceKind::Worktree,
         agent_status: AgentStatus::Idle,
         status_line: String::new(),
         created_at: String::new(),
