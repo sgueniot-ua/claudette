@@ -831,8 +831,11 @@ mod tests {
         use crate::migrations::MIGRATIONS;
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         let db = Database { conn };
-        let (last, earlier) = MIGRATIONS.split_last().unwrap();
-        assert_eq!(last.id, "20261120120000_workspace_kind");
+        let idx = MIGRATIONS
+            .iter()
+            .position(|m| m.id == "20261120120000_workspace_kind")
+            .unwrap();
+        let (earlier, _) = MIGRATIONS.split_at(idx);
         db.migrate_with(earlier).unwrap();
         db.conn
             .execute(
@@ -865,6 +868,7 @@ mod tests {
         db.insert_workspace(&repo_rooted("w1", "r1")).unwrap();
         let ws = &db.list_workspaces().unwrap()[0];
         assert_eq!(ws.kind, WorkspaceKind::Repository);
+        assert_eq!(ws.worktree_path.as_deref(), Some("/tmp/repo1"));
         assert!(ws.is_repository_rooted());
     }
 
