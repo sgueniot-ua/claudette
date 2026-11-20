@@ -487,11 +487,12 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str, kind: AttentionKind
                 .ok()
                 .and_then(|rs| rs.into_iter().find(|r| r.id == ws.repository_id));
             let repo_path = repo.as_ref().map(|r| r.path.as_str()).unwrap_or("");
+            let repo_name = repo.as_ref().map(|r| r.name.as_str()).unwrap_or_default();
             let default_branch = repo
                 .as_ref()
                 .and_then(|r| r.base_branch.clone())
                 .unwrap_or_else(|| "main".into());
-            claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, default_branch)
+            claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, repo_name, default_branch)
         } else {
             claudette::env::WorkspaceEnv {
                 workspace_name: ws_name.clone(),

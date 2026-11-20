@@ -412,7 +412,8 @@ async fn ensure_persistent_session_for_remote_control(
         .await
         .unwrap_or_else(|_| "main".to_string()),
     };
-    let ws_env = WorkspaceEnv::from_workspace(workspace, repo_path, default_branch);
+    let repo_name = repo.as_ref().map(|r| r.name.as_str()).unwrap_or_default();
+    let ws_env = WorkspaceEnv::from_workspace(workspace, repo_path, repo_name, default_branch);
     let ws_info_for_env = claudette::plugin_runtime::host_api::WorkspaceInfo {
         id: workspace.id.clone(),
         name: workspace.name.clone(),

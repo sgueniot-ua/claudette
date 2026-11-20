@@ -230,7 +230,9 @@ pub(crate) async fn fire_completion_notification(
             .await
             .unwrap_or_else(|_| "main".into()),
         };
-        let fresh_env = WorkspaceEnv::from_workspace(&fresh_ws, repo_path, default_branch);
+        let repo_name = repo.as_ref().map(|r| r.name.as_str()).unwrap_or_default();
+        let fresh_env =
+            WorkspaceEnv::from_workspace(&fresh_ws, repo_path, repo_name, default_branch);
         if let Some(mut command) =
             crate::commands::settings::build_notification_command(&cmd, &fresh_env)
             && let Ok(child) = command.spawn()

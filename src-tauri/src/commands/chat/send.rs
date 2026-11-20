@@ -1712,7 +1712,8 @@ pub async fn send_chat_message(
         .await
         .unwrap_or_else(|_| "main".to_string()),
     };
-    let ws_env = WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
+    let repo_name = repo.as_ref().map(|r| r.name.as_str()).unwrap_or_default();
+    let ws_env = WorkspaceEnv::from_workspace(ws, repo_path, repo_name, default_branch);
 
     // Resolve the env-provider layer (direnv / mise / dotenv / nix-devshell)
     // once per turn. The mtime-keyed cache makes this essentially free on

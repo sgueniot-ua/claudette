@@ -708,7 +708,9 @@ async fn handle_send_chat_message(
         .await
         .unwrap_or_else(|_| "main".to_string()),
     };
-    let ws_env = claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
+    let repo_name = repo.as_ref().map(|r| r.name.as_str()).unwrap_or_default();
+    let ws_env =
+        claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, repo_name, default_branch);
 
     // Resolve the env-provider layer (direnv / mise / dotenv / nix-devshell)
     // once per turn. Mirrors the Tauri path in src-tauri/src/commands/chat.rs:
@@ -1853,7 +1855,9 @@ async fn handle_spawn_pty(
             .await
             .unwrap_or_else(|_| "main".into()),
         };
-        let ws_env = claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, default_branch);
+        let repo_name = repo.as_ref().map(|r| r.name.as_str()).unwrap_or_default();
+        let ws_env =
+            claudette::env::WorkspaceEnv::from_workspace(ws, repo_path, repo_name, default_branch);
         for (k, v) in ws_env.vars() {
             cmd.env(k, v);
         }

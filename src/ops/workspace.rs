@@ -604,13 +604,19 @@ pub async fn resolve_and_run_setup_streaming(
     };
 
     let repo_path_str = repo_path.to_string_lossy();
+    // Setup/archive scripts only run for worktree workspaces, whose env name
+    // ignores the repository name; the folder basename is a stand-in.
+    let repo_name = repo_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let default_branch = match base_branch {
         Some(b) => b.to_string(),
         None => git::default_branch(&repo_path_str, default_remote)
             .await
             .unwrap_or_else(|_| "main".to_string()),
     };
-    let ws_env = WorkspaceEnv::from_workspace(ws, &repo_path_str, default_branch);
+    let ws_env = WorkspaceEnv::from_workspace(ws, &repo_path_str, &repo_name, default_branch);
 
     let mut cmd = build_script_command(&script, worktree_path);
     if let Some(env) = resolved_env {
@@ -785,13 +791,19 @@ pub async fn resolve_and_run_archive(
     };
 
     let repo_path_str = repo_path.to_string_lossy();
+    // Setup/archive scripts only run for worktree workspaces, whose env name
+    // ignores the repository name; the folder basename is a stand-in.
+    let repo_name = repo_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let default_branch = match base_branch {
         Some(b) => b.to_string(),
         None => git::default_branch(&repo_path_str, default_remote)
             .await
             .unwrap_or_else(|_| "main".to_string()),
     };
-    let ws_env = WorkspaceEnv::from_workspace(ws, &repo_path_str, default_branch);
+    let ws_env = WorkspaceEnv::from_workspace(ws, &repo_path_str, &repo_name, default_branch);
 
     let mut cmd = build_script_command(&script, worktree_path);
     if let Some(env) = resolved_env {

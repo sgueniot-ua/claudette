@@ -864,14 +864,17 @@ pub struct WorkspaceEnv {
 }
 
 impl WorkspaceEnv {
-    /// Build from a workspace, its repo path, and the resolved default branch.
+    /// Build from a workspace, its repo path and name, and the resolved
+    /// default branch. Project chats carry the repository name as their
+    /// workspace name (see `Workspace::display_name`).
     pub fn from_workspace(
         ws: &crate::model::Workspace,
         repo_path: &str,
+        repo_name: &str,
         default_branch: String,
     ) -> Self {
         Self {
-            workspace_name: ws.name.clone(),
+            workspace_name: ws.display_name(repo_name).to_string(),
             workspace_id: ws.id.clone(),
             workspace_path: ws.worktree_path.clone().unwrap_or_default(),
             root_path: repo_path.to_string(),
@@ -1063,6 +1066,33 @@ mod tests {
         assert_eq!(vars[3], ("CLAUDETTE_ROOT_PATH", "/home/user/repo"));
         assert_eq!(vars[4], ("CLAUDETTE_DEFAULT_BRANCH", "main"));
         assert_eq!(vars[5], ("CLAUDETTE_BRANCH_NAME", "claudette/fix-auth-bug"));
+    }
+
+    #[test]
+    fn workspace_env_uses_repository_name_for_project_chats() {
+        // project chats
+        use crate::model::{AgentStatus, Workspace, WorkspaceKind, WorkspaceStatus};
+        let mut ws = Workspace {
+            id: "w".into(),
+            repository_id: "r".into(),
+            name: "@project".into(),
+            branch_name: "main".into(),
+            worktree_path: Some("/home/user/repo".into()),
+            status: WorkspaceStatus::Active,
+            kind: WorkspaceKind::Repository,
+            agent_status: AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: String::new(),
+            sort_order: 0,
+            input_values: None,
+        };
+        let env = WorkspaceEnv::from_workspace(&ws, "/home/user/repo", "My Repo", "main".into());
+        assert_eq!(env.workspace_name, "My Repo");
+
+        ws.name = "fix-auth-bug".into();
+        ws.kind = WorkspaceKind::Worktree;
+        let env = WorkspaceEnv::from_workspace(&ws, "/home/user/repo", "My Repo", "main".into());
+        assert_eq!(env.workspace_name, "fix-auth-bug");
     }
 
     #[test]

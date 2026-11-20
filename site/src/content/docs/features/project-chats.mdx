@@ -55,4 +55,5 @@ If the project folder was moved or deleted, sending a message fails with `Projec
 
 - **CLI**: `claudette workspace list` shows the project-chat workspace under the repository's name with the type "project" (for example `my-repo (project)`), so you can find the ids of its chats; with `--json`, its row has `"kind": "repository"`. Archive, restore, delete, rename, and setup-script operations on it are refused with "Not available for project chats", including through the CLI.
 - **Routines**: [scheduled routines](/claudette/features/agent-scheduling/) can target a project chat and run normally.
+- **Environment variables**: in a project chat's agent, terminals, and notification commands, `CLAUDETTE_WORKSPACE_NAME` holds the repository name (the other [`CLAUDETTE_*` variables](/claudette/features/settings/#environment-variables) are unchanged).
 - **Mobile**: the mobile app shows project chats under the repository name. Creating them from mobile is not supported.
