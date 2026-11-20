@@ -448,7 +448,15 @@ pub fn notify_attention(app: &AppHandle, workspace_id: &str, kind: AttentionKind
     let locale = locale_from_db(&db);
     let ws_name = ws
         .as_ref()
-        .map(|w| w.name.clone())
+        .map(|w| {
+            let repo_name = db
+                .get_repository(&w.repository_id)
+                .ok()
+                .flatten()
+                .map(|r| r.name)
+                .unwrap_or_else(|| w.name.clone());
+            w.display_name(&repo_name).to_string()
+        })
         .unwrap_or_else(|| t(locale, "notification_unknown_workspace"));
 
     let app_state = app.state::<AppState>();
@@ -662,7 +670,7 @@ fn build_tray_menu_with_db(app: &AppHandle, db: &Database) -> Result<Menu<tauri:
             } else {
                 t(locale, "status_idle")
             };
-            let label = format!("  {}  {}", ws.name, status);
+            let label = format!("  {}  {}", ws.display_name(repo_name), status);
             let item = MenuItem::with_id(app, format!("ws:{}", ws.id), &label, true, None::<&str>)
                 .map_err(|e| e.to_string())?;
             items.push(Box::new(item));

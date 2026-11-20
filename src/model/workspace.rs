@@ -145,6 +145,16 @@ impl Workspace {
     pub fn allows_scm_automation(&self) -> bool {
         !self.is_repository_rooted()
     }
+
+    /// Name shown to the user (tray, notifications). The project chat
+    /// workspace ("@project") is shown under its repository's name.
+    pub fn display_name<'a>(&'a self, repo_name: &'a str) -> &'a str {
+        if self.is_repository_rooted() {
+            repo_name
+        } else {
+            &self.name
+        }
+    }
 }
 
 #[cfg(test)]
@@ -174,6 +184,18 @@ mod tests {
             sort_order: 0,
             input_values: None,
         }
+    }
+
+    #[test]
+    fn display_name_uses_repository_name_for_project_chats() {
+        // FR-013
+        let mut project = workspace_of_kind(WorkspaceKind::Repository);
+        project.name = "@project".into();
+        assert_eq!(project.display_name("my-repo"), "my-repo");
+        assert_eq!(
+            workspace_of_kind(WorkspaceKind::Worktree).display_name("my-repo"),
+            "w"
+        );
     }
 
     // FR-018
