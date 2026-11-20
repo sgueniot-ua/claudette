@@ -87,10 +87,15 @@ pub async fn rollback_to_checkpoint(
             .ok_or("Workspace has no worktree")?;
 
         if checkpoint.has_file_state {
-            // New path: restore from SQLite snapshot.
-            snapshot::restore_snapshot(&state.db_path, &checkpoint_id, wt)
-                .await
-                .map_err(|e| e.to_string())?;
+            // New path: restore from SQLite snapshot. A project chat restores
+            // into the user's checkout, where only directories emptied by
+            // the restore itself are removed.
+            let restored = if ws.is_repository_rooted() {
+                snapshot::restore_snapshot_in_checkout(&state.db_path, &checkpoint_id, wt).await
+            } else {
+                snapshot::restore_snapshot(&state.db_path, &checkpoint_id, wt).await
+            };
+            restored.map_err(|e| e.to_string())?;
         } else if let Some(ref commit_hash) = checkpoint.commit_hash {
             // Legacy path: restore from git commit.
             git::restore_to_commit(wt, commit_hash)

@@ -327,6 +327,11 @@ pub struct CheckpointArgs<'a> {
 /// returned struct to keep the emitted payload consistent with subsequent DB
 /// reads. Zero-file snapshots (empty repo, all files gitignored) return
 /// `has_file_state = false` for the same reason.
+///
+/// A project chat (repository-rooted workspace) is snapshotted strictly:
+/// its snapshots are restored into the user's own checkout, so a file the
+/// snapshot cannot read fails the capture (`has_file_state = false`, no
+/// file restore for that turn) instead of being deleted by a later restore.
 pub async fn create_turn_checkpoint(args: CheckpointArgs<'_>) -> Option<ConversationCheckpoint> {
     let CheckpointArgs {
         db_path,
@@ -347,6 +352,11 @@ pub async fn create_turn_checkpoint(args: CheckpointArgs<'_>) -> Option<Conversa
         .unwrap_or(0);
 
     let retention_count = read_checkpoint_retention_count(&db);
+    let strict = db
+        .list_workspaces()
+        .ok()
+        .and_then(|all| all.into_iter().find(|w| w.id == workspace_id))
+        .is_some_and(|w| w.is_repository_rooted());
 
     let mut checkpoint = ConversationCheckpoint {
         id: uuid::Uuid::new_v4().to_string(),
@@ -369,15 +379,26 @@ pub async fn create_turn_checkpoint(args: CheckpointArgs<'_>) -> Option<Conversa
     // (empty / fully-ignored worktrees) and the subtle one where the
     // retention sweep prunes the just-inserted rows because a newer
     // checkpoint already filled the kept-set.
-    let has_files = match snapshot::save_snapshot(
-        db_path,
-        workspace_id,
-        &checkpoint.id,
-        worktree_path,
-        retention_count,
-    )
-    .await
-    {
+    let saved = if strict {
+        snapshot::save_snapshot_strict(
+            db_path,
+            workspace_id,
+            &checkpoint.id,
+            worktree_path,
+            retention_count,
+        )
+        .await
+    } else {
+        snapshot::save_snapshot(
+            db_path,
+            workspace_id,
+            &checkpoint.id,
+            worktree_path,
+            retention_count,
+        )
+        .await
+    };
+    let has_files = match saved {
         Ok(flag) => flag,
         Err(e) => {
             tracing::warn!(
@@ -1267,6 +1288,59 @@ mod tests {
         assert!(created.is_none());
         assert!(db.get_session_baseline("cs-1").unwrap().is_none());
         assert!(lenient.unwrap(), "turn snapshot still succeeds");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn project_chat_turn_checkpoint_is_strict() {
+        // FR-014: a project chat's turn snapshot is restored into the user's
+        // checkout, so an unreadable file fails the capture instead of being
+        // deleted by a later rollback. Worktree turns stay lenient.
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, db_path) = make_test_db().await;
+        let wt = make_test_worktree(dir.path()).await;
+        let locked = wt.join("locked.txt");
+        std::fs::write(&locked, "secret").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&locked).is_ok() {
+            // Running as root: permissions are not enforced, nothing to test.
+            return;
+        }
+        let checkpoint = |msg: &'static str| {
+            let db_path = db_path.clone();
+            let wt = wt.clone();
+            async move {
+                create_turn_checkpoint(CheckpointArgs {
+                    db_path: &db_path,
+                    workspace_id: "ws-1",
+                    chat_session_id: "cs-1",
+                    anchor_msg_id: msg,
+                    worktree_path: wt.to_str().unwrap(),
+                    created_at: "now".into(),
+                })
+                .await
+                .expect("checkpoint row")
+            }
+        };
+
+        let lenient = checkpoint("m1").await;
+        crate::db::Database::open(&db_path)
+            .unwrap()
+            .execute_batch("UPDATE workspaces SET kind = 'repository' WHERE id = 'ws-1';")
+            .unwrap();
+        let strict = checkpoint("m2").await;
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert!(
+            lenient.has_file_state,
+            "worktree turn snapshot skips the file"
+        );
+        assert!(
+            !strict.has_file_state,
+            "project chat turn has no file state"
+        );
+        let db = crate::db::Database::open(&db_path).unwrap();
+        assert!(db.get_checkpoint_files(&strict.id).unwrap().is_empty());
     }
 
     #[tokio::test]

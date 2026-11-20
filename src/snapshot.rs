@@ -258,6 +258,27 @@ pub async fn restore_snapshot(
     checkpoint_id: &str,
     worktree_path: &str,
 ) -> Result<(), SnapshotError> {
+    restore_snapshot_impl(db_path, checkpoint_id, worktree_path, false).await
+}
+
+/// Variant of [`restore_snapshot`] for a project chat, which restores into
+/// the user's own checkout: only the parent directories of files the
+/// restore deleted are removed when they end up empty. Empty directories the
+/// user keeps elsewhere in the checkout (ignored trees, placeholders) stay.
+pub async fn restore_snapshot_in_checkout(
+    db_path: &Path,
+    checkpoint_id: &str,
+    worktree_path: &str,
+) -> Result<(), SnapshotError> {
+    restore_snapshot_impl(db_path, checkpoint_id, worktree_path, true).await
+}
+
+async fn restore_snapshot_impl(
+    db_path: &Path,
+    checkpoint_id: &str,
+    worktree_path: &str,
+    scoped_dir_cleanup: bool,
+) -> Result<(), SnapshotError> {
     let db = crate::db::Database::open(db_path).map_err(|e| SnapshotError::Db(e.to_string()))?;
     let snapshot_files = db.get_checkpoint_files(checkpoint_id)?;
     drop(db); // Release connection before async I/O.
@@ -268,6 +289,10 @@ pub async fn restore_snapshot(
         .iter()
         .map(|f| f.file_path.as_str())
         .collect();
+
+    // Relative paths of files this restore deleted, for the scoped
+    // empty-directory cleanup.
+    let mut deleted: Vec<String> = Vec::new();
 
     // Write snapshot files to disk.
     for f in &snapshot_files {
@@ -305,7 +330,9 @@ pub async fn restore_snapshot(
             }
             None => {
                 // Tombstone: delete the file if it exists.
-                let _ = tokio::fs::remove_file(&full_path).await;
+                if tokio::fs::remove_file(&full_path).await.is_ok() {
+                    deleted.push(f.file_path.clone());
+                }
             }
         }
     }
@@ -326,14 +353,35 @@ pub async fn restore_snapshot(
         {
             continue;
         }
-        let _ = tokio::fs::remove_file(&full_path).await;
+        if tokio::fs::remove_file(&full_path).await.is_ok() {
+            deleted.push(rel_path.clone());
+        }
     }
 
     // Clean up empty directories (best-effort, bottom-up).
-    // Re-list to find dirs that may now be empty.
-    clean_empty_dirs(base).await;
+    if scoped_dir_cleanup {
+        remove_emptied_parent_dirs(base, &deleted).await;
+    } else {
+        // Re-list to find dirs that may now be empty.
+        clean_empty_dirs(base).await;
+    }
 
     Ok(())
+}
+
+/// Remove the parent directories of `deleted` (paths relative to `root`)
+/// that are now empty, deepest first, never `root` itself.
+async fn remove_emptied_parent_dirs(root: &Path, deleted: &[String]) {
+    for rel in deleted {
+        let mut dir = Path::new(rel).parent();
+        while let Some(d) = dir.filter(|d| !d.as_os_str().is_empty()) {
+            // Fails (and stops) as soon as a directory is not empty.
+            if tokio::fs::remove_dir(root.join(d)).await.is_err() {
+                break;
+            }
+            dir = d.parent();
+        }
+    }
 }
 
 /// Recursively remove empty directories under `root`, bottom-up.
@@ -732,5 +780,51 @@ mod tests {
         .await
         .unwrap();
         assert!(flag);
+    }
+
+    #[tokio::test]
+    async fn checkout_restore_keeps_preexisting_empty_dirs() {
+        // FR-014, FR-015: restoring into the user's checkout only removes
+        // directories emptied by the restore itself.
+        let dir = setup_test_repo().await;
+        let dir_str = dir.path().to_str().unwrap();
+        tokio::fs::write(dir.path().join("a.txt"), b"a")
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(dir.path().join("placeholder/nested"))
+            .await
+            .unwrap();
+
+        let (_db_dir, db_path) = make_db_outside_worktree();
+        let db = crate::db::Database::open(&db_path).unwrap();
+        db.execute_batch(TEST_SEED_SQL).unwrap();
+        save_snapshot(
+            &db_path,
+            "ws1",
+            "cp1",
+            dir_str,
+            DEFAULT_CHECKPOINT_RETENTION_COUNT,
+        )
+        .await
+        .unwrap();
+
+        // Agent work: a new file in a new nested directory.
+        tokio::fs::create_dir_all(dir.path().join("gen/deep"))
+            .await
+            .unwrap();
+        tokio::fs::write(dir.path().join("gen/deep/x.txt"), b"x")
+            .await
+            .unwrap();
+
+        restore_snapshot_in_checkout(&db_path, "cp1", dir_str)
+            .await
+            .unwrap();
+
+        assert!(!dir.path().join("gen").exists(), "emptied dirs removed");
+        assert!(
+            dir.path().join("placeholder/nested").is_dir(),
+            "pre-existing empty dir kept"
+        );
+        assert!(dir.path().join("a.txt").exists());
     }
 }
