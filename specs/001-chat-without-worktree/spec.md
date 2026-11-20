@@ -15,6 +15,11 @@
 - Q: Droits de l'agent dans un chat de projet ? → A: les mêmes que dans un workspace avec worktree.
 - Q: Où apparaissent les chats de projet ? → A: uniquement dans la vue du projet, pas dans la sidebar.
 - Q: Restauration d'un checkpoint dans un chat de projet ? → A: permise après confirmation explicite.
+- Q: « Effacer la conversation en restaurant les fichiers » et « forker depuis un checkpoint » dans un
+  chat de projet ? → A: disponibles comme dans un workspace ; toute restauration de fichiers demande
+  une confirmation explicite (dossier partagé).
+- Q: Restauration de fichiers pendant qu'un autre chat du même projet travaille ? → A: autorisée
+  après un avertissement renforcé signalant les autres chats en cours.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -106,6 +111,11 @@ projet, ses fichiers et ses branches sont inchangés.
   partagé avec l'utilisateur et les autres chats : la restauration est permise après une confirmation
   explicite avertissant que le dossier partagé du projet sera modifié ; sans confirmation, rien n'est
   restauré.
+- Restauration de fichiers (checkpoint ou effacement de la conversation) pendant qu'un autre chat du
+  même projet travaille : la confirmation signale en plus que d'autres chats du projet sont en cours
+  et peuvent être perturbés ; l'utilisateur peut alors confirmer ou annuler.
+- Fork depuis un checkpoint d'un chat de projet : crée un workspace classique, avec sa worktree et sa
+  branche, comme le fork depuis un workspace.
 - Une tâche planifiée (routine, réveil) cible un chat de projet : elle s'exécute dans le dossier du
   projet, sans être désactivée faute de worktree.
 
@@ -135,6 +145,14 @@ projet, ses fichiers et ses branches sont inchangés.
 - **FR-014**: La restauration d'un point de contrôle dans un chat de projet DOIT demander une
   confirmation explicite mentionnant que le dossier partagé du projet sera modifié ; un refus
   n'effectue aucune restauration.
+- **FR-015**: « Effacer la conversation en restaurant les fichiers » DOIT rester disponible dans un
+  chat de projet, avec le même effet que dans un workspace, après une confirmation explicite
+  mentionnant que le dossier partagé du projet sera modifié.
+- **FR-016**: Le fork depuis un checkpoint d'un chat de projet DOIT rester disponible et créer un
+  workspace avec worktree, comme depuis un workspace.
+- **FR-017**: Quand une restauration de fichiers est demandée dans un chat de projet alors qu'un autre
+  chat du même projet travaille, la confirmation DOIT le signaler explicitement ; la restauration
+  n'a lieu qu'après confirmation.
 - **FR-010**: Les chats de projet DOIVENT offrir les mêmes capacités de conversation que les chats de
   workspace (choix du modèle, mode plan, questions de l'agent, pièces jointes, terminal dans le
   dossier du projet).
