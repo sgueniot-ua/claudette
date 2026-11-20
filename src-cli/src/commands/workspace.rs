@@ -5,6 +5,7 @@
 //! subscribers stay consistent — every change flows through the
 //! `claudette::ops::*` surface the GUI itself dispatches into.
 
+use std::collections::HashMap;
 use std::error::Error;
 
 use clap::Subcommand;
@@ -74,7 +75,17 @@ pub async fn run(action: Action, json: bool) -> Result<(), Box<dyn Error>> {
             if json {
                 output::print_json(&value)?;
             } else {
-                render_workspace_table(&value);
+                // The project chat workspace is labelled with its
+                // repository's name, so only fetch repositories when one
+                // is listed (FR-019).
+                let repo_names = if has_project_chat_row(&value) {
+                    let repos =
+                        ipc::call(&info, "list_repositories", serde_json::json!({})).await?;
+                    repository_names(&repos)
+                } else {
+                    HashMap::new()
+                };
+                render_workspace_table(&value, &repo_names);
             }
         }
         Action::Create { repo, name } => {
@@ -333,8 +344,8 @@ fn parse_created_at(value: &str) -> Option<u64> {
 /// (`"Active"` / `"Archived"`), matching `resolve_purge_ids` above.
 /// See issue #896.
 ///
-/// Project-chat rows (`kind == "repository"`) are not worktrees and are
-/// dropped too.
+/// The project chat workspace (`kind == "repository"`) is kept: it is how
+/// the CLI reaches project chats (FR-019).
 ///
 /// A non-array value (unexpected shape) is returned untouched so the
 /// caller's existing "unexpected response shape" handling still fires.
@@ -342,20 +353,57 @@ fn active_workspaces(value: serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Array(rows) => serde_json::Value::Array(
             rows.into_iter()
-                .filter(|row| {
-                    row.get("status").and_then(|v| v.as_str()) == Some("Active")
-                        && row.get("kind").and_then(|v| v.as_str()) != Some("repository")
-                })
+                .filter(|row| row.get("status").and_then(|v| v.as_str()) == Some("Active"))
                 .collect(),
         ),
         other => other,
     }
 }
 
+fn is_project_chat_row(row: &serde_json::Value) -> bool {
+    row.get("kind").and_then(|v| v.as_str()) == Some("repository")
+}
+
+fn has_project_chat_row(value: &serde_json::Value) -> bool {
+    value
+        .as_array()
+        .is_some_and(|rows| rows.iter().any(is_project_chat_row))
+}
+
+/// `repository id → name` from a `list_repositories` response.
+fn repository_names(value: &serde_json::Value) -> HashMap<String, String> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            let id = r.get("id")?.as_str()?;
+            let name = r.get("name")?.as_str()?;
+            Some((id.to_string(), name.to_string()))
+        })
+        .collect()
+}
+
+/// NAME column of `workspace list`: the workspace name, or for the project
+/// chat workspace its repository's name with the type "project" (FR-019).
+fn workspace_row_name(row: &serde_json::Value, repo_names: &HashMap<String, String>) -> String {
+    let name = row.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    if !is_project_chat_row(row) {
+        return name.to_string();
+    }
+    let repo = row
+        .get("repository_id")
+        .and_then(|v| v.as_str())
+        .and_then(|id| repo_names.get(id))
+        .map(String::as_str)
+        .unwrap_or(name);
+    format!("{repo} (project)")
+}
+
 /// Minimal table renderer for `workspace list`. Format is intentionally
 /// simple — we'll switch to a real table crate (`tabled`?) when more
 /// commands need column-aware rendering.
-fn render_workspace_table(value: &serde_json::Value) {
+fn render_workspace_table(value: &serde_json::Value, repo_names: &HashMap<String, String>) {
     let Some(items) = value.as_array() else {
         eprintln!("(unexpected response shape — try --json)");
         return;
@@ -367,7 +415,7 @@ fn render_workspace_table(value: &serde_json::Value) {
     println!("{:<36}  {:<24}  {:<10}  BRANCH", "ID", "NAME", "STATUS");
     for item in items {
         let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-        let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+        let name = workspace_row_name(item, repo_names);
         let status = item.get("status").and_then(|v| v.as_str()).unwrap_or("?");
         let branch = item
             .get("branch_name")
@@ -379,7 +427,7 @@ fn render_workspace_table(value: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{active_workspaces, parse_created_at};
+    use super::{active_workspaces, parse_created_at, repository_names, workspace_row_name};
 
     #[test]
     fn parses_unix_seconds_string() {
@@ -427,16 +475,35 @@ mod tests {
     }
 
     #[test]
-    fn active_workspaces_drops_repository_rows() {
-        // FR-013 (contrat CLI)
+    fn active_workspaces_keeps_repository_rows() {
+        // FR-019: the project chat workspace is listed, `kind` kept for --json.
         let input = serde_json::json!([
             { "id": "p1", "status": "Active", "kind": "repository" },
             { "id": "w1", "status": "Active", "kind": "worktree" },
         ]);
         let out = active_workspaces(input);
         let rows = out.as_array().unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["kind"], "worktree");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["kind"], "repository");
+        assert_eq!(rows[1]["kind"], "worktree");
+    }
+
+    #[test]
+    fn project_chat_row_is_named_after_its_repository() {
+        // FR-019
+        let repos = repository_names(&serde_json::json!([
+            { "id": "r1", "name": "my-repo" },
+        ]));
+        let project = serde_json::json!({
+            "id": "p1", "name": "@project", "repository_id": "r1", "kind": "repository",
+        });
+        let worktree = serde_json::json!({
+            "id": "w1", "name": "fix-bug", "repository_id": "r1", "kind": "worktree",
+        });
+        let legacy = serde_json::json!({ "id": "w2", "name": "old", "repository_id": "r1" });
+        assert_eq!(workspace_row_name(&project, &repos), "my-repo (project)");
+        assert_eq!(workspace_row_name(&worktree, &repos), "fix-bug");
+        assert_eq!(workspace_row_name(&legacy, &repos), "old");
     }
 
     #[test]
