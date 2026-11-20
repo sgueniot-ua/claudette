@@ -100,6 +100,8 @@ claudette workspace purge --repo <repo-id> --older-than-days 90 --dry-run
 
 `workspace purge` only ever removes **archived** workspaces — the server rejects Active IDs. Add `--older-than-days N` to restrict by age, and `--dry-run` to preview the IDs without deleting.
 
+`workspace list` does not show the workspace behind [project chats](/claudette/features/project-chats/); with `--json`, each row has a `kind` field (`worktree` or `repository`). Archiving, restoring, deleting, or renaming that workspace is refused ("Not available for project chats").
+
 `workspace create` returns the new workspace's ID **and** a `default_session_id` that you can immediately target with `chat send`.
 
 ## Chat sessions

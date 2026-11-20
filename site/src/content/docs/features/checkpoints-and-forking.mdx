@@ -58,6 +58,10 @@ From the chat history sidebar, pick a checkpoint and choose **Fork from here**. 
 
 The original workspace is untouched. The fork shows up in the sidebar as a new entry under the same repository.
 
+## Project chats
+
+In a [project chat](/claudette/features/project-chats/) there is no worktree: the agent works in the repository's own folder. Restoring files therefore modifies that shared folder, so the confirmation dialog says so, and adds a warning with a count when other project chats are running. **Clear conversation** with restore returns the files to their state before the chat's first message (every change since, including other chats' edits, is undone; commits are kept). Forking from a project chat checkpoint creates a regular workspace named `<repo>-fork`.
+
 ## Snapshots vs. checkpoints
 
 Claudette tracks two related concepts that are easy to conflate:

@@ -1,0 +1,54 @@
+---
+title: Project Chats
+description: Chat with an agent directly in your repository's folder, without creating a worktree or a branch.
+---
+
+A **project chat** is a chat with a Claude Code agent that works directly in your repository's own folder. There is no worktree, no new branch, and no setup script — handy for quick questions, exploration, or small edits where a full [workspace](/claudette/features/parallel-agents/) would be overkill.
+
+## Starting a project chat
+
+1. Click a project header in the sidebar to open the [project-scoped view](/claudette/features/parallel-agents/#project-scoped-view).
+2. In the **Chats** section, click **New chat**.
+
+Project chats are listed in that section only. They never appear as sidebar rows, in the `⌘/Ctrl + 1` – `⌘/Ctrl + 9` jump, in the fuzzy finder, or in the Dashboard lists.
+
+The chat header shows a **Project** badge, and a permanent notice reminds you that all project chats of the repository work in the project folder with **no isolation**.
+
+## Shared folder, no isolation
+
+The agent runs in the repository's own folder, on whatever branch is currently checked out (a detached HEAD is shown as `HEAD`). Claudette never renames that branch automatically.
+
+Because the folder is shared, edits made by a project chat land in your working copy immediately, and several project chats of the same repository (or you, in your editor) all see and modify the same files.
+
+A project chat has the same capabilities and permissions as a workspace chat: model picker, plan mode, attachments, and a terminal opened in the project folder. It does **not** have a worktree, a branch of its own, or a setup/archive script.
+
+The diff panel shows the **uncommitted changes of the folder** (compared with `HEAD`).
+
+## Renaming and archiving
+
+Rename or archive a project chat from its tab. Neither action touches files or branches. Archiving the last project chat does not create a new empty one.
+
+## Rolling back and clearing
+
+- **Roll back and restore files** asks for confirmation first: the dialog warns that the shared folder will be modified, and adds an extra warning with a count when other project chats of the repository are running. See [Checkpoints & Forking](/claudette/features/checkpoints-and-forking/#project-chats).
+- **Clear conversation** with restore returns the files to their state **before this chat's first message** (Claudette takes a snapshot just before that message). Every change since is undone — including your own edits and those of other project chats. Commits are kept. The option is not offered before the first message is sent.
+
+If the snapshot could not be taken completely (for example because a file was unreadable), clear refuses to restore rather than risk deleting files.
+
+:::caution
+A file larger than 10 MB when the snapshot was taken that later shrinks below 10 MB is deleted on restore.
+:::
+
+## Forking
+
+**Fork from here** on a project chat checkpoint creates a regular workspace, with its own worktree, named `<repo>-fork`.
+
+## When the project folder is missing
+
+If the project folder was moved or deleted, sending a message fails with `Project folder not found: <path>`; the history stays readable. Relinking the repository updates the folder of its project chats. Removing the repository removes its project chats, but never touches the folder or its branches.
+
+## Other surfaces
+
+- **CLI**: `claudette workspace list` does not show the project-chat workspace. Archive, restore, delete, rename, and setup-script operations on it are refused with "Not available for project chats", including through the CLI.
+- **Routines**: [scheduled routines](/claudette/features/agent-scheduling/) can target a project chat and run normally.
+- **Mobile**: the mobile app shows project chats under the repository name. Creating them from mobile is not supported.
