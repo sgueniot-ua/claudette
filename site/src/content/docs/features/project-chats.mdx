@@ -30,10 +30,10 @@ Rename or archive a project chat from its tab. Neither action touches files or b
 
 ## Rolling back and clearing
 
-- **Roll back and restore files** asks for confirmation first: the dialog warns that the shared folder will be modified, and adds an extra warning with a count when other project chats of the repository are running. See [Checkpoints & Forking](/claudette/features/checkpoints-and-forking/#project-chats).
-- **Clear conversation** with restore returns the files to their state **before this chat's first message** (Claudette takes a snapshot just before that message). Every change since is undone — including your own edits and those of other project chats. Commits are kept. The option is not offered before the first message is sent.
+- **Roll back to before this turn** with **Also restore files to this checkpoint** checked asks for confirmation first: the dialog warns that the shared folder will be modified, and adds an extra warning with a count when other project chats of the repository are running. See [Checkpoints & Forking](/claudette/features/checkpoints-and-forking/#project-chats).
+- Rolling back to before the chat's **first** message clears the whole conversation. With **Also restore the project files to their state before this chat's first message** checked, the files return to their state **before this chat's first message** (Claudette takes a snapshot just before that message). Every change since is undone — including your own edits and those of other project chats. Commits are kept. The option is not offered before the first message is sent.
 
-If the snapshot could not be taken completely (for example because a file was unreadable), clear refuses to restore rather than risk deleting files.
+If a snapshot could not be taken completely (for example because a file was unreadable), Claudette does not offer to restore files for that point rather than risk deleting files. Restoring only removes the empty directories it emptied itself; other empty directories of your folder are kept.
 
 :::caution
 A file larger than 10 MB when the snapshot was taken that later shrinks below 10 MB is deleted on restore.
@@ -41,14 +41,18 @@ A file larger than 10 MB when the snapshot was taken that later shrinks below 10
 
 ## Forking
 
-**Fork from here** on a project chat checkpoint creates a regular workspace, with its own worktree, named `<repo>-fork`.
+**Fork workspace at this turn** on a project chat turn creates a regular workspace, with its own worktree, named `<repo>-fork`.
 
 ## When the project folder is missing
 
 If the project folder was moved or deleted, sending a message fails with `Project folder not found: <path>`; the history stays readable. Relinking the repository updates the folder of its project chats. Removing the repository removes its project chats, but never touches the folder or its branches.
 
+## Automations
+
+**Archive on merge** and **Auto-fix CI failures** never apply to project chats, whatever their settings: a merged pull request never archives or deletes project chats or stops their agents, and a failing CI check never starts an agent in your project folder.
+
 ## Other surfaces
 
-- **CLI**: `claudette workspace list` does not show the project-chat workspace. Archive, restore, delete, rename, and setup-script operations on it are refused with "Not available for project chats", including through the CLI.
+- **CLI**: `claudette workspace list` shows the project-chat workspace under the repository's name with the type "project" (for example `my-repo (project)`), so you can find the ids of its chats; with `--json`, its row has `"kind": "repository"`. Archive, restore, delete, rename, and setup-script operations on it are refused with "Not available for project chats", including through the CLI.
 - **Routines**: [scheduled routines](/claudette/features/agent-scheduling/) can target a project chat and run normally.
 - **Mobile**: the mobile app shows project chats under the repository name. Creating them from mobile is not supported.

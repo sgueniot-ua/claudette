@@ -62,11 +62,15 @@ This matters most when [**Settings > Git > Auto-delete branch on archive**](/cla
 
 Custom SCM plugins should return `merged_at` (RFC 3339) on merged pull requests so the timestamp check applies. Plugins that omit it still work — they just fall back to the observed-transition check.
 
+Archive on merge never applies to [project chats](/claudette/features/project-chats/#automations): they run in the repository's own folder.
+
 ## Auto-Fix on CI Failure
 
 Enable [**Settings > Git > Auto-fix CI failures**](/claudette/features/settings/#git) to automatically create a new agent session when a workspace's CI changes from passing or running to failed. Claudette waits until checks have finished, applies the per-workspace cooldown, then opens a session with a prompt containing failed check names, links, branch and PR context, and failed log output when the provider supports it.
 
 The bundled GitHub provider uses `gh run view --log-failed`; the bundled GitLab provider uses `glab ci trace`. Custom SCM plugins can opt in by declaring and implementing the `ci_failure_logs` operation. If a provider does not support log fetching, the auto-fix session is still created with the check list and URLs.
+
+Auto-fix never starts a session in a [project chat](/claudette/features/project-chats/#automations): the agent would edit the repository's own folder without your action.
 
 ## Custom Plugins
 
