@@ -35,6 +35,7 @@ pub mod permissions;
 pub mod plugin;
 pub mod plugin_runtime;
 pub mod process;
+pub mod project_chat;
 pub mod rpc;
 pub mod scheduling;
 pub mod scm;

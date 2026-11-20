@@ -6,9 +6,7 @@ use tauri::{AppHandle, State};
 use claudette::config;
 use claudette::db::{Database, is_duplicate_repository_path_error};
 use claudette::git;
-use claudette::model::{
-    Repository, RepositoryInputField, Workspace, WorkspaceKind, validate_input_schema,
-};
+use claudette::model::{Repository, RepositoryInputField, validate_input_schema};
 use claudette::process::command;
 
 use crate::state::AppState;
@@ -248,17 +246,6 @@ pub async fn relink_repository(
     Ok(())
 }
 
-/// Worktree paths to remove/unwatch when a repository is removed. Excludes
-/// project-chat rows (`kind = repository`): their path is the repository
-/// checkout itself, which must stay intact.
-fn worktree_paths_to_remove(workspaces: &[&Workspace]) -> Vec<String> {
-    workspaces
-        .iter()
-        .filter(|w| w.kind != WorkspaceKind::Repository)
-        .filter_map(|w| w.worktree_path.clone())
-        .collect()
-}
-
 #[tauri::command]
 pub async fn remove_repository(
     id: String,
@@ -282,7 +269,7 @@ pub async fn remove_repository(
 
     // Remove each worktree (best-effort). Project chats (`kind = repository`)
     // live on the repository checkout itself and are never removed.
-    let worktree_paths = worktree_paths_to_remove(&repo_workspaces);
+    let worktree_paths = claudette::project_chat::worktree_paths_to_remove(&repo_workspaces);
     for wt_path in &worktree_paths {
         let _ = git::remove_worktree(&repo.path, wt_path, true).await;
     }
@@ -564,39 +551,4 @@ fn now_iso() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}", dur.as_secs())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::worktree_paths_to_remove;
-    use claudette::model::{AgentStatus, Workspace, WorkspaceKind, WorkspaceStatus};
-
-    fn ws(id: &str, kind: WorkspaceKind, path: Option<&str>) -> Workspace {
-        Workspace {
-            id: id.into(),
-            repository_id: "r1".into(),
-            name: id.into(),
-            branch_name: "b".into(),
-            worktree_path: path.map(Into::into),
-            status: WorkspaceStatus::Active,
-            kind,
-            agent_status: AgentStatus::Idle,
-            status_line: String::new(),
-            created_at: String::new(),
-            sort_order: 0,
-            input_values: None,
-        }
-    }
-
-    #[test]
-    fn worktree_paths_to_remove_skips_project_chat_rows() {
-        // FR-013: removing a project must never delete the repository folder.
-        let project = ws("p", WorkspaceKind::Repository, Some("/repo"));
-        let wt = ws("w", WorkspaceKind::Worktree, Some("/wt"));
-        let none = ws("n", WorkspaceKind::Worktree, None);
-        assert_eq!(
-            worktree_paths_to_remove(&[&project, &wt, &none]),
-            vec!["/wt".to_string()]
-        );
-    }
 }

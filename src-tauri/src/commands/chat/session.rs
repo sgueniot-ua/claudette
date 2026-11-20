@@ -2,7 +2,7 @@ use tauri::{AppHandle, State};
 
 use claudette::agent;
 use claudette::db::Database;
-use claudette::model::{ChatSession, Workspace};
+use claudette::model::ChatSession;
 
 use crate::state::{AgentSessionState, AppState};
 
@@ -142,12 +142,6 @@ pub async fn restore_chat_session(
     Ok(hydrate_session(restored, &agents))
 }
 
-/// Project chats (repository-rooted workspaces) may legitimately have zero
-/// active sessions, so closing the last one never auto-creates a replacement.
-fn effective_auto_replace(ws: &Workspace, requested: Option<bool>) -> bool {
-    !ws.is_repository_rooted() && requested.unwrap_or(true)
-}
-
 /// Archive a chat session (soft-delete). Stops its running agent first, then
 /// marks the row archived. By default — when the caller omits `auto_replace`
 /// or passes `Some(true)` — closing the workspace's last active session
@@ -192,7 +186,7 @@ pub async fn archive_chat_session(
         .iter()
         .find(|w| w.id == workspace_id)
         .ok_or("Workspace not found")?;
-    let fresh = if effective_auto_replace(ws, auto_replace) {
+    let fresh = if claudette::project_chat::effective_auto_replace(ws, auto_replace) {
         db.archive_chat_session_ensuring_active(&session_id, &workspace_id)
             .map_err(|e| e.to_string())?
     } else {
@@ -218,7 +212,7 @@ pub async fn archive_chat_session(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudette::model::{AgentStatus, Repository, Workspace, WorkspaceKind, WorkspaceStatus};
+    use claudette::model::{AgentStatus, Repository, Workspace, WorkspaceStatus};
     use claudette::plugin_runtime::PluginRegistry;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -261,27 +255,6 @@ mod tests {
             sort_order: 0,
             input_values: None,
         }
-    }
-
-    #[test]
-    fn archive_last_project_chat_does_not_recreate_session() {
-        let mut ws = make_workspace("w1", "r1");
-        ws.kind = WorkspaceKind::Repository;
-        assert!(!effective_auto_replace(&ws, Some(true)));
-        assert!(!effective_auto_replace(&ws, None));
-        let worktree = make_workspace("w2", "r1");
-        assert!(effective_auto_replace(&worktree, None));
-        assert!(effective_auto_replace(&worktree, Some(true)));
-        assert!(!effective_auto_replace(&worktree, Some(false)));
-
-        let db = Database::open_in_memory().unwrap();
-        db.insert_repository(&make_repo("r1")).unwrap();
-        db.insert_workspace(&ws).unwrap();
-        // insert_workspace seeds one default session.
-        let sessions = db.list_chat_sessions_for_workspace("w1", false).unwrap();
-        assert_eq!(sessions.len(), 1);
-        db.archive_chat_session_only(&sessions[0].id).unwrap();
-        assert_eq!(db.active_session_count_for_workspace("w1").unwrap(), 0);
     }
 
     fn fresh_state(db_path: PathBuf) -> AppState {

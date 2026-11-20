@@ -18,6 +18,7 @@ use claudette::ops::{NoopHooks, NotificationEvent, OpsHooks, WorkspaceChangeKind
 // console via `.new_console_window()`.
 #[cfg(target_os = "windows")]
 use claudette::process::CommandWindowExt as _;
+use claudette::project_chat::{is_refused_project_chat, reject_if_repository_rooted};
 
 use crate::commands::apps::{self, DEFAULT_TERMINAL_APP_SETTING_KEY};
 use crate::ops_hooks::TauriHooks;
@@ -518,23 +519,19 @@ pub async fn fork_workspace_at_checkpoint(
     })
 }
 
-/// Guard for worktree-only operations: a project chat runs in the user's own
-/// repository checkout, so it must never be set up, renamed, archived or
-/// deleted like a worktree workspace.
-fn reject_if_repository_rooted(ws: &Workspace) -> Result<(), String> {
-    if ws.is_repository_rooted() {
-        Err(ops_workspace::PROJECT_CHAT_REFUSAL.to_string())
-    } else {
-        Ok(())
-    }
-}
-
-/// Per-id bulk-delete decision: true when `id` names a repository-rooted
-/// workspace (project chat), which must be refused whatever its status.
-fn is_refused_project_chat(workspaces: &[Workspace], id: &str) -> bool {
-    workspaces
+/// The row `restore_workspace` acts on. A project chat is refused before any
+/// effect: restoring it would `git worktree add` its branch and repoint the
+/// row away from the user's checkout.
+fn find_restorable_workspace<'a>(
+    workspaces: &'a [Workspace],
+    id: &str,
+) -> Result<&'a Workspace, String> {
+    let ws = workspaces
         .iter()
-        .any(|w| w.id == id && w.is_repository_rooted())
+        .find(|w| w.id == id)
+        .ok_or("Workspace not found")?;
+    reject_if_repository_rooted(ws)?;
+    Ok(ws)
 }
 
 #[tauri::command]
@@ -935,10 +932,7 @@ pub async fn restore_workspace(
     // restore is about to run against and can roll back cleanly on
     // failure.
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
-    let ws = workspaces
-        .iter()
-        .find(|w| w.id == id)
-        .ok_or("Workspace not found")?;
+    let ws = find_restorable_workspace(&workspaces, &id)?;
     let branch_name = ws.branch_name.clone();
     let workspace_name = ws.name.clone();
     let repository_id = ws.repository_id.clone();
@@ -2282,10 +2276,7 @@ pub async fn notify_workspace_selected(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        apply_fork_prelude, is_refused_project_chat, reject_if_repository_rooted,
-        validate_purge_target,
-    };
+    use super::{apply_fork_prelude, find_restorable_workspace, validate_purge_target};
     use crate::state::{AgentSessionState, ClaudeRemoteControlStatus};
     use claudette::git::WorktreeInfo;
     use claudette::model::{ChatMessage, ChatRole};
@@ -2301,59 +2292,37 @@ mod tests {
         }
     }
 
-    fn guard_fixture(kind: claudette::model::WorkspaceKind) -> claudette::model::Workspace {
-        claudette::model::Workspace {
-            id: "w".into(),
+    #[test]
+    fn restore_workspace_refuses_project_chat() {
+        // FR-003, FR-012
+        use claudette::model::{AgentStatus, Workspace, WorkspaceKind, WorkspaceStatus};
+        let row = |id: &str, kind| Workspace {
+            id: id.into(),
             repository_id: "r".into(),
-            name: "n".into(),
+            name: id.into(),
             branch_name: "main".into(),
-            worktree_path: Some("/tmp/repo".into()),
-            status: claudette::model::WorkspaceStatus::Active,
+            worktree_path: None,
+            status: WorkspaceStatus::Archived,
             kind,
-            agent_status: claudette::model::AgentStatus::Idle,
+            agent_status: AgentStatus::Idle,
             status_line: String::new(),
             created_at: "0".into(),
             sort_order: 0,
             input_values: None,
-        }
-    }
-
-    #[test]
-    fn project_chat_guard_refuses_repository_workspace() {
-        // FR-003, FR-012: delete_workspace, run_workspace_setup, rename_workspace,
-        // archive_workspace_inner all call this guard before any effect.
-        let ws = guard_fixture(claudette::model::WorkspaceKind::Repository);
+        };
+        let all = vec![
+            row("p", WorkspaceKind::Repository),
+            row("w", WorkspaceKind::Worktree),
+        ];
         assert_eq!(
-            reject_if_repository_rooted(&ws),
-            Err("Not available for project chats".to_string())
+            find_restorable_workspace(&all, "p").unwrap_err(),
+            "Not available for project chats"
         );
-    }
-
-    #[test]
-    fn project_chat_guard_bulk_delete_refuses_repository_rows_only() {
-        // FR-003, FR-012
-        use claudette::model::{WorkspaceKind, WorkspaceStatus};
-        let mut active_repo = guard_fixture(WorkspaceKind::Repository);
-        active_repo.id = "repo-active".into();
-        let mut archived_repo = guard_fixture(WorkspaceKind::Repository);
-        archived_repo.id = "repo-archived".into();
-        archived_repo.status = WorkspaceStatus::Archived;
-        let mut archived_wt = guard_fixture(WorkspaceKind::Worktree);
-        archived_wt.id = "wt-archived".into();
-        archived_wt.status = WorkspaceStatus::Archived;
-        let all = vec![active_repo, archived_repo, archived_wt];
-
-        assert!(is_refused_project_chat(&all, "repo-active"));
-        assert!(is_refused_project_chat(&all, "repo-archived"));
-        assert!(!is_refused_project_chat(&all, "wt-archived"));
-        assert!(!is_refused_project_chat(&all, "missing"));
-    }
-
-    #[test]
-    fn project_chat_guard_allows_worktree_workspace() {
-        // FR-012
-        let ws = guard_fixture(claudette::model::WorkspaceKind::Worktree);
-        assert_eq!(reject_if_repository_rooted(&ws), Ok(()));
+        assert_eq!(find_restorable_workspace(&all, "w").unwrap().id, "w");
+        assert_eq!(
+            find_restorable_workspace(&all, "x").unwrap_err(),
+            "Workspace not found"
+        );
     }
 
     #[test]
