@@ -41,7 +41,9 @@ tournent déjà en parallèle (`AppState.agents` indexé par `chat_session_id`).
 | `clear_conversation` restore (`checkpoint.rs:231`) | `reset --hard` + `clean -fd` vers le merge-base | remplacé par la restauration du snapshot de référence (R9) |
   | `env_watcher.unregister` dans les chemins de suppression | désenregistre la surveillance env du dépôt (même chemin) | sautée pour `repository` |
   | `storage.rs:115` taille | compterait tout le dépôt comme « workspace » | exclu des stats de stockage |
-  | `relink_repository` (`repository.rs:226`) | `worktree_path` du workspace `repository` resterait sur l'ancien chemin | mise à jour du `worktree_path` dans la même opération |
+  | SCM : archivage automatique à la fusion (`scm.rs:1645`, `:1916`, `:2313`) | tuerait les agents, archiverait/supprimerait la ligne `@project` et ses chats, voire `branch_delete -D` d'une branche réelle si `branch_name` est périmé | exclu (FR-018) : ni sondage pour archivage, ni `auto_archive_workspace` |
+| SCM : correction automatique de CI (`scm.rs:1955`, `useCiAutoFixSession.ts`) | démarrerait un agent sans action de l'utilisateur dans le checkout principal | exclu (FR-018) |
+| `relink_repository` (`repository.rs:226`) | `worktree_path` du workspace `repository` resterait sur l'ancien chemin | mise à jour du `worktree_path` dans la même opération |
 
 - **Rationale**: git refuse de supprimer le working tree principal ou la branche extraite, mais
   l'analyse montre qu'on ne peut pas compter sur ces refus (la suppression de branche s'exécute quand
@@ -145,8 +147,8 @@ tournent déjà en parallèle (`AppState.agents` indexé par `chat_session_id`).
   (`utils/sidebarJumpTargets.ts`), et donc des raccourcis ⌘1–9, de la liste « Active Workspaces » du
   Dashboard global, du FuzzyFinder et des groupes par statut. La vue du projet (`Dashboard.tsx`, branche
   `scopedRepo`) liste ses sessions actives dans une section « Chats ».
-- **CLI**: le tableau de `claudette workspace list` exclut les workspaces `repository`, ce qui garde la
-  sortie actuelle à l'identique. La sortie JSON gagne le champ `kind` (ajout seulement).
+- **CLI** (FR-019) : `claudette workspace list` affiche le workspace `repository` sous le nom du dépôt,
+  avec le type « project » ; la sortie JSON garde le champ `kind`.
 - **Mobile / distant**: `Workspace` est sérialisé tel quel, et le champ `kind` s'ajoute. Le mobile
   (`src/ui-mobile/src/screens/WorkspacesScreen.tsx:72`, `ChatListScreen.tsx:59`,
   `ChatScreen.tsx:303`) affiche `w.name`. Il faut un petit helper d'affichage pour montrer le nom du

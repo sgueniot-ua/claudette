@@ -38,8 +38,9 @@ Ajout du champ `"kind": "worktree" | "repository"`. Aucun champ retiré ou renom
 
 ## 4. CLI `claudette workspace list`
 
-- Le tableau exclut les workspaces `repository` : la sortie actuelle est identique.
-- `--json` : mêmes lignes filtrées, plus le champ `kind`.
+- Le workspace `repository` est listé (FR-019), libellé avec le nom du dépôt et le type « project » ;
+  les lignes `worktree` sont inchangées.
+- `--json` : toutes les lignes actives, avec le champ `kind`.
 - Les commandes `chat` ciblant un workspace par id fonctionnent sur le workspace `repository`.
 
 ## 5. Contrat UI (desktop)

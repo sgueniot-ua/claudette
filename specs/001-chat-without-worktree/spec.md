@@ -23,6 +23,10 @@
 - Q: Effet de « effacer la conversation en restaurant les fichiers » dans un chat de projet ? → A:
   le dossier revient à son état au début de cette conversation (avant le premier message du chat) ;
   aucun commit n'est retiré, rien n'est réinitialisé vers la branche par défaut.
+- Q: Correction automatique de CI (« CI auto-fix ») sur un chat de projet ? → A: jamais ; l'auto-fix
+  reste réservé aux workspaces avec worktree.
+- Q: La CLI liste-t-elle le workspace des chats de projet ? → A: oui, sous le nom du dépôt, avec le
+  type « project ».
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -161,6 +165,11 @@ projet, ses fichiers et ses branches sont inchangés.
 - **FR-017**: Quand une restauration de fichiers est demandée dans un chat de projet alors qu'un autre
   chat du même projet travaille, la confirmation DOIT le signaler explicitement ; la restauration
   n'a lieu qu'après confirmation.
+- **FR-018**: Aucune automatisation ne DOIT démarrer un agent ni archiver, supprimer ou modifier les
+  chats de projet sans action de l'utilisateur : ni la correction automatique de CI, ni l'archivage
+  automatique à la fusion d'une PR.
+- **FR-019**: La CLI DOIT lister le workspace des chats de projet sous le nom du dépôt, avec le type
+  « project », pour permettre d'en piloter les chats.
 - **FR-010**: Les chats de projet DOIVENT offrir les mêmes capacités de conversation que les chats de
   workspace (choix du modèle, mode plan, questions de l'agent, pièces jointes, terminal dans le
   dossier du projet).
