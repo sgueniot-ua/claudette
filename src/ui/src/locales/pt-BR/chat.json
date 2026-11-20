@@ -231,5 +231,11 @@
   "agents_stopped": "{{count}} parados",
   "agents_queued": "{{count}} na fila",
   "task_progress_count": "{{completed}}/{{total}} tarefas",
-  "tab_rename_failed": "Falha ao renomear: {{error}}"
+  "tab_rename_failed": "Falha ao renomear: {{error}}",
+  "project_chats_title": "Chats",
+  "project_chats_shared_notice": "Os chats do projeto compartilham diretamente a pasta do projeto: sem isolamento, as alterações vão para os mesmos arquivos.",
+  "project_chats_new": "Novo chat",
+  "project_chats_empty": "Ainda não há chats neste projeto.",
+  "project_chat_badge": "Projeto",
+  "project_chats_open_failed": "Falha ao abrir o chat: {{error}}"
 }

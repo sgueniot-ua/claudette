@@ -96,3 +96,14 @@
   white-space: nowrap;
   color: var(--text-muted);
 }
+
+.projectBadge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-primary);
+  background: var(--accent-bg-strong);
+  border-radius: 4px;
+  white-space: nowrap;
+}

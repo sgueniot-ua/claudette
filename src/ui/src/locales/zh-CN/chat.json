@@ -229,5 +229,11 @@
   "agents_stopped": "{{count}} 个已停止",
   "agents_queued": "{{count}} 个排队中",
   "task_progress_count": "{{completed}}/{{total}} 个任务",
-  "tab_rename_failed": "重命名失败：{{error}}"
+  "tab_rename_failed": "重命名失败：{{error}}",
+  "project_chats_title": "聊天",
+  "project_chats_shared_notice": "项目聊天直接共享项目文件夹：没有隔离，更改会写入相同的文件。",
+  "project_chats_new": "新建聊天",
+  "project_chats_empty": "此项目中还没有聊天。",
+  "project_chat_badge": "项目",
+  "project_chats_open_failed": "无法打开聊天：{{error}}"
 }

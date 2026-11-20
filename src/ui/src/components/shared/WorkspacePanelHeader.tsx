@@ -1,4 +1,5 @@
 import { CircleDot, GitBranch } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/useAppStore";
 import { openUrl } from "../../services/tauri";
 import { WorkspaceActions } from "../chat/WorkspaceActions";
@@ -12,6 +13,7 @@ import styles from "./WorkspacePanelHeader.module.css";
  *  workspace-specific breadcrumb (repo/branch/base) and action group live
  *  here. */
 export function WorkspacePanelHeader() {
+  const { t } = useTranslation("chat");
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
   const repositories = useAppStore((s) => s.repositories);
@@ -62,6 +64,9 @@ export function WorkspacePanelHeader() {
         </span>
       ) : (
         <span className={styles.repoName}>{ws.name}</span>
+      )}
+      {ws.kind === "repository" && (
+        <span className={styles.projectBadge}>{t("project_chat_badge")}</span>
       )}
       {scmLinkEl}
     </span>
