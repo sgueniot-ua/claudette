@@ -943,6 +943,20 @@ fn cleanup_failed_steer_persistence(
     }
 }
 
+/// Working directory for an agent turn. A project chat (repository-rooted
+/// workspace) runs in the user's own checkout, which can be deleted or moved
+/// behind Claudette's back, so a missing folder is reported explicitly.
+fn resolve_agent_cwd(ws: &claudette::model::Workspace) -> Result<String, String> {
+    let path = ws
+        .worktree_path
+        .as_ref()
+        .ok_or("Workspace has no worktree")?;
+    if ws.is_repository_rooted() && !std::path::Path::new(path).is_dir() {
+        return Err(format!("Project folder not found: {path}"));
+    }
+    Ok(path.clone())
+}
+
 #[tauri::command]
 pub async fn steer_queued_chat_message(
     session_id: String,
@@ -966,11 +980,7 @@ pub async fn steer_queued_chat_message(
         .iter()
         .find(|w| w.id == workspace_id)
         .ok_or("Workspace not found")?;
-    let worktree_path = ws
-        .worktree_path
-        .as_ref()
-        .ok_or("Workspace has no worktree")?
-        .clone();
+    let worktree_path = resolve_agent_cwd(ws)?;
 
     let ps = {
         let agents = state.agents.read().await;
@@ -1118,11 +1128,7 @@ pub async fn send_chat_message(
         .iter()
         .find(|w| w.id == workspace_id)
         .ok_or("Workspace not found")?;
-    let worktree_path = ws
-        .worktree_path
-        .as_ref()
-        .ok_or("Workspace has no worktree")?
-        .clone();
+    let worktree_path = resolve_agent_cwd(ws)?;
 
     // Save user message to DB. Use the frontend-provided ID so optimistic
     // UI state (attachments keyed by message ID) stays consistent.
@@ -2411,6 +2417,7 @@ pub async fn send_chat_message(
 
     // Capture rename context before the bridge spawn.
     let has_repo = repo.is_some();
+    let ws_is_repository_rooted = ws.is_repository_rooted();
     let rename_old_branch = ws.branch_name.clone();
     let rename_old_name = ws.name.clone();
     let rename_prompt = content.clone();
@@ -2445,7 +2452,10 @@ pub async fn send_chat_message(
     // early exit) can't re-trigger a rename on a later prompt because the
     // claim has already been taken. The flag tracks the claim, not the
     // outcome: a Haiku/git failure below intentionally does not release it.
-    let claimed_rename = if has_repo && should_run_auto_naming(remote_control_active_for_turn) {
+    let claimed_rename = if has_repo
+        && !ws_is_repository_rooted
+        && should_run_auto_naming(remote_control_active_for_turn)
+    {
         match db.claim_branch_auto_rename(&workspace_id) {
             Ok(claimed) => claimed,
             Err(e) => {
@@ -3356,7 +3366,56 @@ mod tests {
         AgentSessionState, AttentionKind, ClaudeRemoteControlLifecycle, ClaudeRemoteControlStatus,
     };
     use claudette::agent_backend::AgentBackendRuntimeHarness;
-    use claudette::model::{ChatMessage, ChatRole};
+    use claudette::model::{ChatMessage, ChatRole, WorkspaceKind};
+
+    #[test]
+    fn resolve_agent_cwd_reports_missing_project_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("deleted");
+        let ws = test_workspace(
+            Some(gone.to_string_lossy().into_owned()),
+            WorkspaceKind::Repository,
+        );
+        let err = super::resolve_agent_cwd(&ws).unwrap_err();
+        assert!(err.starts_with("Project folder not found"), "{err}");
+    }
+
+    #[test]
+    fn resolve_agent_cwd_returns_repository_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_string_lossy().into_owned();
+        let ws = test_workspace(Some(path.clone()), WorkspaceKind::Repository);
+        assert_eq!(super::resolve_agent_cwd(&ws).unwrap(), path);
+    }
+
+    #[test]
+    fn resolve_agent_cwd_keeps_worktree_error() {
+        let ws = test_workspace(None, WorkspaceKind::Worktree);
+        assert_eq!(
+            super::resolve_agent_cwd(&ws).unwrap_err(),
+            "Workspace has no worktree"
+        );
+    }
+
+    fn test_workspace(
+        worktree_path: Option<String>,
+        kind: WorkspaceKind,
+    ) -> claudette::model::Workspace {
+        claudette::model::Workspace {
+            id: "w1".into(),
+            repository_id: "r1".into(),
+            name: "w1".into(),
+            branch_name: "main".into(),
+            worktree_path,
+            status: claudette::model::WorkspaceStatus::Active,
+            kind,
+            agent_status: claudette::model::AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: String::new(),
+            sort_order: 0,
+            input_values: None,
+        }
+    }
 
     fn test_chat_message(role: ChatRole, content: &str) -> ChatMessage {
         ChatMessage {
