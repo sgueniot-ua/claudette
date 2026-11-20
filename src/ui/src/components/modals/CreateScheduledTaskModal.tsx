@@ -6,6 +6,7 @@ import {
   listChatSessions,
   scheduleWakeup,
 } from "../../services/tauri";
+import { resolveSchedulerDefaults } from "../../utils/schedulerDefaults";
 import { workspaceDisplayName } from "../../utils/workspaceDisplayName";
 import { Modal } from "./Modal";
 import shared from "./shared.module.css";
@@ -57,18 +58,19 @@ export function CreateScheduledTaskModal() {
       ? (modalData.mode as TaskType)
       : null;
 
-  // The workspace the modal opens on (a `/schedule` from a chat, else the
-  // open workspace). A project chat workspace stays selectable only when it
-  // is this one.
-  const [preselectedWsId] = useState<string>(() => {
+  // Initial repo/workspace, resolved once at mount. A project chat workspace
+  // stays selectable only when opened from one of its chat sessions.
+  const [defaults] = useState(() => {
     const s = useAppStore.getState();
-    const fromSession =
-      prefillSessionId &&
-      Object.entries(s.sessionsByWorkspace).find(([, list]) =>
-        list.some((cs) => cs.id === prefillSessionId),
-      )?.[0];
-    return fromSession || s.selectedWorkspaceId || "";
+    return resolveSchedulerDefaults({
+      workspaces: s.workspaces,
+      repositories: s.repositories,
+      sessionsByWorkspace: s.sessionsByWorkspace,
+      selectedWorkspaceId: s.selectedWorkspaceId,
+      prefillSessionId,
+    });
   });
+  const preselectedWsId = defaults.preselectedRepoWsId;
 
   // Active (non-archived) workspaces for a repo, in sidebar order. Project
   // chat workspaces are hidden unless preselected.
@@ -82,35 +84,8 @@ export function CreateScheduledTaskModal() {
       )
       .sort((a, b) => a.sort_order - b.sort_order);
 
-  // Resolve the initial repo/workspace once, at mount, from the prefilled
-  // session (a `/schedule` from a chat), then the currently open workspace,
-  // then the first available workspace.
-  const [repoId, setRepoId] = useState<string>(() => {
-    const s = useAppStore.getState();
-    const seedWsId =
-      (prefillSessionId &&
-        Object.entries(s.sessionsByWorkspace).find(([, list]) =>
-          list.some((cs) => cs.id === prefillSessionId),
-        )?.[0]) ||
-      s.selectedWorkspaceId ||
-      s.workspaces.find((w) => w.status !== "Archived" && w.kind !== "repository")?.id ||
-      "";
-    return s.workspaces.find((w) => w.id === seedWsId)?.repository_id ?? s.repositories[0]?.id ?? "";
-  });
-  const [workspaceId, setWorkspaceId] = useState<string>(() => {
-    const s = useAppStore.getState();
-    if (prefillSessionId) {
-      const hit = Object.entries(s.sessionsByWorkspace).find(([, list]) =>
-        list.some((cs) => cs.id === prefillSessionId),
-      );
-      if (hit) return hit[0];
-    }
-    return (
-      s.selectedWorkspaceId ||
-      s.workspaces.find((w) => w.status !== "Archived" && w.kind !== "repository")?.id ||
-      ""
-    );
-  });
+  const [repoId, setRepoId] = useState<string>(defaults.repoId);
+  const [workspaceId, setWorkspaceId] = useState<string>(defaults.workspaceId);
   const [sessionTarget, setSessionTarget] = useState<string>(
     () => prefillSessionId ?? activeSessionId ?? NEW_SESSION,
   );
