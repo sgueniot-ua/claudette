@@ -78,11 +78,18 @@ function setup(opts: {
   kind?: Workspace["kind"];
   sessions?: ChatSession[];
   checkpointId?: string | null;
+  completedTurnCount?: number;
   hasFileChanges?: boolean;
 }) {
   useAppStore.setState({
     workspaces: [makeWorkspace({ kind: opts.kind ?? "repository" })],
     sessionsByWorkspace: { w1: opts.sessions ?? [makeSession()] },
+    completedTurns: {
+      s1: Array.from({ length: opts.completedTurnCount ?? 0 }, (_, i) => ({
+        id: `t${i}`,
+      })) as never,
+    },
+    chatMessages: {},
     modalData: {
       workspaceId: "w1",
       sessionId: "s1",
@@ -104,6 +111,14 @@ function setup(opts: {
 
 function checkbox(c: HTMLElement): HTMLInputElement | null {
   return c.querySelector('input[type="checkbox"]');
+}
+
+function button(c: HTMLElement, label: string): HTMLButtonElement {
+  const b = Array.from(c.querySelectorAll("button")).find(
+    (x) => x.textContent === label,
+  );
+  if (!b) throw new Error(`button ${label} not found`);
+  return b;
 }
 
 function tick(c: HTMLElement) {
@@ -137,6 +152,25 @@ describe("RollbackModal project chats", () => {
     tick(c);
     expect(c.textContent).toContain("rollback_project_clear_warning");
     expect(c.textContent).toContain("rollback_project_shared_warning");
+  });
+
+  // FR-015
+  it("offers restore on clear-all when turn_count is stale but turns exist", () => {
+    const c = setup({
+      checkpointId: null,
+      hasFileChanges: false,
+      sessions: [makeSession({ turn_count: 0 })],
+      completedTurnCount: 1,
+    });
+    expect(checkbox(c)).not.toBeNull();
+  });
+
+  // FR-015
+  it("clear-all with the box ticked restores files", async () => {
+    const c = setup({ checkpointId: null, hasFileChanges: false });
+    tick(c);
+    await act(async () => button(c, "rollback_confirm").click());
+    expect(clearConversation).toHaveBeenCalledWith("s1", true);
   });
 
   // FR-015
@@ -176,7 +210,7 @@ describe("RollbackModal project chats", () => {
   it("cancel does not call rollback services", () => {
     const c = setup({});
     tick(c);
-    const cancel = c.querySelectorAll("button")[0] as HTMLButtonElement;
+    const cancel = button(c, "cancel");
     act(() => cancel.click());
     expect(clearConversation).not.toHaveBeenCalled();
     expect(rollbackToCheckpoint).not.toHaveBeenCalled();
@@ -186,7 +220,7 @@ describe("RollbackModal project chats", () => {
   it("confirm calls the same service with the restore flag", async () => {
     const c = setup({});
     tick(c);
-    const confirm = c.querySelectorAll("button")[1] as HTMLButtonElement;
+    const confirm = button(c, "rollback_confirm");
     await act(async () => confirm.click());
     expect(rollbackToCheckpoint).toHaveBeenCalledWith("s1", "c1", true);
   });

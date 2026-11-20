@@ -39,12 +39,20 @@ export function RollbackModal() {
   );
   const sessions = useAppStore((s) => s.sessionsByWorkspace[workspaceId]);
   const currentSession = sessions?.find((x) => x.id === sessionId);
+  // `turn_count` is only refreshed when sessions are reloaded, so also use
+  // signals the UI keeps live: completed turns and sent user messages.
+  const hasTurns = useAppStore(
+    (s) =>
+      (currentSession?.turn_count ?? 0) > 0 ||
+      (s.completedTurns[sessionId]?.length ?? 0) > 0 ||
+      (s.chatMessages[sessionId] ?? []).some((m) => m.role === "User"),
+  );
   const othersRunning =
     sessions?.filter((x) => x.id !== sessionId && x.agent_status === "Running")
       .length ?? 0;
   const showRestore =
     isProjectChat && isClearAll
-      ? (currentSession?.turn_count ?? 0) > 0
+      ? hasTurns
       : hasFileChanges;
 
   const handleRollback = async () => {
