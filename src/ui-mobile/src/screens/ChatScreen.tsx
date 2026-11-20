@@ -21,6 +21,7 @@ import type {
   SavedConnection,
   Workspace,
 } from "../types";
+import { workspaceLabel } from "../workspaceLabel";
 
 interface Props {
   connection: SavedConnection;
@@ -300,7 +301,7 @@ export function ChatScreen({ connection, workspace, session, onBack }: Props) {
         </button>
         <div className="header-center">
           <h1>{session.name ?? "Session"}</h1>
-          <p className="subtitle">{workspace.name}</p>
+          <p className="subtitle">{workspaceLabel(workspace)}</p>
         </div>
         {agentActive && (
           <button

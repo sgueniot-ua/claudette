@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { loadInitialData } from "../services/rpc";
 import type { InitialData, SavedConnection, Workspace } from "../types";
+import { workspaceLabel } from "../workspaceLabel";
 
 interface Props {
   connection: SavedConnection;
@@ -69,7 +70,9 @@ export function WorkspacesScreen({
                   className="conn-row-main"
                   onClick={() => onOpenWorkspace(w)}
                 >
-                  <span className="conn-name">{w.name}</span>
+                  <span className="conn-name">
+                    {workspaceLabel(w, repo?.name)}
+                  </span>
                   <span className="conn-host">
                     {repo?.name ?? "—"} · {w.branch_name}
                   </span>

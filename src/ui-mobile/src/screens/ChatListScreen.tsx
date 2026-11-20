@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createChatSession, listChatSessions } from "../services/rpc";
 import type { ChatSession, SavedConnection, Workspace } from "../types";
+import { workspaceLabel } from "../workspaceLabel";
 
 interface Props {
   connection: SavedConnection;
@@ -56,7 +57,7 @@ export function ChatListScreen({
           ← Back
         </button>
         <div className="header-center">
-          <h1>{workspace.name}</h1>
+          <h1>{workspaceLabel(workspace)}</h1>
           <p className="subtitle">{workspace.branch_name}</p>
         </div>
       </header>

@@ -44,6 +44,7 @@ export interface Workspace {
   worktree_path?: string | null;
   status: WorkspaceStatus;
   created_at?: string;
+  kind?: "worktree" | "repository";
 }
 
 export interface InitialData {
