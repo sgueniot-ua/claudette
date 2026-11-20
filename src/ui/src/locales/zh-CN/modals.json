@@ -29,7 +29,7 @@
   "rollback_project_restore_start": "同时将项目文件恢复到此聊天第一条消息之前的状态",
   "rollback_project_shared_warning": "项目文件夹与你以及你的其他项目聊天共享。恢复文件会覆盖其当前内容。",
   "rollback_project_clear_warning": "文件将恢复到此聊天第一条消息之前的状态。此后所做的所有更改都会被撤销，包括你自己的编辑和其他项目聊天所做的更改。提交会被保留。",
-  "rollback_project_others_running": "此项目中另有 {{count}} 个聊天正在运行，可能正在修改这些文件。",
+  "rollback_project_others_running_other": "此项目中另有 {{count}} 个聊天正在运行，可能正在修改这些文件。",
   "rollback_rolling_back": "正在回滚...",
   "rollback_confirm": "回滚",
   "nightly_title": "切换到每夜版通道？",
