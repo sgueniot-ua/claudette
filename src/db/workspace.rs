@@ -713,6 +713,21 @@ impl Database {
         Ok(())
     }
 
+    /// Point a repository's project-chat workspace (`kind = 'repository'`)
+    /// at a new checkout path. Returns the number of rows updated (0 when
+    /// the repository has no project-chat workspace).
+    pub fn update_repository_workspace_path(
+        &self,
+        repo_id: &str,
+        path: &str,
+    ) -> Result<usize, rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE workspaces SET worktree_path = ?1 \
+             WHERE repository_id = ?2 AND kind = 'repository'",
+            params![path, repo_id],
+        )
+    }
+
     /// Rename a workspace's name and branch. Relies on the
     /// `UNIQUE(repository_id, name)` constraint — callers should handle
     /// constraint-violation errors to retry with a suffix.
@@ -820,6 +835,33 @@ mod tests {
         ws.kind = WorkspaceKind::Repository;
         ws.worktree_path = Some("/tmp/repo1".into());
         ws
+    }
+
+    #[test]
+    fn update_repository_workspace_path_moves_only_repository_row() {
+        // FR-013
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspace(&repo_rooted("p1", "r1")).unwrap();
+        let mut wt = make_workspace("w1", "r1", "fix-bug");
+        wt.worktree_path = Some("/tmp/wt".into());
+        db.insert_workspace(&wt).unwrap();
+
+        let n = db
+            .update_repository_workspace_path("r1", "/tmp/moved")
+            .unwrap();
+        assert_eq!(n, 1);
+        let all = db.list_workspaces().unwrap();
+        let path_of = |id: &str| {
+            all.iter()
+                .find(|w| w.id == id)
+                .unwrap()
+                .worktree_path
+                .clone()
+        };
+        assert_eq!(path_of("p1").as_deref(), Some("/tmp/moved"));
+        assert_eq!(path_of("w1").as_deref(), Some("/tmp/wt"));
     }
 
     #[test]

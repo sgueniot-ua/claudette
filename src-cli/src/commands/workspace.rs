@@ -333,13 +333,19 @@ fn parse_created_at(value: &str) -> Option<u64> {
 /// (`"Active"` / `"Archived"`), matching `resolve_purge_ids` above.
 /// See issue #896.
 ///
+/// Project-chat rows (`kind == "repository"`) are not worktrees and are
+/// dropped too.
+///
 /// A non-array value (unexpected shape) is returned untouched so the
 /// caller's existing "unexpected response shape" handling still fires.
 fn active_workspaces(value: serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Array(rows) => serde_json::Value::Array(
             rows.into_iter()
-                .filter(|row| row.get("status").and_then(|v| v.as_str()) == Some("Active"))
+                .filter(|row| {
+                    row.get("status").and_then(|v| v.as_str()) == Some("Active")
+                        && row.get("kind").and_then(|v| v.as_str()) != Some("repository")
+                })
                 .collect(),
         ),
         other => other,
@@ -418,6 +424,19 @@ mod tests {
             .filter_map(|r| r.get("id").and_then(|v| v.as_str()))
             .collect();
         assert_eq!(ids, ["w1", "w3"]);
+    }
+
+    #[test]
+    fn active_workspaces_drops_repository_rows() {
+        // FR-013 (contrat CLI)
+        let input = serde_json::json!([
+            { "id": "p1", "status": "Active", "kind": "repository" },
+            { "id": "w1", "status": "Active", "kind": "worktree" },
+        ]);
+        let out = active_workspaces(input);
+        let rows = out.as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["kind"], "worktree");
     }
 
     #[test]

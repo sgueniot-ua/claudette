@@ -6,7 +6,9 @@ use tauri::{AppHandle, State};
 use claudette::config;
 use claudette::db::{Database, is_duplicate_repository_path_error};
 use claudette::git;
-use claudette::model::{Repository, RepositoryInputField, validate_input_schema};
+use claudette::model::{
+    Repository, RepositoryInputField, Workspace, WorkspaceKind, validate_input_schema,
+};
 use claudette::process::command;
 
 use crate::state::AppState;
@@ -240,8 +242,21 @@ pub async fn relink_repository(
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     db.update_repository_path(&id, &canon_str)
         .map_err(|e| e.to_string())?;
+    db.update_repository_workspace_path(&id, &canon_str)
+        .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// Worktree paths to remove/unwatch when a repository is removed. Excludes
+/// project-chat rows (`kind = repository`): their path is the repository
+/// checkout itself, which must stay intact.
+fn worktree_paths_to_remove(workspaces: &[&Workspace]) -> Vec<String> {
+    workspaces
+        .iter()
+        .filter(|w| w.kind != WorkspaceKind::Repository)
+        .filter_map(|w| w.worktree_path.clone())
+        .collect()
 }
 
 #[tauri::command]
@@ -265,11 +280,11 @@ pub async fn remove_repository(
         .filter(|w| w.repository_id == id)
         .collect();
 
-    // Remove each worktree (best-effort).
-    for ws in &repo_workspaces {
-        if let Some(ref wt_path) = ws.worktree_path {
-            let _ = git::remove_worktree(&repo.path, wt_path, true).await;
-        }
+    // Remove each worktree (best-effort). Project chats (`kind = repository`)
+    // live on the repository checkout itself and are never removed.
+    let worktree_paths = worktree_paths_to_remove(&repo_workspaces);
+    for wt_path in &worktree_paths {
+        let _ = git::remove_worktree(&repo.path, wt_path, true).await;
     }
 
     // Drop every env-provider watch rooted at the repo's main
@@ -280,19 +295,15 @@ pub async fn remove_repository(
     // in the wrong panel after an add/remove churn.
     if let Some(watcher) = state.env_watcher.read().await.as_ref() {
         watcher.unregister(Path::new(&repo.path), None);
-        for ws in &repo_workspaces {
-            if let Some(ref wt_path) = ws.worktree_path {
-                watcher.unregister(Path::new(wt_path), None);
-            }
+        for wt_path in &worktree_paths {
+            watcher.unregister(Path::new(wt_path), None);
         }
     }
     // Also drop the cache entries so re-adding the same repo path
     // doesn't return stale exports.
     state.env_cache.invalidate(Path::new(&repo.path), None);
-    for ws in &repo_workspaces {
-        if let Some(ref wt_path) = ws.worktree_path {
-            state.env_cache.invalidate(Path::new(wt_path), None);
-        }
+    for wt_path in &worktree_paths {
+        state.env_cache.invalidate(Path::new(wt_path), None);
     }
 
     // Clean up in-memory agent sessions for this repo's workspaces
@@ -553,4 +564,39 @@ fn now_iso() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}", dur.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worktree_paths_to_remove;
+    use claudette::model::{AgentStatus, Workspace, WorkspaceKind, WorkspaceStatus};
+
+    fn ws(id: &str, kind: WorkspaceKind, path: Option<&str>) -> Workspace {
+        Workspace {
+            id: id.into(),
+            repository_id: "r1".into(),
+            name: id.into(),
+            branch_name: "b".into(),
+            worktree_path: path.map(Into::into),
+            status: WorkspaceStatus::Active,
+            kind,
+            agent_status: AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: String::new(),
+            sort_order: 0,
+            input_values: None,
+        }
+    }
+
+    #[test]
+    fn worktree_paths_to_remove_skips_project_chat_rows() {
+        // FR-013: removing a project must never delete the repository folder.
+        let project = ws("p", WorkspaceKind::Repository, Some("/repo"));
+        let wt = ws("w", WorkspaceKind::Worktree, Some("/wt"));
+        let none = ws("n", WorkspaceKind::Worktree, None);
+        assert_eq!(
+            worktree_paths_to_remove(&[&project, &wt, &none]),
+            vec!["/wt".to_string()]
+        );
+    }
 }

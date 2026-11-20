@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use claudette::db::Database;
-use claudette::model::WorkspaceStatus;
+use claudette::model::{WorkspaceKind, WorkspaceStatus};
 use serde::Serialize;
 use tauri::State;
 
@@ -110,6 +110,10 @@ pub async fn compute_storage_stats(
     let mut batched_ids: Vec<String> = Vec::new();
     for ws in workspaces {
         if !known_repo_ids.contains(&ws.repository_id) {
+            continue;
+        }
+        // Project chats run on the user's own checkout, not a Claudette-managed worktree.
+        if ws.kind == WorkspaceKind::Repository {
             continue;
         }
         let size_source = match ws.worktree_path.as_deref() {
