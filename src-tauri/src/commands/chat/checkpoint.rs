@@ -3,7 +3,7 @@ use tauri::State;
 use claudette::agent::history_seeder::build_migration_prelude;
 use claudette::db::Database;
 use claudette::model::{
-    ChatMessage, ChatRole, CompletedTurnData, ConversationCheckpoint, TurnToolActivity,
+    ChatMessage, ChatRole, CompletedTurnData, ConversationCheckpoint, TurnToolActivity, Workspace,
 };
 use claudette::{agent, git, snapshot};
 
@@ -203,7 +203,7 @@ pub async fn rollback_to_checkpoint(
 }
 
 /// Clear the entire conversation for a workspace, optionally restoring files
-/// to the merge-base (initial state before any agent work).
+/// to their state before the conversation (see [`restore_files_for_clear`]).
 #[tauri::command]
 pub async fn clear_conversation(
     session_id: String,
@@ -228,34 +228,14 @@ pub async fn clear_conversation(
         }
     }
 
-    // Optionally restore files to the merge-base before clearing.
+    // Optionally restore files before clearing. On error nothing is deleted.
     if restore_files {
         let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
         let ws = workspaces
             .iter()
             .find(|w| w.id == workspace_id)
             .ok_or("Workspace not found")?;
-        let wt = ws
-            .worktree_path
-            .as_ref()
-            .ok_or("Workspace has no worktree")?;
-        let repos = db.list_repositories().map_err(|e| e.to_string())?;
-        let repo = repos
-            .iter()
-            .find(|r| r.id == ws.repository_id)
-            .ok_or("Repository not found")?;
-        let base = match repo.base_branch.as_deref() {
-            Some(b) => b.to_string(),
-            None => git::default_branch(&repo.path, repo.default_remote.as_deref())
-                .await
-                .map_err(|e| e.to_string())?,
-        };
-        let merge_base = claudette::diff::merge_base(wt, &ws.branch_name, &base)
-            .await
-            .map_err(|e| e.to_string())?;
-        git::restore_to_commit(wt, &merge_base)
-            .await
-            .map_err(|e| e.to_string())?;
+        restore_files_for_clear(&state.db_path, ws, &chat_session_id).await?;
     }
 
     // Delete all messages and checkpoints for this session.
@@ -263,6 +243,10 @@ pub async fn clear_conversation(
         .map_err(|e| e.to_string())?;
     // Checkpoints cascade via FK, but delete explicitly for clarity.
     db.delete_session_checkpoints_after(&chat_session_id, -1)
+        .map_err(|e| e.to_string())?;
+    // The baseline (turn_index -1) is not matched above; drop it too so the
+    // next first message captures a fresh one.
+    db.delete_session_baseline(&chat_session_id)
         .map_err(|e| e.to_string())?;
 
     // Reset agent session. Clearing the conversation discards the session's
@@ -279,6 +263,64 @@ pub async fn clear_conversation(
 
     // Return empty list.
     db.list_chat_messages_for_session(&chat_session_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Restore the files of a workspace before its conversation is cleared.
+///
+/// - Project chat (repository-rooted): restore the session's baseline
+///   snapshot, i.e. the folder as it was before the chat's first message.
+///   No git history is touched (FR-015). Without a baseline holding files,
+///   refuse rather than guess — restoring an empty snapshot would delete
+///   every file in the user's checkout.
+/// - Worktree workspace: reset the worktree to the merge-base with the
+///   repository's base branch (unchanged behavior).
+async fn restore_files_for_clear(
+    db_path: &std::path::Path,
+    ws: &Workspace,
+    chat_session_id: &str,
+) -> Result<(), String> {
+    let wt = ws
+        .worktree_path
+        .as_ref()
+        .ok_or("Workspace has no worktree")?;
+
+    if ws.is_repository_rooted() {
+        if !std::path::Path::new(wt).is_dir() {
+            return Err(format!("Project folder not found: {wt}"));
+        }
+        let baseline = {
+            let db = Database::open(db_path).map_err(|e| e.to_string())?;
+            db.get_session_baseline(chat_session_id)
+                .map_err(|e| e.to_string())?
+        };
+        let baseline = baseline
+            .filter(|b| b.has_file_state)
+            .ok_or("No starting state to restore for this chat")?;
+        return snapshot::restore_snapshot(db_path, &baseline.id, wt)
+            .await
+            .map_err(|e| e.to_string());
+    }
+
+    let repo = {
+        let db = Database::open(db_path).map_err(|e| e.to_string())?;
+        db.list_repositories()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|r| r.id == ws.repository_id)
+            .ok_or("Repository not found")?
+    };
+    let base = match repo.base_branch.as_deref() {
+        Some(b) => b.to_string(),
+        None => git::default_branch(&repo.path, repo.default_remote.as_deref())
+            .await
+            .map_err(|e| e.to_string())?,
+    };
+    let merge_base = claudette::diff::merge_base(wt, &ws.branch_name, &base)
+        .await
+        .map_err(|e| e.to_string())?;
+    git::restore_to_commit(wt, &merge_base)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -488,7 +530,9 @@ pub async fn load_completed_turns(
 
 #[cfg(test)]
 mod tests {
-    use super::{hydrate_sweep_allowed, session_owns_live_process};
+    use super::{hydrate_sweep_allowed, restore_files_for_clear, session_owns_live_process};
+    use claudette::db::Database;
+    use claudette::model::{AgentStatus, Repository, Workspace, WorkspaceKind, WorkspaceStatus};
 
     /// Stand-in for `AgentSession`, which wraps a live child process.
     const HANDLE: &() = &();
@@ -563,5 +607,146 @@ mod tests {
             session.and_then(|s| s.active_pid),
             session.and_then(|s| s.persistent_session.as_ref()),
         ));
+    }
+
+    fn project_fixture(folder: &std::path::Path) -> (Repository, Workspace) {
+        let path = folder.to_string_lossy().into_owned();
+        let repo = Repository {
+            id: "r1".into(),
+            path: path.clone(),
+            name: "r1".into(),
+            path_slug: "r1".into(),
+            icon: None,
+            created_at: String::new(),
+            setup_script: None,
+            custom_instructions: None,
+            sort_order: 0,
+            branch_rename_preferences: None,
+            setup_script_auto_run: false,
+            archive_script: None,
+            archive_script_auto_run: false,
+            base_branch: None,
+            default_remote: None,
+            required_inputs: None,
+            path_valid: true,
+        };
+        let ws = Workspace {
+            id: "w1".into(),
+            repository_id: "r1".into(),
+            name: "@project".into(),
+            branch_name: "main".into(),
+            worktree_path: Some(path),
+            status: WorkspaceStatus::Active,
+            kind: WorkspaceKind::Repository,
+            agent_status: AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: String::new(),
+            sort_order: 0,
+            input_values: None,
+        };
+        (repo, ws)
+    }
+
+    /// Temp DB holding one project-chat workspace rooted at `folder`.
+    /// Returns the DB path and the workspace's default chat session id.
+    fn project_db(
+        db_dir: &std::path::Path,
+        folder: &std::path::Path,
+    ) -> (std::path::PathBuf, Workspace, String) {
+        let db_path = db_dir.join("test.db");
+        let db = Database::open(&db_path).unwrap();
+        let (repo, ws) = project_fixture(folder);
+        db.insert_repository(&repo).unwrap();
+        db.insert_workspace(&ws).unwrap();
+        let session = db.default_session_id_for_workspace("w1").unwrap().unwrap();
+        (db_path, ws, session)
+    }
+
+    async fn git_init(dir: &std::path::Path) {
+        let out = claudette::process::command(claudette::git::resolve_git_path_blocking())
+            .arg("init")
+            .arg(dir)
+            .output()
+            .await
+            .unwrap();
+        assert!(out.status.success());
+    }
+
+    #[tokio::test]
+    async fn clear_conversation_project_chat_without_baseline_errors() {
+        // FR-015
+        let db_dir = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        git_init(folder.path()).await;
+        std::fs::write(folder.path().join("keep.txt"), "user").unwrap();
+        let (db_path, ws, session) = project_db(db_dir.path(), folder.path());
+
+        let err = restore_files_for_clear(&db_path, &ws, &session)
+            .await
+            .unwrap_err();
+        assert_eq!(err, "No starting state to restore for this chat");
+        assert_eq!(
+            std::fs::read_to_string(folder.path().join("keep.txt")).unwrap(),
+            "user"
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_conversation_project_chat_restores_baseline() {
+        // FR-015
+        let db_dir = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        git_init(folder.path()).await;
+        std::fs::write(folder.path().join("a.txt"), "before").unwrap();
+        let (db_path, ws, session) = project_db(db_dir.path(), folder.path());
+        let folder_str = folder.path().to_str().unwrap();
+        claudette::chat::create_session_baseline(&db_path, "w1", &session, folder_str)
+            .await
+            .expect("baseline");
+
+        std::fs::write(folder.path().join("a.txt"), "agent").unwrap();
+        std::fs::write(folder.path().join("b.txt"), "agent").unwrap();
+
+        restore_files_for_clear(&db_path, &ws, &session)
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(folder.path().join("a.txt")).unwrap(),
+            "before"
+        );
+        assert!(!folder.path().join("b.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn clear_conversation_project_chat_refuses_file_less_baseline() {
+        // FR-015: a baseline whose files were purged must not wipe the folder.
+        let db_dir = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        git_init(folder.path()).await;
+        std::fs::write(folder.path().join("keep.txt"), "user").unwrap();
+        let (db_path, ws, session) = project_db(db_dir.path(), folder.path());
+        let db = Database::open(&db_path).unwrap();
+        assert!(db.insert_session_baseline("base", "w1", &session).unwrap());
+        drop(db);
+
+        let err = restore_files_for_clear(&db_path, &ws, &session)
+            .await
+            .unwrap_err();
+        assert_eq!(err, "No starting state to restore for this chat");
+        assert!(folder.path().join("keep.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn clear_conversation_project_chat_missing_folder_errors() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let (db_path, ws, session) = project_db(db_dir.path(), folder.path());
+        let path = folder.path().to_string_lossy().into_owned();
+        drop(folder);
+
+        let err = restore_files_for_clear(&db_path, &ws, &session)
+            .await
+            .unwrap_err();
+        assert_eq!(err, format!("Project folder not found: {path}"));
     }
 }

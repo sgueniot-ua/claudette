@@ -394,6 +394,49 @@ pub async fn create_turn_checkpoint(args: CheckpointArgs<'_>) -> Option<Conversa
     Some(checkpoint)
 }
 
+/// Capture a project chat's baseline snapshot: the folder state before the
+/// session's first message, restored by "clear conversation" (FR-015).
+///
+/// Inserts a `conversation_checkpoints` row with `is_session_baseline = 1`
+/// and `turn_index = -1`, then snapshots `worktree_path` into it. At most
+/// one per session: returns `None` without touching anything when the
+/// session already has a baseline. Also returns `None` when the snapshot
+/// fails — the row is deleted then, because restoring a baseline without
+/// files would delete every file in the folder.
+pub async fn create_session_baseline(
+    db_path: &Path,
+    workspace_id: &str,
+    chat_session_id: &str,
+    worktree_path: &str,
+) -> Option<ConversationCheckpoint> {
+    let db = Database::open(db_path).ok()?;
+    let id = uuid::Uuid::new_v4().to_string();
+    if !db
+        .insert_session_baseline(&id, workspace_id, chat_session_id)
+        .ok()?
+    {
+        return None;
+    }
+    let retention_count = read_checkpoint_retention_count(&db);
+    drop(db); // release the non-Send connection before awaiting save_snapshot
+
+    let snapshot =
+        snapshot::save_snapshot(db_path, workspace_id, &id, worktree_path, retention_count).await;
+    let db = Database::open(db_path).ok()?;
+    if let Err(e) = snapshot {
+        tracing::warn!(
+            target: "claudette::chat",
+            workspace_id = %workspace_id,
+            chat_session_id = %chat_session_id,
+            error = %e,
+            "session baseline snapshot failed — baseline discarded"
+        );
+        let _ = db.delete_checkpoint(&id);
+        return None;
+    }
+    db.get_checkpoint(&id).ok().flatten()
+}
+
 /// Read the user-configured checkpoint retention count from `app_settings`,
 /// clamping to the safe range. Falls back to the default on any read /
 /// parse error so a corrupted setting can't disable file snapshots entirely.
@@ -1082,5 +1125,96 @@ mod tests {
         let db = crate::db::Database::open(&db_path).unwrap();
         let row = db.latest_checkpoint("ws-1").unwrap().expect("row present");
         assert!(!row.has_file_state, "DB-derived value agrees with payload");
+    }
+
+    async fn git_in(wt: &std::path::Path, args: &[&str]) -> String {
+        let output = crate::process::command(crate::git::resolve_git_path_blocking())
+            .arg("-C")
+            .arg(wt)
+            .args(["-c", "user.name=Test", "-c", "user.email=test@test.com"])
+            .args(args)
+            .output()
+            .await
+            .expect("spawn git");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    #[tokio::test]
+    async fn session_baseline_restores_state_before_first_message() {
+        // FR-015
+        let (dir, db_path) = make_test_db().await;
+        let wt = make_test_worktree(dir.path()).await;
+        git_in(&wt, &["add", "-A"]).await;
+        git_in(&wt, &["commit", "-m", "init"]).await;
+        // Uncommitted user edit present before the chat's first message.
+        std::fs::write(wt.join("a.txt"), "user edit").unwrap();
+
+        let baseline = create_session_baseline(&db_path, "ws-1", "cs-1", wt.to_str().unwrap())
+            .await
+            .expect("baseline created");
+        assert_eq!(baseline.turn_index, -1);
+        assert!(baseline.has_file_state);
+
+        // Agent work: edit a.txt, create b.txt, commit c.txt.
+        std::fs::write(wt.join("a.txt"), "agent").unwrap();
+        std::fs::write(wt.join("b.txt"), "new").unwrap();
+        std::fs::write(wt.join("c.txt"), "committed").unwrap();
+        git_in(&wt, &["add", "c.txt"]).await;
+        git_in(&wt, &["commit", "-m", "agent commit c"]).await;
+
+        snapshot::restore_snapshot(&db_path, &baseline.id, wt.to_str().unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(wt.join("a.txt")).unwrap(),
+            "user edit"
+        );
+        assert!(!wt.join("b.txt").exists());
+        let log = git_in(&wt, &["log", "--format=%s"]).await;
+        assert!(log.contains("agent commit c"), "no commit removed: {log}");
+    }
+
+    #[tokio::test]
+    async fn session_baseline_is_created_once_per_session() {
+        // FR-015
+        let (dir, db_path) = make_test_db().await;
+        let wt = make_test_worktree(dir.path()).await;
+        let first = create_session_baseline(&db_path, "ws-1", "cs-1", wt.to_str().unwrap())
+            .await
+            .expect("first baseline");
+        std::fs::write(wt.join("hello.txt"), "changed").unwrap();
+        assert!(
+            create_session_baseline(&db_path, "ws-1", "cs-1", wt.to_str().unwrap())
+                .await
+                .is_none(),
+            "second call is a no-op"
+        );
+        let db = crate::db::Database::open(&db_path).unwrap();
+        let stored = db.get_session_baseline("cs-1").unwrap().unwrap();
+        assert_eq!(stored.id, first.id);
+        let files = db.get_checkpoint_files(&first.id).unwrap();
+        let hello = files.iter().find(|f| f.file_path == "hello.txt").unwrap();
+        assert_eq!(hello.content.as_deref(), Some(b"hi".as_slice()));
+    }
+
+    #[tokio::test]
+    async fn session_baseline_row_removed_when_snapshot_fails() {
+        // FR-015: never keep a file-less baseline that a restore would
+        // interpret as "delete everything".
+        let (dir, db_path) = make_test_db().await;
+        let missing = dir.path().join("does-not-exist");
+        assert!(
+            create_session_baseline(&db_path, "ws-1", "cs-1", missing.to_str().unwrap())
+                .await
+                .is_none()
+        );
+        let db = crate::db::Database::open(&db_path).unwrap();
+        assert!(db.get_session_baseline("cs-1").unwrap().is_none());
     }
 }

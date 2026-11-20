@@ -89,6 +89,56 @@ impl Database {
         Ok(())
     }
 
+    /// Insert the session's baseline snapshot row (`is_session_baseline = 1`,
+    /// `turn_index = -1`, no anchor message): the folder state captured
+    /// before a project chat's first message, restored by "clear
+    /// conversation". At most one per session — returns `false` without
+    /// inserting when the session already has one.
+    pub fn insert_session_baseline(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        chat_session_id: &str,
+    ) -> Result<bool, rusqlite::Error> {
+        let inserted = self.conn.execute(
+            "INSERT INTO conversation_checkpoints
+                (id, workspace_id, chat_session_id, message_id, commit_hash, turn_index,
+                 message_count, is_session_baseline)
+             SELECT ?1, ?2, ?3, '', NULL, -1, 0, 1
+              WHERE NOT EXISTS (
+                  SELECT 1 FROM conversation_checkpoints
+                   WHERE chat_session_id = ?3 AND is_session_baseline = 1
+              )",
+            params![id, workspace_id, chat_session_id],
+        )?;
+        Ok(inserted > 0)
+    }
+
+    /// The session's baseline snapshot row, if one was captured.
+    pub fn get_session_baseline(
+        &self,
+        chat_session_id: &str,
+    ) -> Result<Option<ConversationCheckpoint>, rusqlite::Error> {
+        let sql = format!(
+            "SELECT {} FROM conversation_checkpoints \
+             WHERE chat_session_id = ?1 AND is_session_baseline = 1 LIMIT 1",
+            Self::CHECKPOINT_COLS
+        );
+        self.conn
+            .query_row(&sql, params![chat_session_id], Self::parse_checkpoint_row)
+            .optional()
+    }
+
+    /// Delete the session's baseline snapshot row (and, via cascade, its
+    /// files). Used when the conversation is cleared so the next first
+    /// message captures a fresh baseline.
+    pub fn delete_session_baseline(&self, chat_session_id: &str) -> Result<(), rusqlite::Error> {
+        if let Some(baseline) = self.get_session_baseline(chat_session_id)? {
+            self.delete_checkpoint(&baseline.id)?;
+        }
+        Ok(())
+    }
+
     fn parse_checkpoint_row(row: &rusqlite::Row) -> rusqlite::Result<ConversationCheckpoint> {
         Ok(ConversationCheckpoint {
             id: row.get(0)?,
@@ -113,7 +163,8 @@ impl Database {
         workspace_id: &str,
     ) -> Result<Vec<ConversationCheckpoint>, rusqlite::Error> {
         let sql = format!(
-            "SELECT {} FROM conversation_checkpoints WHERE workspace_id = ?1 ORDER BY turn_index",
+            "SELECT {} FROM conversation_checkpoints \
+             WHERE workspace_id = ?1 AND is_session_baseline = 0 ORDER BY turn_index",
             Self::CHECKPOINT_COLS
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -126,7 +177,8 @@ impl Database {
         chat_session_id: &str,
     ) -> Result<Vec<ConversationCheckpoint>, rusqlite::Error> {
         let sql = format!(
-            "SELECT {} FROM conversation_checkpoints WHERE chat_session_id = ?1 ORDER BY turn_index",
+            "SELECT {} FROM conversation_checkpoints \
+             WHERE chat_session_id = ?1 AND is_session_baseline = 0 ORDER BY turn_index",
             Self::CHECKPOINT_COLS
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -182,7 +234,8 @@ impl Database {
     ) -> Result<Option<ConversationCheckpoint>, rusqlite::Error> {
         let sql = format!(
             "SELECT {} FROM conversation_checkpoints \
-             WHERE workspace_id = ?1 ORDER BY turn_index DESC LIMIT 1",
+             WHERE workspace_id = ?1 AND is_session_baseline = 0 \
+             ORDER BY turn_index DESC LIMIT 1",
             Self::CHECKPOINT_COLS
         );
         self.conn
@@ -217,7 +270,8 @@ impl Database {
     ) -> Result<Vec<ConversationCheckpoint>, rusqlite::Error> {
         let sql = format!(
             "SELECT {} FROM conversation_checkpoints \
-             WHERE workspace_id = ?1 AND turn_index <= ?2 ORDER BY turn_index",
+             WHERE workspace_id = ?1 AND is_session_baseline = 0 AND turn_index <= ?2 \
+             ORDER BY turn_index",
             Self::CHECKPOINT_COLS
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -518,11 +572,17 @@ impl Database {
         // snapshot even though their `checkpoint_files` rows were already
         // pruned earlier and there is no work to do for them — making
         // snapshot cost O(total history) rather than O(retained-with-files).
+        //
+        // Session baselines (`is_session_baseline = 1`) are excluded: they
+        // are the only way to restore a project chat to its pre-conversation
+        // state, so their files are never pruned and they don't consume a
+        // retention slot.
         let deleted = tx.execute(
             "DELETE FROM checkpoint_files
              WHERE checkpoint_id IN (
                  SELECT id FROM conversation_checkpoints
                   WHERE workspace_id = ?1
+                    AND is_session_baseline = 0
                     AND EXISTS(
                         SELECT 1 FROM checkpoint_files
                          WHERE checkpoint_id = conversation_checkpoints.id
@@ -3702,5 +3762,136 @@ mod tests {
             1,
             "shared blob must survive because w2 still references it"
         );
+    }
+
+    // --- Session baseline (project chats, FR-015) ---
+
+    #[test]
+    fn session_baseline_hidden_from_checkpoint_lists() {
+        // FR-015
+        let db = setup_db_with_workspace();
+        let session = session_of(&db, "w1");
+        db.insert_chat_message(&make_chat_msg(&db, "m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        assert!(db.insert_session_baseline("base", "w1", &session).unwrap());
+        db.insert_checkpoint(&make_checkpoint(&db, "cp1", "w1", "m1", 0))
+            .unwrap();
+
+        let baseline = db.get_session_baseline(&session).unwrap().unwrap();
+        assert_eq!(baseline.id, "base");
+        assert_eq!(baseline.turn_index, -1);
+        assert_eq!(baseline.message_id, "");
+
+        let ids = |cps: Vec<ConversationCheckpoint>| -> Vec<String> {
+            cps.into_iter().map(|c| c.id).collect()
+        };
+        assert_eq!(ids(db.list_checkpoints("w1").unwrap()), vec!["cp1"]);
+        assert_eq!(
+            ids(db.list_checkpoints_for_session(&session).unwrap()),
+            vec!["cp1"]
+        );
+        assert_eq!(
+            ids(db.list_checkpoints_up_to("w1", 5).unwrap()),
+            vec!["cp1"]
+        );
+        assert_eq!(db.latest_checkpoint("w1").unwrap().unwrap().id, "cp1");
+        // Give the baseline an activity row so the turn loader would surface
+        // it if it were not filtered out.
+        db.insert_turn_tool_activities(&[make_tool_activity("a1", "base", "Edit", 0)])
+            .unwrap();
+        let turns = db.list_completed_turns_for_session(&session).unwrap();
+        assert!(turns.iter().all(|t| t.checkpoint_id != "base"));
+        let turns = db.list_completed_turns("w1").unwrap();
+        assert!(turns.iter().all(|t| t.checkpoint_id != "base"));
+    }
+
+    #[test]
+    fn session_baseline_hidden_from_latest_checkpoint_when_alone() {
+        // FR-015: the first turn after a baseline still gets turn_index 0.
+        let db = setup_db_with_workspace();
+        let session = session_of(&db, "w1");
+        assert!(db.insert_session_baseline("base", "w1", &session).unwrap());
+        assert!(db.latest_checkpoint("w1").unwrap().is_none());
+    }
+
+    #[test]
+    fn session_baseline_inserted_at_most_once_per_session() {
+        // FR-015
+        let db = setup_db_with_workspace();
+        let session = session_of(&db, "w1");
+        assert!(db.insert_session_baseline("base", "w1", &session).unwrap());
+        assert!(!db.insert_session_baseline("base2", "w1", &session).unwrap());
+        assert_eq!(
+            db.get_session_baseline(&session).unwrap().unwrap().id,
+            "base"
+        );
+    }
+
+    #[test]
+    fn session_baseline_survives_retention_pruning() {
+        // FR-015 (Review Focus 4)
+        let db = setup_db_with_workspace();
+        let session = session_of(&db, "w1");
+        assert!(db.insert_session_baseline("base", "w1", &session).unwrap());
+        db.insert_checkpoint_files_and_prune("w1", &[raw_file("fb", "base", "a.txt", b"base")], 1)
+            .unwrap();
+        for turn in 0..5 {
+            let msg = format!("m{turn}");
+            let cp = format!("cp{turn}");
+            db.insert_chat_message(&make_chat_msg(&db, &msg, "w1", ChatRole::User, "q"))
+                .unwrap();
+            db.insert_checkpoint(&make_checkpoint(&db, &cp, "w1", &msg, turn))
+                .unwrap();
+            let bytes = format!("turn {turn}");
+            db.insert_checkpoint_files_and_prune(
+                "w1",
+                &[raw_file(
+                    &format!("f{turn}"),
+                    &cp,
+                    "a.txt",
+                    bytes.as_bytes(),
+                )],
+                1,
+            )
+            .unwrap();
+        }
+
+        assert!(db.has_checkpoint_files("base").unwrap());
+        let with_files: Vec<String> = (0..5)
+            .map(|t| format!("cp{t}"))
+            .filter(|cp| db.has_checkpoint_files(cp).unwrap())
+            .collect();
+        // The baseline does not consume the single retention slot.
+        assert_eq!(with_files, vec!["cp4"]);
+    }
+
+    #[test]
+    fn session_baseline_survives_rollback_and_is_removed_by_clear() {
+        // FR-015
+        let db = setup_db_with_workspace();
+        let session = session_of(&db, "w1");
+        db.insert_chat_message(&make_chat_msg(&db, "m1", "w1", ChatRole::User, "q1"))
+            .unwrap();
+        assert!(db.insert_session_baseline("base", "w1", &session).unwrap());
+        db.insert_checkpoint(&make_checkpoint(&db, "cp0", "w1", "m1", 0))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint(&db, "cp1", "w1", "m1", 1))
+            .unwrap();
+
+        // Rollback to turn 0 keeps the baseline.
+        db.delete_session_checkpoints_after(&session, 0).unwrap();
+        assert!(db.get_session_baseline(&session).unwrap().is_some());
+
+        // Clear removes every checkpoint, the baseline included.
+        db.delete_session_checkpoints_after(&session, -1).unwrap();
+        db.delete_session_baseline(&session).unwrap();
+        assert!(db.get_session_baseline(&session).unwrap().is_none());
+        assert!(
+            db.list_checkpoints_for_session(&session)
+                .unwrap()
+                .is_empty()
+        );
+        // A new baseline can be captured afterwards.
+        assert!(db.insert_session_baseline("base2", "w1", &session).unwrap());
     }
 }

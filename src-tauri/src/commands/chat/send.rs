@@ -1227,6 +1227,20 @@ pub async fn send_chat_message(
         from_config.or_else(|| repo.as_ref().and_then(|r| r.custom_instructions.clone()))
     };
 
+    // Project chat about to run its first turn: snapshot the folder so
+    // "clear conversation" can bring it back to this state (FR-015). Done
+    // before taking the agents lock — the snapshot is file + DB I/O. No-op
+    // when the session already has a baseline (e.g. after a rollback).
+    if ws.is_repository_rooted() && chat_session.turn_count == 0 {
+        claudette::chat::create_session_baseline(
+            &state.db_path,
+            &workspace_id,
+            &chat_session_id,
+            &worktree_path,
+        )
+        .await;
+    }
+
     // Agents are keyed by the `chat_sessions.id` of the target tab. The
     // workspace id is carried alongside so tray/notification code can group
     // per workspace.
