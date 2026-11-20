@@ -37,8 +37,12 @@ export function ProjectChatsSection({ repoId }: { repoId: string }) {
     () => sessions.filter((x) => x.status === "Active"),
     [sessions],
   );
+  // open_project_chat is local-only: a paired server's repo has no project chats.
+  const isRemoteRepo = useAppStore((s) =>
+    Boolean(s.repositories.find((r) => r.id === repoId)?.remote_connection_id),
+  );
   const [opening, setOpening] = useState(false);
-  const projectWsId = projectWs?.id;
+  const projectWsId = isRemoteRepo ? undefined : projectWs?.id;
 
   useEffect(() => {
     if (!projectWsId) return;
@@ -85,6 +89,8 @@ export function ProjectChatsSection({ repoId }: { repoId: string }) {
       setOpening(false);
     }
   }, [opening, repoId, openSession, t]);
+
+  if (isRemoteRepo) return null;
 
   return (
     <div className={styles.section}>

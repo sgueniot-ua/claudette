@@ -29,6 +29,18 @@ export function filterSidebarWorkspaces(
   });
 }
 
+/**
+ * True when the user has no local workspace the sidebar could ever show
+ * (archived ones included). The project chat workspace does not count: a
+ * repo holding only project chats still offers "New workspace".
+ */
+export function hasNoSidebarWorkspaces(workspaces: readonly Workspace[]): boolean {
+  return (
+    filterSidebarWorkspaces(workspaces, { showArchived: true, repoFilter: "all" })
+      .length === 0
+  );
+}
+
 export type StatusBucketKey =
   | "in-progress"
   | "in-review"

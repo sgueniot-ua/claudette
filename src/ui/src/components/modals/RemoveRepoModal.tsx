@@ -18,7 +18,11 @@ export function RemoveRepoModal() {
   const repoId = modalData.repoId as string;
   const repoName = modalData.repoName as string;
 
-  const affected = workspaces.filter((w) => w.repository_id === repoId);
+  // The project chat workspace runs in the repository folder itself, which
+  // removing the repository leaves untouched: it is not a destroyed worktree.
+  const affected = workspaces.filter(
+    (w) => w.repository_id === repoId && w.kind !== "repository",
+  );
   const active = affected.filter((w) => w.status === "Active").length;
   const archived = affected.filter((w) => w.status === "Archived").length;
 

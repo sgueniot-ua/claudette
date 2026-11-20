@@ -41,6 +41,7 @@ import {
   buildStatusBuckets,
   computeStatusVisibleWorkspaces,
   filterSidebarWorkspaces,
+  hasNoSidebarWorkspaces,
   STATUS_BUCKET_ORDER,
 } from "../../utils/sidebarJumpTargets";
 import {
@@ -1000,7 +1001,7 @@ export const Sidebar = memo(function Sidebar() {
                 (sidebarRepoFilter === "all" || ws.repository_id === sidebarRepoFilter)
             );
           const repoFilterActive = sidebarRepoFilter !== "all";
-          const hasNoWorkspaces = !workspaces.some((ws) => !ws.remote_connection_id);
+          const hasNoWorkspaces = hasNoSidebarWorkspaces(workspaces);
           const targetRepo = repoFilterActive
             ? localRepos.find((r) => r.id === sidebarRepoFilter && r.path_valid)
             : localRepos.find((r) => r.path_valid);

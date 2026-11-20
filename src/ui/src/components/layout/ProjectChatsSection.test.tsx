@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatSession } from "../../types/chat";
+import type { Repository } from "../../types/repository";
 import type { Workspace } from "../../types/workspace";
 import { useAppStore } from "../../stores/useAppStore";
 
@@ -88,6 +89,7 @@ beforeEach(() => {
   openProjectChat.mockReset();
   listChatSessions.mockResolvedValue([]);
   useAppStore.setState({
+    repositories: [],
     workspaces: [],
     sessionsByWorkspace: {},
     selectedSessionIdByWorkspaceId: {},
@@ -170,6 +172,34 @@ describe("ProjectChatsSection", () => {
     const s = useAppStore.getState();
     expect(s.selectedWorkspaceId).toBe("w-project");
     expect(s.selectedSessionIdByWorkspaceId["w-project"]).toBe("s2");
+  });
+
+  it("is hidden for a paired server's repository", async () => {
+    // open_project_chat only works on local repositories.
+    const remoteRepo: Repository = {
+      id: "r1",
+      path: "/repo",
+      name: "repo",
+      path_slug: "repo",
+      icon: null,
+      created_at: "2026-01-01T00:00:00Z",
+      setup_script: null,
+      custom_instructions: null,
+      sort_order: 0,
+      branch_rename_preferences: null,
+      setup_script_auto_run: false,
+      archive_script: null,
+      archive_script_auto_run: false,
+      base_branch: null,
+      default_remote: null,
+      required_inputs: null,
+      path_valid: true,
+      remote_connection_id: "conn-1",
+    };
+    useAppStore.setState({ repositories: [remoteRepo] });
+    const c = await renderSection();
+    expect(c.textContent).toBe("");
+    expect(listChatSessions).not.toHaveBeenCalled();
   });
 
   it("new chat failure shows a toast", async () => {

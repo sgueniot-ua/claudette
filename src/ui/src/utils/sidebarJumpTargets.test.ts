@@ -5,6 +5,7 @@ import {
   bucketForWorkspace,
   computeStatusVisibleWorkspaces,
   filterSidebarWorkspaces,
+  hasNoSidebarWorkspaces,
   STATUS_BUCKET_ORDER,
   statusBucketGroupKey,
 } from "./sidebarJumpTargets";
@@ -157,5 +158,20 @@ describe("filterSidebarWorkspaces", () => {
       { showArchived: false, repoFilter: "repo-2" },
     );
     expect(out.map((w) => w.id)).toEqual(["other-repo"]);
+  });
+});
+
+describe("hasNoSidebarWorkspaces", () => {
+  it("ignores the project chat workspace", () => { // FR-013
+    const project = workspace("project", { kind: "repository" });
+    expect(hasNoSidebarWorkspaces([project])).toBe(true);
+    expect(hasNoSidebarWorkspaces([project, workspace("local")])).toBe(false);
+  });
+
+  it("counts archived local rows but not remote ones", () => {
+    expect(hasNoSidebarWorkspaces([workspace("a", { status: "Archived" })])).toBe(false);
+    expect(
+      hasNoSidebarWorkspaces([workspace("r", { remote_connection_id: "conn-1" })]),
+    ).toBe(true);
   });
 });

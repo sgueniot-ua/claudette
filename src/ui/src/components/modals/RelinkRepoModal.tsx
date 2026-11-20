@@ -11,6 +11,7 @@ export function RelinkRepoModal() {
   const closeModal = useAppStore((s) => s.closeModal);
   const modalData = useAppStore((s) => s.modalData);
   const updateRepo = useAppStore((s) => s.updateRepository);
+  const updateWorkspace = useAppStore((s) => s.updateWorkspace);
 
   const repoId = modalData.repoId as string;
   const repoName = modalData.repoName as string;
@@ -26,6 +27,11 @@ export function RelinkRepoModal() {
     try {
       await relinkRepository(repoId, path.trim());
       updateRepo(repoId, { path: path.trim(), path_valid: true });
+      // The backend moves the project chat workspace with the repository.
+      const projectWs = useAppStore
+        .getState()
+        .workspaces.find((w) => w.repository_id === repoId && w.kind === "repository");
+      if (projectWs) updateWorkspace(projectWs.id, { worktree_path: path.trim() });
       closeModal();
     } catch (e) {
       setError(String(e));
