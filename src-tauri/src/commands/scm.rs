@@ -52,6 +52,9 @@ struct ScmPollSettingsSnapshot {
     /// `workspace_id` → `created_at`, so the auto-archive gate can reject a
     /// merged PR that predates the workspace without a second DB round-trip.
     workspace_created_at: HashMap<String, String>,
+    /// Workspaces no SCM automation may act on (project chats, FR-018).
+    /// They are still polled so their PR / CI status keeps displaying.
+    automation_refused: std::collections::HashSet<String>,
     global_archive: bool,
     per_repo_archive: HashMap<String, bool>,
     global_ci_auto_fix: bool,
@@ -61,6 +64,28 @@ struct ScmPollSettingsSnapshot {
     ci_auto_fix_cooldown: u64,
     ci_auto_fix_model: Option<String>,
     ci_auto_fix_model_provider: Option<String>,
+}
+
+impl ScmPollSettingsSnapshot {
+    /// Whether a merged PR may auto-archive `ws_id` (FR-018).
+    fn archive_on_merge_enabled(&self, ws_id: &str, repo_id: &str) -> bool {
+        !self.automation_refused.contains(ws_id)
+            && self
+                .per_repo_archive
+                .get(repo_id)
+                .copied()
+                .unwrap_or(self.global_archive)
+    }
+
+    /// Whether a CI failure may start an auto-fix session in `ws_id` (FR-018).
+    fn ci_auto_fix_enabled(&self, ws_id: &str, repo_id: &str) -> bool {
+        !self.automation_refused.contains(ws_id)
+            && self
+                .per_repo_ci_auto_fix
+                .get(repo_id)
+                .copied()
+                .unwrap_or(self.global_ci_auto_fix)
+    }
 }
 
 /// DB lookup result for workspace + repo + manual provider override.
@@ -1659,6 +1684,11 @@ fn load_scm_poll_settings_snapshot(db: &Database) -> ScmPollSettingsSnapshot {
         .iter()
         .map(|ws| (ws.id.clone(), ws.created_at.clone()))
         .collect();
+    let automation_refused: std::collections::HashSet<String> = active_workspaces
+        .iter()
+        .filter(|ws| !ws.allows_scm_automation())
+        .map(|ws| ws.id.clone())
+        .collect();
     let active: Vec<(String, String)> = active_workspaces
         .into_iter()
         .map(|ws| (ws.id, ws.repository_id))
@@ -1762,6 +1792,7 @@ fn load_scm_poll_settings_snapshot(db: &Database) -> ScmPollSettingsSnapshot {
     ScmPollSettingsSnapshot {
         workspace_ids: active,
         workspace_created_at,
+        automation_refused,
         global_archive,
         per_repo_archive,
         global_ci_auto_fix,
@@ -1805,7 +1836,7 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
         loop {
             let app_state = handle.state::<AppState>();
 
-            let settings = {
+            let mut settings = {
                 let db = match Database::open(&app_state.db_path) {
                     Ok(db) => db,
                     Err(_) => {
@@ -1833,8 +1864,7 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
             let now = Instant::now();
 
             // Filter down to workspaces that are actually due on this tick.
-            let due: Vec<(String, String)> = settings
-                .workspace_ids
+            let due: Vec<(String, String)> = std::mem::take(&mut settings.workspace_ids)
                 .into_iter()
                 .filter(|(ws_id, _)| {
                     let interval = tier_interval(
@@ -1889,11 +1919,7 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
 
                     let _ = handle.emit("scm-data-updated", &detail);
 
-                    let should_archive = settings
-                        .per_repo_archive
-                        .get(&repo_id)
-                        .copied()
-                        .unwrap_or(settings.global_archive);
+                    let should_archive = settings.archive_on_merge_enabled(&ws_id, &repo_id);
 
                     // Read the prior observation *before* recording this
                     // poll's, so a non-merged→merged transition is still
@@ -1954,11 +1980,7 @@ pub fn start_scm_polling(app_handle: tauri::AppHandle) {
                     }
 
                     // CI auto-fix: detect failure transitions
-                    let ci_auto_fix_enabled = settings
-                        .per_repo_ci_auto_fix
-                        .get(&repo_id)
-                        .copied()
-                        .unwrap_or(settings.global_ci_auto_fix);
+                    let ci_auto_fix_enabled = settings.ci_auto_fix_enabled(&ws_id, &repo_id);
 
                     if ci_auto_fix_enabled {
                         let current_status =
@@ -2177,6 +2199,11 @@ async fn auto_create_ci_fix_session(
             return false;
         }
     };
+    // Safety net behind the poll gate: never start an agent in the user's
+    // own checkout (FR-018).
+    if !ctx.workspace.allows_scm_automation() {
+        return false;
+    }
     let ws_info = make_workspace_info(&ctx.workspace, &ctx.repo);
     let branch = ctx.workspace.branch_name.as_str();
     let mut failure_logs: Vec<CiFailureLog> = Vec::new();
@@ -2347,6 +2374,12 @@ async fn auto_archive_workspace(
             Some(ws) => ws,
             None => return,
         };
+        // Safety net behind the poll gate: never archive, delete or kill
+        // the agents of a project-chat workspace (FR-018).
+        if !ws.allows_scm_automation() {
+            tracing::info!(target: "claudette::scm", workspace_id, "declining auto-archive — project chat workspace");
+            return;
+        }
         let repo_path = db
             .get_repository(&ws.repository_id)
             .ok()
@@ -2855,6 +2888,47 @@ mod tests {
             entry.last_fetched.elapsed().as_secs() >= 30,
             "seeded last_fetched must be older than the 30s polling freshness window",
         );
+    }
+
+    // FR-018
+    #[test]
+    fn scm_automations_never_apply_to_project_chat_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("claudette.db")).unwrap();
+        db.insert_repository(&fixture_repo("r1", "/tmp/repo1"))
+            .unwrap();
+        let mut worktree = fixture_workspace("w1", "r1", "feature/x");
+        worktree.worktree_path = Some("/tmp/wt/w1".into());
+        db.insert_workspace(&worktree).unwrap();
+        let mut project = fixture_workspace("p1", "r1", "main");
+        project.name = "@project".into();
+        project.kind = claudette::model::WorkspaceKind::Repository;
+        project.worktree_path = Some("/tmp/repo1".into());
+        db.insert_workspace(&project).unwrap();
+        db.set_app_setting("archive_on_merge", "true").unwrap();
+        db.set_app_setting("ci_auto_fix_enabled", "true").unwrap();
+
+        let settings = load_scm_poll_settings_snapshot(&db);
+
+        // The project row is still polled so its PR / CI status displays.
+        assert!(
+            settings
+                .workspace_ids
+                .contains(&("p1".to_string(), "r1".to_string()))
+        );
+        assert!(settings.archive_on_merge_enabled("w1", "r1"));
+        assert!(settings.ci_auto_fix_enabled("w1", "r1"));
+        assert!(!settings.archive_on_merge_enabled("p1", "r1"));
+        assert!(!settings.ci_auto_fix_enabled("p1", "r1"));
+
+        // A per-repo opt-in does not override the refusal.
+        db.set_app_setting("repo:r1:archive_on_merge", "true")
+            .unwrap();
+        db.set_app_setting("repo:r1:ci_auto_fix_enabled", "true")
+            .unwrap();
+        let settings = load_scm_poll_settings_snapshot(&db);
+        assert!(!settings.archive_on_merge_enabled("p1", "r1"));
+        assert!(!settings.ci_auto_fix_enabled("p1", "r1"));
     }
 
     #[tokio::test]

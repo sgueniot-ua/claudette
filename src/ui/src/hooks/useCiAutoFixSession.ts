@@ -5,6 +5,7 @@ import { shouldDisable1mContext } from "../components/chat/chatHelpers";
 import { getChatSession, sendChatMessage } from "../services/tauri";
 import { useAppStore } from "../stores/useAppStore";
 import type { CiCheck } from "../types/plugin";
+import type { Workspace } from "../types/workspace";
 
 interface CiAutoFixSessionCreatedPayload {
   workspace_id: string;
@@ -13,6 +14,15 @@ interface CiAutoFixSessionCreatedPayload {
   failed_checks: CiCheck[];
   model: string | null;
   backend_id: string | null;
+}
+
+/** CI auto-fix never sends a prompt in a project chat: the agent would run
+ *  unprompted in the user's own checkout (FR-018). */
+export function ciAutoFixAllowed(
+  workspaces: Workspace[],
+  workspaceId: string,
+): boolean {
+  return workspaces.find((w) => w.id === workspaceId)?.kind !== "repository";
 }
 
 export function useCiAutoFixSession() {
@@ -27,6 +37,7 @@ export function useCiAutoFixSession() {
         const { workspace_id, session_id, prompt, model, backend_id } =
           event.payload;
         const store = useAppStore.getState();
+        if (!ciAutoFixAllowed(store.workspaces, workspace_id)) return;
 
         try {
           const session = await getChatSession(session_id);

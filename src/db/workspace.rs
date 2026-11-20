@@ -122,15 +122,18 @@ impl Database {
         Ok(())
     }
 
-    /// The single `repository`-kind workspace of a repo, if one exists.
+    /// The single `repository`-kind workspace of a repo, if one exists and
+    /// is Active. A non-active row is never returned: chats added to it
+    /// could not run (it has no folder).
     pub fn find_repository_workspace(
         &self,
         repo_id: &str,
     ) -> Result<Option<Workspace>, rusqlite::Error> {
-        Ok(self
-            .list_workspaces()?
-            .into_iter()
-            .find(|w| w.repository_id == repo_id && w.kind == WorkspaceKind::Repository))
+        Ok(self.list_workspaces()?.into_iter().find(|w| {
+            w.repository_id == repo_id
+                && w.kind == WorkspaceKind::Repository
+                && w.status == WorkspaceStatus::Active
+        }))
     }
 
     pub fn list_workspaces(&self) -> Result<Vec<Workspace>, rusqlite::Error> {
@@ -961,6 +964,21 @@ mod tests {
                 _
             )
         ));
+    }
+
+    #[test]
+    fn find_repository_workspace_ignores_non_active_row() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspace(&repo_rooted("p1", "r1")).unwrap();
+        assert_eq!(
+            db.find_repository_workspace("r1").unwrap().map(|w| w.id),
+            Some("p1".to_string())
+        );
+        db.update_workspace_status("p1", &WorkspaceStatus::Archived, None)
+            .unwrap();
+        assert!(db.find_repository_workspace("r1").unwrap().is_none());
     }
 
     #[test]

@@ -138,6 +138,13 @@ impl Workspace {
     pub fn is_repository_rooted(&self) -> bool {
         self.kind == WorkspaceKind::Repository
     }
+
+    /// False for repository-rooted workspaces: no SCM automation (archive on
+    /// merge, CI auto-fix) may start an agent in, archive, delete or modify
+    /// the user's own checkout and its project chats (FR-018).
+    pub fn allows_scm_automation(&self) -> bool {
+        !self.is_repository_rooted()
+    }
 }
 
 #[cfg(test)]
@@ -150,5 +157,29 @@ mod tests {
             assert_eq!(k.as_str().parse::<WorkspaceKind>().unwrap(), k);
         }
         assert!("bogus".parse::<WorkspaceKind>().is_err());
+    }
+
+    fn workspace_of_kind(kind: WorkspaceKind) -> Workspace {
+        Workspace {
+            id: "w".into(),
+            repository_id: "r".into(),
+            name: "w".into(),
+            branch_name: "main".into(),
+            worktree_path: Some("/tmp/w".into()),
+            status: WorkspaceStatus::Active,
+            kind,
+            agent_status: AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: String::new(),
+            sort_order: 0,
+            input_values: None,
+        }
+    }
+
+    // FR-018
+    #[test]
+    fn scm_automation_is_refused_for_repository_workspaces() {
+        assert!(workspace_of_kind(WorkspaceKind::Worktree).allows_scm_automation());
+        assert!(!workspace_of_kind(WorkspaceKind::Repository).allows_scm_automation());
     }
 }

@@ -379,6 +379,18 @@ pub async fn open_project_chat(
         let session = db.create_chat_session(&workspace.id)?;
         return Ok(ProjectChatOutput { workspace, session });
     }
+    // A non-active project-chat row (left by an older build) is neither
+    // reused nor resurrected: its chats could not run, and reviving it
+    // would need git work in the user's checkout.
+    if db
+        .list_workspaces()?
+        .iter()
+        .any(|w| w.repository_id == repo_id && w.is_repository_rooted())
+    {
+        return Err(OpsError::Validation(
+            "This repository's project chat workspace is archived".to_string(),
+        ));
+    }
 
     let branch_name = match git::current_branch(&repo.path).await {
         Ok(branch) => branch,
@@ -1605,6 +1617,42 @@ mod tests {
             }
             other => panic!("expected Validation, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_refuses_archived_project_workspace() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let p = repo_dir.path();
+        let chat = open_project_chat(&mut db, &repo.id).await.unwrap();
+        db.update_workspace_status(&chat.workspace.id, &WorkspaceStatus::Archived, None)
+            .unwrap();
+        let before = (
+            git_out(p, &["worktree", "list", "--porcelain"]).await,
+            git_out(p, &["branch", "--list"]).await,
+            dir_listing(p),
+        );
+
+        let res = open_project_chat(&mut db, &repo.id).await;
+
+        assert!(matches!(&res, Err(OpsError::Validation(_))), "got {res:?}");
+        let sessions = db
+            .list_chat_sessions_for_workspace(&chat.workspace.id, false)
+            .unwrap();
+        assert_eq!(sessions.len(), 1, "no session added to the archived row");
+        assert_eq!(
+            db.list_workspaces()
+                .unwrap()
+                .iter()
+                .filter(|w| w.is_repository_rooted())
+                .count(),
+            1
+        );
+        let after = (
+            git_out(p, &["worktree", "list", "--porcelain"]).await,
+            git_out(p, &["branch", "--list"]).await,
+            dir_listing(p),
+        );
+        assert_eq!(before, after);
     }
 
     #[tokio::test]
