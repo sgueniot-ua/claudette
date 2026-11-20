@@ -82,6 +82,7 @@ struct WorkspaceMergeBaseInputs {
     repo_path: String,
     base_branch: Option<String>,
     default_remote: Option<String>,
+    kind: crate::model::WorkspaceKind,
 }
 
 /// Resolve the workspace's merge-base SHA against its repository's base branch.
@@ -133,12 +134,21 @@ pub fn resolve_workspace_merge_base(
             repo_path: repo.path.clone(),
             base_branch: repo.base_branch.clone(),
             default_remote: repo.default_remote.clone(),
+            kind: ws.kind,
         })
     })();
 
     // The returned async block owns only `inputs_result` (no &Database).
     async move {
         let inputs = inputs_result?;
+
+        // Project chat: the diff is the uncommitted changes (base = HEAD).
+        if inputs.kind == crate::model::WorkspaceKind::Repository {
+            let head = crate::git::head_commit(&inputs.worktree_path)
+                .await
+                .map_err(|e| e.to_string())?;
+            return Ok((head, inputs.worktree_path));
+        }
 
         let base_branch = match inputs.base_branch {
             Some(b) => b,
@@ -2197,5 +2207,31 @@ mod integration_tests {
             .expect("resolve_workspace_merge_base should succeed");
 
         assert_eq!(got_sha, expected);
+    }
+
+    #[tokio::test]
+    async fn resolve_workspace_merge_base_uses_head_for_repository() {
+        // Project chat: the diff base is HEAD so only uncommitted changes show.
+        let tmp = tempfile::tempdir().unwrap();
+        setup_diverged_test_repo(tmp.path());
+        let head = git_cmd(tmp.path(), &["rev-parse", "HEAD"]);
+
+        let db = crate::db::Database::open_in_memory().unwrap();
+        let mut repo =
+            crate::db::test_support::make_repo("r1", tmp.path().to_str().unwrap(), "test-repo");
+        repo.base_branch = Some("main".into());
+        db.insert_repository(&repo).unwrap();
+
+        let mut ws = crate::db::test_support::make_workspace("w1", "r1", "@project");
+        ws.kind = crate::model::WorkspaceKind::Repository;
+        ws.worktree_path = Some(tmp.path().to_str().unwrap().into());
+        db.insert_workspace(&ws).unwrap();
+
+        let (got_sha, got_path) = resolve_workspace_merge_base(&db, "w1")
+            .await
+            .expect("resolve_workspace_merge_base should succeed");
+
+        assert_eq!(got_sha, head);
+        assert_eq!(got_path, tmp.path().to_str().unwrap());
     }
 }

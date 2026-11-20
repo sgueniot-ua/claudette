@@ -22,8 +22,8 @@ use std::path::{Path, PathBuf};
 use crate::db::Database;
 use crate::git;
 use crate::model::{
-    AgentStatus, ChatMessage, CheckpointFile, ConversationCheckpoint, TurnToolActivity, Workspace,
-    WorkspaceStatus,
+    AgentStatus, ChatMessage, CheckpointFile, ConversationCheckpoint, Repository, TurnToolActivity,
+    Workspace, WorkspaceStatus,
 };
 use crate::snapshot;
 use crate::workspace_alloc::{
@@ -127,6 +127,29 @@ pub struct ForkOutcome {
     pub session_resumed: bool,
 }
 
+/// Name requested from the allocator for a fork of `source_ws`. A
+/// repository-rooted workspace is named "@project", which is not a valid
+/// workspace name, so its fork is named after the repository instead.
+fn fork_requested_name(source_ws: &Workspace, repo: &Repository) -> String {
+    if !source_ws.is_repository_rooted() {
+        return format!("{}-fork", source_ws.name);
+    }
+    let slug: String = repo
+        .name
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let slug = slug.trim_matches('-');
+    format!("{}-fork", if slug.is_empty() { "project" } else { slug })
+}
+
 /// Takes `&mut Database` so the returned future is `Send` — `Database` wraps
 /// a `rusqlite::Connection` (holds a `RefCell`), making `&Database: !Send`.
 /// Exclusive access lets us keep the reference across the single `await`.
@@ -185,7 +208,7 @@ pub async fn fork_workspace_at_checkpoint(
     } = allocate_workspace_name(
         &repo,
         &workspaces,
-        &format!("{}-fork", source_ws.name),
+        &fork_requested_name(&source_ws, &repo),
         inputs.branch_prefix,
         inputs.worktree_base,
     )
@@ -1298,6 +1321,91 @@ mod tests {
             "fork must not have repurposed the orphan dir at {}",
             orphan_dir.display()
         );
+    }
+
+    #[test]
+    fn fork_requested_name_uses_repo_name_for_repository() {
+        // FR-016
+        let mut repo = make_repo("r1");
+        let mut ws = make_workspace("w1", "r1", "@project");
+        assert_eq!(fork_requested_name(&ws, &repo), "@project-fork");
+        ws.kind = crate::model::WorkspaceKind::Repository;
+        repo.name = "My Repo!".into();
+        assert_eq!(fork_requested_name(&ws, &repo), "my-repo-fork");
+        repo.name = "!!!".into();
+        assert_eq!(fork_requested_name(&ws, &repo), "project-fork");
+        repo.name = "-a_b-".into();
+        assert_eq!(fork_requested_name(&ws, &repo), "a-b-fork");
+    }
+
+    #[tokio::test]
+    async fn fork_from_repository_workspace_creates_worktree_workspace() {
+        // FR-016
+        let (repo_dir, head) = setup_real_repo();
+        let repo_path = repo_dir.path().to_string_lossy().to_string();
+        let mut db = Database::open_in_memory().unwrap();
+        let mut repo = make_repo("r1");
+        repo.path = repo_path.clone();
+        db.insert_repository(&repo).unwrap();
+        let chat = crate::ops::workspace::open_project_chat(&mut db, "r1")
+            .await
+            .unwrap();
+        let src_id = chat.workspace.id.clone();
+        let session_id = chat.session.id.clone();
+        db.insert_chat_message(&ChatMessage {
+            id: "m1".into(),
+            workspace_id: src_id.clone(),
+            chat_session_id: session_id.clone(),
+            role: ChatRole::User,
+            content: "hi".into(),
+            cost_usd: None,
+            duration_ms: None,
+            created_at: String::new(),
+            thinking: None,
+            input_tokens: None,
+            output_tokens: None,
+            cache_read_tokens: None,
+            cache_creation_tokens: None,
+            scheduled_task_id: None,
+        })
+        .unwrap();
+        db.insert_checkpoint(&ConversationCheckpoint {
+            id: "cp1".into(),
+            workspace_id: src_id.clone(),
+            chat_session_id: session_id,
+            message_id: "m1".into(),
+            commit_hash: Some(head),
+            has_file_state: false,
+            turn_index: 0,
+            message_count: 1,
+            created_at: String::new(),
+        })
+        .unwrap();
+
+        let worktree_base = tempfile::tempdir().unwrap();
+        let outcome = fork_workspace_at_checkpoint(
+            &mut db,
+            ForkInputs {
+                source_workspace_id: &src_id,
+                checkpoint_id: "cp1",
+                worktree_base: worktree_base.path(),
+                branch_prefix: "u/",
+                db_path: std::path::Path::new(":memory:"),
+                now_iso: || String::new(),
+            },
+        )
+        .await
+        .expect("fork from a repository workspace must succeed");
+
+        assert_eq!(
+            outcome.workspace.kind,
+            crate::model::WorkspaceKind::Worktree
+        );
+        assert_eq!(outcome.workspace.name, "repo1-fork");
+        assert_eq!(outcome.workspace.branch_name, "u/repo1-fork");
+        let wt = outcome.workspace.worktree_path.as_deref().unwrap();
+        assert!(std::path::Path::new(wt).is_dir());
+        assert_ne!(std::path::Path::new(wt), repo_dir.path());
     }
 
     // --- resolve_claude_projects_dir regression pins ---

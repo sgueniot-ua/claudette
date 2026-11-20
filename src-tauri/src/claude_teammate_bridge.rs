@@ -424,6 +424,23 @@ mod tests {
     }
 
     #[test]
+    fn select_workspace_prefers_nested_worktree_over_repository() {
+        // R11
+        let repo = tempfile::tempdir().unwrap();
+        let nested = repo.path().join(".worktrees").join("feat");
+        std::fs::create_dir_all(&nested).unwrap();
+        let workspaces = serde_json::json!([
+            {"id": "repo-ws", "name": "@project", "worktree_path": repo.path()},
+            {"id": "wt-ws", "name": "feat", "worktree_path": nested},
+        ]);
+
+        let in_worktree = select_workspace(&workspaces, &nested).unwrap();
+        assert_eq!(in_worktree.id, "wt-ws");
+        let in_repo = select_workspace(&workspaces, repo.path()).unwrap();
+        assert_eq!(in_repo.id, "repo-ws");
+    }
+
+    #[test]
     fn inbox_path_matches_claude_code_layout() {
         let path = inbox_path("worker.one", "team one");
         assert!(path.ends_with("teams/team-one/inboxes/worker-one.json"));
