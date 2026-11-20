@@ -26,6 +26,7 @@ function workspace(
     sort_order: 0,
     remote_connection_id: null,
     input_values: null,
+    kind: "worktree",
     ...overrides,
   };
 }
@@ -116,6 +117,15 @@ describe("filterSidebarWorkspaces", () => {
   const archived = workspace("local-archived", { status: "Archived" });
   const remote = workspace("remote-row", { remote_connection_id: "conn-1" });
   const otherRepo = workspace("other-repo", { repository_id: "repo-2" });
+
+  it("drops project chat workspaces", () => { // FR-013
+    const project = workspace("project", { kind: "repository" });
+    const out = filterSidebarWorkspaces(
+      [local, project],
+      { showArchived: true, repoFilter: "all" },
+    );
+    expect(out.map((w) => w.id)).toEqual(["local-active"]);
+  });
 
   it("drops remote rows unconditionally", () => {
     const out = filterSidebarWorkspaces(

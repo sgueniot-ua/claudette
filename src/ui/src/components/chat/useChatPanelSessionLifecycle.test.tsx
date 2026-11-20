@@ -90,6 +90,7 @@ function makeWorkspace(remoteConnectionId: string | null = null): Workspace {
     created_at: "2026-05-20T00:00:00.000Z",
     sort_order: 0,
     remote_connection_id: remoteConnectionId,
+    kind: "worktree",
     agent_status: "Idle",
     input_values: null,
   };

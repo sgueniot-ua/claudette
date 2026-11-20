@@ -10,6 +10,10 @@ export type AgentStatus =
   | "Compacting"
   | { Error: string };
 
+/** `"repository"` is the per-project "@project" workspace holding project
+ *  chats (no worktree); it never appears in navigation lists. */
+export type WorkspaceKind = "worktree" | "repository";
+
 export interface Workspace {
   id: string;
   repository_id: string;
@@ -28,6 +32,7 @@ export interface Workspace {
   input_values: Record<string, string> | null;
   /** Non-null when this workspace belongs to a remote connection. */
   remote_connection_id: string | null;
+  kind: WorkspaceKind;
 }
 
 /** Result of `open_project_chat`: the repository-rooted workspace and the session opened on it. */

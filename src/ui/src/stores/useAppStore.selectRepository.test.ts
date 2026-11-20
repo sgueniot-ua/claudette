@@ -22,6 +22,7 @@ function makeWs(id: string, repoId: string): Workspace {
     sort_order: 0,
     input_values: null,
     remote_connection_id: null,
+    kind: "worktree",
   };
 }
 

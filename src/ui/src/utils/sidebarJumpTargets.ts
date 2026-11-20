@@ -9,7 +9,7 @@ export interface SidebarWorkspaceFilter {
 
 /**
  * The same visibility predicate the sidebar uses to derive its
- * `filteredWorkspaces` memo: drop remote rows, drop archived rows unless the
+ * `filteredWorkspaces` memo: drop remote rows, drop project chat (`repository`) rows, drop archived rows unless the
  * "show archived" toggle is on, and drop rows from other repos when a repo
  * filter is active. Shared so the `Cmd+N` jump handler (which has to resolve
  * the Nth visible workspace from raw store state) can't accidentally drift
@@ -21,6 +21,7 @@ export function filterSidebarWorkspaces(
 ): Workspace[] {
   return workspaces.filter((ws) => {
     if (ws.remote_connection_id) return false;
+    if (ws.kind === "repository") return false;
     if (!showArchived && ws.status === "Archived") return false;
     if (repoFilter !== "all" && ws.repository_id !== repoFilter) return false;
     return true;

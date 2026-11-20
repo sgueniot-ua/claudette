@@ -215,7 +215,7 @@ export function Dashboard() {
   );
 
   const activeWorkspaces = useMemo(
-    () => workspaces.filter((ws) => ws.status === "Active"),
+    () => workspaces.filter((ws) => ws.status === "Active" && ws.kind !== "repository"),
     [workspaces],
   );
 
@@ -323,7 +323,7 @@ export function Dashboard() {
   const scopedArchivedWorkspaces = useMemo(
     () => (scopedRepo
       ? workspaces
-          .filter((ws) => ws.repository_id === scopedRepo.id && ws.status === "Archived")
+          .filter((ws) => ws.kind !== "repository" && ws.repository_id === scopedRepo.id && ws.status === "Archived")
           .sort((a, b) => b.created_at.localeCompare(a.created_at))
       : []),
     [workspaces, scopedRepo],

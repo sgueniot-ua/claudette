@@ -11,8 +11,9 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FuzzyFinder } from "./FuzzyFinder";
+import { FuzzyFinder, filterFuzzyWorkspaces } from "./FuzzyFinder";
 import { useAppStore } from "../../stores/useAppStore";
+import type { Workspace } from "../../types/workspace";
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -77,5 +78,39 @@ describe("FuzzyFinder Escape handling", () => {
 
     expect(useAppStore.getState().fuzzyFinderOpen).toBe(false);
     expect(windowSawEscape).toBe(false);
+  });
+});
+
+describe("filterFuzzyWorkspaces", () => {
+  const make = (id: string, kind: Workspace["kind"]): Workspace => ({
+    id,
+    repository_id: "repo-1",
+    name: id,
+    branch_name: id,
+    worktree_path: null,
+    status: "Active",
+    agent_status: "Idle",
+    status_line: "",
+    created_at: "2026-01-01T00:00:00Z",
+    sort_order: 0,
+    input_values: null,
+    remote_connection_id: null,
+    kind,
+  });
+
+  it("excludes project chat workspaces", () => { // FR-013
+    const out = filterFuzzyWorkspaces(
+      [make("alpha", "worktree"), make("@project", "repository")],
+      "",
+    );
+    expect(out.map((w) => w.id)).toEqual(["alpha"]);
+  });
+
+  it("still matches by name or branch", () => {
+    const out = filterFuzzyWorkspaces(
+      [make("alpha", "worktree"), make("beta", "worktree")],
+      "BET",
+    );
+    expect(out.map((w) => w.id)).toEqual(["beta"]);
   });
 });

@@ -40,6 +40,7 @@ function buildPlaceholderWorkspace(repoId: string, slug: string): Workspace {
     // real row arrives, so leaving this `null` is fine.
     input_values: null,
     remote_connection_id: null,
+    kind: "worktree",
   };
 }
 

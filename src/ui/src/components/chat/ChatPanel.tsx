@@ -163,6 +163,7 @@ export function ChatPanel() {
         // by `commitPendingFork` before any env merge reads it.
         input_values: null,
         remote_connection_id: null,
+        kind: "worktree" as const,
       };
       const previousSelection = selectedWorkspaceId;
       beginPendingFork(placeholder, selectedWorkspaceId);

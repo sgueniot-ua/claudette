@@ -1,6 +1,20 @@
 import { useState, useMemo } from "react";
 import { useAppStore } from "../../stores/useAppStore";
+import type { Workspace } from "../../types/workspace";
 import styles from "./FuzzyFinder.module.css";
+
+export function filterFuzzyWorkspaces(
+  workspaces: readonly Workspace[],
+  query: string,
+): Workspace[] {
+  const q = query.toLowerCase();
+  return workspaces.filter(
+    (ws) =>
+      ws.kind !== "repository" &&
+      (ws.name.toLowerCase().includes(q) ||
+        ws.branch_name.toLowerCase().includes(q)),
+  );
+}
 
 export function FuzzyFinder() {
   const workspaces = useAppStore((s) => s.workspaces);
@@ -10,14 +24,10 @@ export function FuzzyFinder() {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const results = useMemo(() => {
-    const q = query.toLowerCase();
-    return workspaces.filter(
-      (ws) =>
-        ws.name.toLowerCase().includes(q) ||
-        ws.branch_name.toLowerCase().includes(q)
-    );
-  }, [workspaces, query]);
+  const results = useMemo(
+    () => filterFuzzyWorkspaces(workspaces, query),
+    [workspaces, query],
+  );
 
   const handleSelect = (wsId: string) => {
     selectWorkspace(wsId);

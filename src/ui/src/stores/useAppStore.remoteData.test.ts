@@ -17,6 +17,7 @@ function makeWorkspace(id: string, repoId: string, conn: string | null): Workspa
     sort_order: 0,
     input_values: null,
     remote_connection_id: conn,
+    kind: "worktree",
   };
 }
 

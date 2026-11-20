@@ -102,6 +102,8 @@ export const createRemoteSlice: StateCreator<
       }));
       const taggedWorkspaces = data.workspaces.map((w) => ({
         ...w,
+        // Older paired servers omit `kind`; they only know worktree workspaces.
+        kind: w.kind ?? "worktree",
         remote_connection_id: connectionId,
       }));
       // Merge remote repo default branches so review-workflow prompts and any

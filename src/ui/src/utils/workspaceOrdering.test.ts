@@ -26,6 +26,7 @@ function workspace(
     sort_order,
     input_values: null,
     remote_connection_id: null,
+    kind: "worktree",
   };
 }
 

@@ -34,6 +34,7 @@ function makeWorkspace(id: string, remoteConnectionId: string | null = null): Wo
     sort_order: 0,
     input_values: null,
     remote_connection_id: remoteConnectionId,
+    kind: "worktree",
   };
 }
 
