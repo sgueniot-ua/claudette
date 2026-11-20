@@ -529,6 +529,14 @@ fn reject_if_repository_rooted(ws: &Workspace) -> Result<(), String> {
     }
 }
 
+/// Per-id bulk-delete decision: true when `id` names a repository-rooted
+/// workspace (project chat), which must be refused whatever its status.
+fn is_refused_project_chat(workspaces: &[Workspace], id: &str) -> bool {
+    workspaces
+        .iter()
+        .any(|w| w.id == id && w.is_repository_rooted())
+}
+
 #[tauri::command]
 pub async fn run_workspace_setup(
     workspace_id: String,
@@ -1280,16 +1288,17 @@ async fn delete_workspaces_bulk_body(
     let workspaces = db.list_workspaces().map_err(|e| e.to_string())?;
     let repos = db.list_repositories().map_err(|e| e.to_string())?;
 
-    // Collect the rows we're going to attempt to delete. We do NOT reject
-    // the whole batch when an ID is missing or no longer Archived — the
-    // authoritative guard is the SQL precondition in
-    // `try_delete_archived_workspace_with_summary` (see `src/db/workspace.rs`).
-    // Rejecting the whole batch here would mean a single raced
-    // `restore_workspace` between the modal snapshot and this call could
-    // wipe out cleanup of every other row the user asked for. Rows that
-    // don't make it into `targets` (missing) or whose status changed
-    // before the SQL guard runs (raced) surface as per-row failures
-    // instead.
+    // Collect the rows whose worktree/branch we may clean up after a
+    // successful DB delete. We do NOT reject the whole batch when an ID is
+    // missing or no longer Archived — the authoritative guard is the SQL
+    // precondition in `try_delete_archived_workspace_with_summary` (see
+    // `src/db/workspace.rs`). Rejecting the whole batch here would mean a
+    // single raced `restore_workspace` between the modal snapshot and this
+    // call could wipe out cleanup of every other row the user asked for.
+    // `targets` only feeds the cleanup lookup; the per-row loop below is
+    // what decides each id's outcome: project chats are refused there
+    // (`is_refused_project_chat`), missing or raced rows fail at the SQL
+    // guard.
     let targets: Vec<&Workspace> = ids
         .iter()
         .filter_map(|id| workspaces.iter().find(|w| &w.id == id))
@@ -1400,6 +1409,17 @@ async fn delete_workspaces_bulk_body(
         if cancel_flag.is_some_and(|f| f.load(Ordering::Relaxed)) {
             cancelled.push(id.clone());
             emit_progress(id, "cancelled", None);
+            continue;
+        }
+
+        // Project chats are never deletable here (FR-003), archived or not.
+        if is_refused_project_chat(&workspaces, id) {
+            let err = ops_workspace::PROJECT_CHAT_REFUSAL.to_string();
+            failed.push(BulkDeleteFailure {
+                id: id.clone(),
+                error: err.clone(),
+            });
+            emit_progress(id, "failed", Some(err));
             continue;
         }
 
@@ -2262,7 +2282,10 @@ pub async fn notify_workspace_selected(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_fork_prelude, reject_if_repository_rooted, validate_purge_target};
+    use super::{
+        apply_fork_prelude, is_refused_project_chat, reject_if_repository_rooted,
+        validate_purge_target,
+    };
     use crate::state::{AgentSessionState, ClaudeRemoteControlStatus};
     use claudette::git::WorktreeInfo;
     use claudette::model::{ChatMessage, ChatRole};
@@ -2304,6 +2327,26 @@ mod tests {
             reject_if_repository_rooted(&ws),
             Err("Not available for project chats".to_string())
         );
+    }
+
+    #[test]
+    fn project_chat_guard_bulk_delete_refuses_repository_rows_only() {
+        // FR-003, FR-012
+        use claudette::model::{WorkspaceKind, WorkspaceStatus};
+        let mut active_repo = guard_fixture(WorkspaceKind::Repository);
+        active_repo.id = "repo-active".into();
+        let mut archived_repo = guard_fixture(WorkspaceKind::Repository);
+        archived_repo.id = "repo-archived".into();
+        archived_repo.status = WorkspaceStatus::Archived;
+        let mut archived_wt = guard_fixture(WorkspaceKind::Worktree);
+        archived_wt.id = "wt-archived".into();
+        archived_wt.status = WorkspaceStatus::Archived;
+        let all = vec![active_repo, archived_repo, archived_wt];
+
+        assert!(is_refused_project_chat(&all, "repo-active"));
+        assert!(is_refused_project_chat(&all, "repo-archived"));
+        assert!(!is_refused_project_chat(&all, "wt-archived"));
+        assert!(!is_refused_project_chat(&all, "missing"));
     }
 
     #[test]
