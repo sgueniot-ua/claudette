@@ -116,6 +116,18 @@ pub async fn create_workspace(
 /// this, `claudette workspace create` (and `claudette batch run`)
 /// would dispatch agent prompts into worktrees that haven't had their
 /// `.claudette.json` setup script run.
+/// Open a chat on the repository folder itself (no worktree, no git write).
+#[tauri::command]
+pub async fn open_project_chat(
+    repository_id: String,
+    state: State<'_, AppState>,
+) -> Result<ops_workspace::ProjectChatOutput, String> {
+    let mut db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    ops_workspace::open_project_chat(&mut db, &repository_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 pub(crate) async fn create_workspace_inner(
     repo_id: &str,
     name: &str,

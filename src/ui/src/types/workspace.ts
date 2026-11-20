@@ -1,3 +1,5 @@
+import type { ChatSession } from "./chat";
+
 export type WorkspaceStatus = "Active" | "Archived";
 
 export type AgentStatus =
@@ -26,4 +28,10 @@ export interface Workspace {
   input_values: Record<string, string> | null;
   /** Non-null when this workspace belongs to a remote connection. */
   remote_connection_id: string | null;
+}
+
+/** Result of `open_project_chat`: the repository-rooted workspace and the session opened on it. */
+export interface ProjectChatOutput {
+  workspace: Workspace;
+  session: ChatSession;
 }

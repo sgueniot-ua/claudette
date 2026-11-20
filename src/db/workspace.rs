@@ -122,6 +122,17 @@ impl Database {
         Ok(())
     }
 
+    /// The single `repository`-kind workspace of a repo, if one exists.
+    pub fn find_repository_workspace(
+        &self,
+        repo_id: &str,
+    ) -> Result<Option<Workspace>, rusqlite::Error> {
+        Ok(self
+            .list_workspaces()?
+            .into_iter()
+            .find(|w| w.repository_id == repo_id && w.kind == WorkspaceKind::Repository))
+    }
+
     pub fn list_workspaces(&self) -> Result<Vec<Workspace>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
             "SELECT id, repository_id, name, branch_name, worktree_path, status, status_line, created_at, sort_order, input_values, kind

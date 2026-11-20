@@ -31,7 +31,9 @@ use crate::db::Database;
 use crate::env::{WorkspaceEnv, enriched_path};
 use crate::env_provider::ResolvedEnv;
 use crate::git;
-use crate::model::{AgentStatus, Repository, Workspace, WorkspaceStatus, coerce_input_value};
+use crate::model::{
+    AgentStatus, ChatSession, Repository, Workspace, WorkspaceStatus, coerce_input_value,
+};
 use crate::workspace_alloc::{allocate_workspace_name, is_valid_workspace_name};
 
 use super::{NotificationEvent, OpsError, OpsHooks, WorkspaceChangeKind};
@@ -314,6 +316,100 @@ async fn create_inner(
         default_session_id,
         worktree_path: actual_path,
     })
+}
+
+/// Result of [`open_project_chat`]: the repository-rooted workspace and the
+/// chat session opened on it.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectChatOutput {
+    pub workspace: Workspace,
+    pub session: ChatSession,
+}
+
+/// SQLite extended result code for `SQLITE_CONSTRAINT_UNIQUE`.
+const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
+
+/// Insert the repository-kind workspace. If a concurrent creation already
+/// inserted one (unique index `idx_workspaces_repository_kind`), return the
+/// existing row instead of failing.
+fn insert_repository_workspace_or_existing(
+    db: &Database,
+    ws: &Workspace,
+) -> Result<Workspace, OpsError> {
+    match db.insert_workspace(ws) {
+        Ok(()) => {
+            let mut ws = ws.clone();
+            if let Some(o) = db.lookup_workspace_sort_order(&ws.id)? {
+                ws.sort_order = o;
+            }
+            Ok(ws)
+        }
+        Err(rusqlite::Error::SqliteFailure(e, _))
+            if e.extended_code == SQLITE_CONSTRAINT_UNIQUE =>
+        {
+            db.find_repository_workspace(&ws.repository_id)?
+                .ok_or_else(|| {
+                    OpsError::Other("Repository workspace conflict without existing row".into())
+                })
+        }
+        Err(e) => Err(OpsError::Db(e)),
+    }
+}
+
+/// Open a chat on the repository folder itself: create (or reuse) the repo's
+/// single `repository`-kind workspace and open a session on it. Performs no
+/// git write and runs no script.
+pub async fn open_project_chat(
+    db: &mut Database,
+    repo_id: &str,
+) -> Result<ProjectChatOutput, OpsError> {
+    let repo = db
+        .list_repositories()?
+        .into_iter()
+        .find(|r| r.id == repo_id)
+        .ok_or_else(|| OpsError::NotFound("Repository not found".to_string()))?;
+    if !Path::new(&repo.path).is_dir() {
+        return Err(OpsError::Validation(format!(
+            "Project folder not found: {}",
+            repo.path
+        )));
+    }
+
+    if let Some(workspace) = db.find_repository_workspace(repo_id)? {
+        let session = db.create_chat_session(&workspace.id)?;
+        return Ok(ProjectChatOutput { workspace, session });
+    }
+
+    let branch_name = git::current_branch(&repo.path).await?;
+    let candidate = Workspace {
+        id: uuid::Uuid::new_v4().to_string(),
+        repository_id: repo.id.clone(),
+        name: "@project".to_string(),
+        branch_name,
+        worktree_path: Some(repo.path.clone()),
+        status: WorkspaceStatus::Active,
+        kind: crate::model::WorkspaceKind::Repository,
+        agent_status: AgentStatus::Idle,
+        status_line: String::new(),
+        created_at: now_iso(),
+        sort_order: 0,
+        input_values: None,
+    };
+    let workspace = insert_repository_workspace_or_existing(db, &candidate)?;
+    let session = if workspace.id == candidate.id {
+        db.claim_branch_auto_rename(&workspace.id)?;
+        let id = db
+            .default_session_id_for_workspace(&workspace.id)?
+            .ok_or_else(|| {
+                OpsError::Other("Workspace insert did not create a default chat session".into())
+            })?;
+        db.get_chat_session(&id)?.ok_or_else(|| {
+            OpsError::Other("Default chat session disappeared after insert".into())
+        })?
+    } else {
+        db.create_chat_session(&workspace.id)?
+    };
+    Ok(ProjectChatOutput { workspace, session })
 }
 
 /// Build the platform-default shell invocation Claudette uses to run
@@ -1264,6 +1360,137 @@ mod tests {
         db.insert_repository(&repo).unwrap();
 
         (repo_dir, db_dir, db, repo)
+    }
+
+    async fn git_out(repo_path: &std::path::Path, args: &[&str]) -> String {
+        let out = crate::process::command("git")
+            .args(args)
+            .current_dir(repo_path)
+            .output()
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    fn dir_listing(path: &std::path::Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(path)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_creates_repository_workspace_without_git_writes() {
+        // FR-001, FR-002, FR-003, SC-002
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let p = repo_dir.path();
+        let before = (
+            git_out(p, &["worktree", "list", "--porcelain"]).await,
+            git_out(p, &["branch", "--list"]).await,
+            dir_listing(p),
+        );
+
+        let out = open_project_chat(&mut db, &repo.id).await.unwrap();
+
+        let after = (
+            git_out(p, &["worktree", "list", "--porcelain"]).await,
+            git_out(p, &["branch", "--list"]).await,
+            dir_listing(p),
+        );
+        assert_eq!(before, after);
+        assert_eq!(out.workspace.kind, crate::model::WorkspaceKind::Repository);
+        assert_eq!(
+            out.workspace.worktree_path.as_deref(),
+            Some(repo.path.as_str())
+        );
+        assert_eq!(out.workspace.name, "@project");
+        assert_eq!(out.workspace.branch_name, "main");
+        assert_eq!(out.workspace.status, WorkspaceStatus::Active);
+        assert_eq!(out.session.workspace_id, out.workspace.id);
+        assert!(db.is_branch_auto_rename_claimed(&out.workspace.id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_reuses_workspace_and_adds_session() {
+        // FR-004
+        let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let a = open_project_chat(&mut db, &repo.id).await.unwrap();
+        let b = open_project_chat(&mut db, &repo.id).await.unwrap();
+        assert_eq!(a.workspace.id, b.workspace.id);
+        assert_ne!(a.session.id, b.session.id);
+        let sessions = db
+            .list_chat_sessions_for_workspace(&a.workspace.id, false)
+            .unwrap();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_concurrent_creation_yields_single_workspace() {
+        // Review Focus 2: unique-index conflict returns the existing row.
+        let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let first = open_project_chat(&mut db, &repo.id).await.unwrap();
+
+        let competing = Workspace {
+            id: uuid::Uuid::new_v4().to_string(),
+            repository_id: repo.id.clone(),
+            name: "@project".to_string(),
+            branch_name: "main".to_string(),
+            worktree_path: Some(repo.path.clone()),
+            status: WorkspaceStatus::Active,
+            kind: crate::model::WorkspaceKind::Repository,
+            agent_status: AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: now_iso(),
+            sort_order: 0,
+            input_values: None,
+        };
+        let got = insert_repository_workspace_or_existing(&db, &competing).unwrap();
+        assert_eq!(got.id, first.workspace.id);
+
+        let count = db
+            .list_workspaces()
+            .unwrap()
+            .iter()
+            .filter(|w| w.kind == crate::model::WorkspaceKind::Repository)
+            .count();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_missing_folder_is_validation_error() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        drop(repo_dir);
+        match open_project_chat(&mut db, &repo.id).await {
+            Err(OpsError::Validation(msg)) => {
+                assert!(msg.starts_with("Project folder not found"), "{msg}")
+            }
+            other => panic!("expected Validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_unknown_repo_is_not_found() {
+        let (_repo_dir, _db_dir, mut db, _repo) = setup_repo_and_db().await;
+        assert!(matches!(
+            open_project_chat(&mut db, "nope").await,
+            Err(OpsError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn open_project_chat_workspace_is_schedulable() {
+        // FR-011: passes the filters of db/scheduling.rs (active + non-empty path).
+        let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let out = open_project_chat(&mut db, &repo.id).await.unwrap();
+        assert_eq!(out.workspace.status, WorkspaceStatus::Active);
+        assert!(
+            out.workspace
+                .worktree_path
+                .as_deref()
+                .is_some_and(|p| !p.trim().is_empty())
+        );
     }
 
     #[tokio::test]

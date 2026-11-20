@@ -1148,6 +1148,7 @@ fn main() {
             commands::repository::update_repository_required_inputs,
             // Workspace
             commands::workspace::create_workspace,
+            commands::workspace::open_project_chat,
             commands::workspace::fork_workspace_at_checkpoint,
             commands::workspace::run_workspace_setup,
             commands::workspace::archive_workspace,

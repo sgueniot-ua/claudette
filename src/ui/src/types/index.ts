@@ -3,6 +3,7 @@ export type {
   Workspace,
   WorkspaceStatus,
   AgentStatus,
+  ProjectChatOutput,
 } from "./workspace";
 export type {
   ChatMessage,

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { sendRemoteCommand } from "./remote";
 import { remoteConnectionForWorkspace } from "./remoteRouting";
-import type { Workspace } from "../../types";
+import type { ProjectChatOutput, Workspace } from "../../types";
 import type { CreateWorkspaceResult, SetupResult } from "../../types/repository";
 import type { WorkspaceEnvTrustNeededPayload } from "../../types/env";
 import type { RepositoryInputValues } from "../../types/repositoryInput";
@@ -20,6 +20,12 @@ export function createWorkspace(
     skipSetup: skipSetup ?? false,
     inputValues: inputValues ?? null,
   });
+}
+
+export function openProjectChat(
+  repositoryId: string,
+): Promise<ProjectChatOutput> {
+  return invoke("open_project_chat", { repositoryId });
 }
 
 export interface ForkWorkspaceResult {
