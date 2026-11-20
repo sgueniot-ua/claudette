@@ -400,8 +400,9 @@ pub async fn create_turn_checkpoint(args: CheckpointArgs<'_>) -> Option<Conversa
 /// Inserts a `conversation_checkpoints` row with `is_session_baseline = 1`
 /// and `turn_index = -1`, then snapshots `worktree_path` into it. At most
 /// one per session: returns `None` without touching anything when the
-/// session already has a baseline. Also returns `None` when the snapshot
-/// fails — the row is deleted then, because restoring a baseline without
+/// session already has a baseline or a turn checkpoint. Also returns `None`
+/// when the snapshot fails — including a strict-mode failure on a file it
+/// could not read — the row is deleted then, because restoring a baseline without
 /// files would delete every file in the folder.
 pub async fn create_session_baseline(
     db_path: &Path,
@@ -410,6 +411,17 @@ pub async fn create_session_baseline(
     worktree_path: &str,
 ) -> Option<ConversationCheckpoint> {
     let db = Database::open(db_path).ok()?;
+    // Only before the session's first turn: once a turn checkpoint exists,
+    // the folder already holds agent work and is no longer the starting
+    // state (e.g. turn_count reset by a rollback, or a first turn that ran
+    // through a path that does not capture a baseline).
+    if !db
+        .list_checkpoints_for_session(chat_session_id)
+        .ok()?
+        .is_empty()
+    {
+        return None;
+    }
     let id = uuid::Uuid::new_v4().to_string();
     if !db
         .insert_session_baseline(&id, workspace_id, chat_session_id)
@@ -421,7 +433,8 @@ pub async fn create_session_baseline(
     drop(db); // release the non-Send connection before awaiting save_snapshot
 
     let snapshot =
-        snapshot::save_snapshot(db_path, workspace_id, &id, worktree_path, retention_count).await;
+        snapshot::save_snapshot_strict(db_path, workspace_id, &id, worktree_path, retention_count)
+            .await;
     let db = Database::open(db_path).ok()?;
     if let Err(e) = snapshot {
         tracing::warn!(
@@ -1176,6 +1189,10 @@ mod tests {
             "user edit"
         );
         assert!(!wt.join("b.txt").exists());
+        assert!(
+            !wt.join("c.txt").exists(),
+            "agent-committed file removed from disk"
+        );
         let log = git_in(&wt, &["log", "--format=%s"]).await;
         assert!(log.contains("agent commit c"), "no commit removed: {log}");
     }
@@ -1211,6 +1228,63 @@ mod tests {
         let missing = dir.path().join("does-not-exist");
         assert!(
             create_session_baseline(&db_path, "ws-1", "cs-1", missing.to_str().unwrap())
+                .await
+                .is_none()
+        );
+        let db = crate::db::Database::open(&db_path).unwrap();
+        assert!(db.get_session_baseline("cs-1").unwrap().is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn session_baseline_refuses_incomplete_capture() {
+        // FR-015: a file the snapshot cannot read must not later be deleted
+        // by a restore, so no baseline is kept at all.
+        use std::os::unix::fs::PermissionsExt;
+        let (dir, db_path) = make_test_db().await;
+        let wt = make_test_worktree(dir.path()).await;
+        let locked = wt.join("locked.txt");
+        std::fs::write(&locked, "secret").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&locked).is_ok() {
+            // Running as root: permissions are not enforced, nothing to test.
+            return;
+        }
+
+        let created = create_session_baseline(&db_path, "ws-1", "cs-1", wt.to_str().unwrap()).await;
+        // Normal turn snapshots keep their lenient behavior (skip the file).
+        let db = crate::db::Database::open(&db_path).unwrap();
+        db.execute_batch(
+            "INSERT INTO conversation_checkpoints \
+               (id, workspace_id, chat_session_id, message_id, turn_index, message_count) \
+             VALUES ('cp0', 'ws-1', 'cs-1', 'm1', 0, 0);",
+        )
+        .unwrap();
+        let lenient =
+            snapshot::save_snapshot(&db_path, "ws-1", "cp0", wt.to_str().unwrap(), 50).await;
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert!(created.is_none());
+        assert!(db.get_session_baseline("cs-1").unwrap().is_none());
+        assert!(lenient.unwrap(), "turn snapshot still succeeds");
+    }
+
+    #[tokio::test]
+    async fn session_baseline_not_captured_mid_conversation() {
+        // FR-015: a session that already ran a turn has no starting state left.
+        let (dir, db_path) = make_test_db().await;
+        let wt = make_test_worktree(dir.path()).await;
+        let db = crate::db::Database::open(&db_path).unwrap();
+        db.execute_batch(
+            "INSERT INTO conversation_checkpoints \
+               (id, workspace_id, chat_session_id, message_id, turn_index, message_count) \
+             VALUES ('cp0', 'ws-1', 'cs-1', 'm1', 0, 0);",
+        )
+        .unwrap();
+        drop(db);
+
+        assert!(
+            create_session_baseline(&db_path, "ws-1", "cs-1", wt.to_str().unwrap())
                 .await
                 .is_none()
         );

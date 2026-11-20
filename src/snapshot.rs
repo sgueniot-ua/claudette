@@ -89,6 +89,23 @@ async fn list_worktree_files(worktree_path: &str) -> Result<Vec<String>, Snapsho
 pub async fn collect_worktree_files(
     worktree_path: &str,
 ) -> Result<Vec<(String, Vec<u8>, u32)>, SnapshotError> {
+    collect_files(worktree_path, false).await
+}
+
+/// Shared body of [`collect_worktree_files`]. With `strict`, a listed
+/// regular file of snapshot size that cannot be stat'ed or read fails the
+/// whole collection instead of being skipped: a snapshot missing such a
+/// file would make a later restore delete it. A file that vanished between
+/// `ls-files` and the read (`NotFound`) is still skipped — it no longer
+/// exists, so there is nothing to protect.
+async fn collect_files(
+    worktree_path: &str,
+    strict: bool,
+) -> Result<Vec<(String, Vec<u8>, u32)>, SnapshotError> {
+    let unreadable = |rel_path: &str, e: std::io::Error| -> Option<SnapshotError> {
+        (strict && e.kind() != std::io::ErrorKind::NotFound)
+            .then(|| SnapshotError::Io(format!("cannot read {rel_path}: {e}")))
+    };
     let paths = list_worktree_files(worktree_path).await?;
     let base = Path::new(worktree_path);
     let mut files = Vec::with_capacity(paths.len());
@@ -100,7 +117,11 @@ pub async fn collect_worktree_files(
         // symlinks entirely rather than snapshotting their targets.
         let metadata = match tokio::fs::symlink_metadata(&full_path).await {
             Ok(m) => m,
-            Err(_) => continue, // file may have been deleted between ls-files and read
+            // File may have been deleted between ls-files and read.
+            Err(e) => match unreadable(&rel_path, e) {
+                Some(err) => return Err(err),
+                None => continue,
+            },
         };
 
         if !metadata.is_file() {
@@ -113,7 +134,10 @@ pub async fn collect_worktree_files(
 
         let content = match tokio::fs::read(&full_path).await {
             Ok(c) => c,
-            Err(_) => continue,
+            Err(e) => match unreadable(&rel_path, e) {
+                Some(err) => return Err(err),
+                None => continue,
+            },
         };
 
         #[cfg(unix)]
@@ -156,7 +180,48 @@ pub async fn save_snapshot(
     worktree_path: &str,
     retention_count: usize,
 ) -> Result<bool, SnapshotError> {
-    let collected = collect_worktree_files(worktree_path).await?;
+    save_snapshot_impl(
+        db_path,
+        workspace_id,
+        checkpoint_id,
+        worktree_path,
+        retention_count,
+        false,
+    )
+    .await
+}
+
+/// Strict variant of [`save_snapshot`] for a project chat's session
+/// baseline, which is restored into the user's own checkout: fails instead
+/// of silently skipping a file it could not read (see [`collect_files`]),
+/// so a restore never deletes a file the snapshot failed to capture.
+pub async fn save_snapshot_strict(
+    db_path: &Path,
+    workspace_id: &str,
+    checkpoint_id: &str,
+    worktree_path: &str,
+    retention_count: usize,
+) -> Result<bool, SnapshotError> {
+    save_snapshot_impl(
+        db_path,
+        workspace_id,
+        checkpoint_id,
+        worktree_path,
+        retention_count,
+        true,
+    )
+    .await
+}
+
+async fn save_snapshot_impl(
+    db_path: &Path,
+    workspace_id: &str,
+    checkpoint_id: &str,
+    worktree_path: &str,
+    retention_count: usize,
+    strict: bool,
+) -> Result<bool, SnapshotError> {
+    let collected = collect_files(worktree_path, strict).await?;
 
     // Pre-hash on the calling thread BEFORE opening the write transaction.
     // Holding the SQLite write lock while sha256-ing megabytes of content
