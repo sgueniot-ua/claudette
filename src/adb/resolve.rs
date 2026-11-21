@@ -61,7 +61,7 @@ pub fn resolve_device(
     }
 }
 
-fn matches_key(device: &AdbDevice, key: &DeviceKey) -> bool {
+pub(crate) fn matches_key(device: &AdbDevice, key: &DeviceKey) -> bool {
     match key {
         DeviceKey::Avd(name) => device.avd_name.as_deref() == Some(name.as_str()),
         DeviceKey::Serial(serial) => device.serial == *serial,

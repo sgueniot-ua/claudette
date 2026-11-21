@@ -1,4 +1,155 @@
+use std::io;
+use std::path::Path;
+use std::process::Stdio;
+use std::time::Duration;
+
+use tokio::io::AsyncReadExt;
+use tokio::process::{Child, ChildStdout};
+
 use crate::model::{LogLevel, LogcatLine};
+
+/// Lines asked from the device buffer when a session starts on a device (FR-006b).
+pub const INITIAL_TAIL: u32 = 500;
+/// A batch is emitted as soon as it holds this many lines (R3).
+pub const BATCH_MAX_LINES: usize = 500;
+/// A partial batch is emitted at most this long after its first line arrived (R3).
+pub const BATCH_MAX_DELAY: Duration = Duration::from_millis(50);
+
+/// Where `logcat -T` starts: the last `n` lines, or every line since a timestamp (resume, FR-009).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TailFrom {
+    Count(u32),
+    Since(String),
+}
+
+/// Arguments of `adb` for a logcat stream. The timestamp is one argument, without shell quoting.
+pub fn logcat_args(serial: &str, tail: &TailFrom) -> Vec<String> {
+    let tail = match tail {
+        TailFrom::Count(count) => count.to_string(),
+        TailFrom::Since(ts) => ts.clone(),
+    };
+    ["-s", serial, "logcat", "-v", "threadtime", "-T", &tail]
+        .iter()
+        .map(|arg| arg.to_string())
+        .collect()
+}
+
+/// Raw stdout of a running logcat. Dropping it ends the stream.
+// async_trait's expansion marks the boxed futures `#[must_use]`, which newer
+// clippy flags as `double_must_use` on the generated trait methods.
+#[allow(clippy::double_must_use)]
+#[async_trait::async_trait]
+pub trait LogcatStream: Send {
+    /// Next chunk of bytes, `None` once the output ended. Must be cancel-safe (used in `select!`).
+    async fn next_chunk(&mut self) -> Option<Vec<u8>>;
+}
+
+struct ProcessLogcatStream {
+    // Held so `kill_on_drop` kills the process when the stream is dropped.
+    _child: Child,
+    stdout: ChildStdout,
+    buf: Box<[u8]>,
+}
+
+#[async_trait::async_trait]
+impl LogcatStream for ProcessLogcatStream {
+    async fn next_chunk(&mut self) -> Option<Vec<u8>> {
+        match self.stdout.read(&mut self.buf).await {
+            Ok(0) | Err(_) => None,
+            Ok(n) => Some(self.buf[..n].to_vec()),
+        }
+    }
+}
+
+/// Start `adb -s <serial> logcat -v threadtime -T <tail>`; the process is killed when the stream drops.
+pub fn spawn_logcat(
+    adb: &Path,
+    serial: &str,
+    tail: &TailFrom,
+) -> io::Result<Box<dyn LogcatStream>> {
+    let mut cmd = crate::process::command(adb);
+    cmd.args(logcat_args(serial, tail));
+    crate::env::enriched_env().apply(&mut cmd);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let mut child = cmd.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("logcat stdout not captured"))?;
+    Ok(Box::new(ProcessLogcatStream {
+        _child: child,
+        stdout,
+        buf: vec![0; 64 * 1024].into_boxed_slice(),
+    }))
+}
+
+/// Turns stdout chunks into parsed lines, grouped in batches of at most [`BATCH_MAX_LINES`].
+/// Bytes after the last newline (partial line or partial UTF-8 character) wait for the next chunk.
+#[derive(Debug, Default)]
+pub struct LineBatcher {
+    carry: Vec<u8>,
+    pending: Vec<LogcatLine>,
+    last_ts: Option<String>,
+}
+
+impl LineBatcher {
+    /// Add a chunk; returns the full batches ready to emit now. Remaining lines stay pending.
+    pub fn push_chunk(&mut self, chunk: &[u8]) -> Vec<Vec<LogcatLine>> {
+        self.carry.extend_from_slice(chunk);
+        if let Some(end) = self.carry.iter().rposition(|&b| b == b'\n') {
+            let complete: Vec<u8> = self.carry.drain(..=end).collect();
+            for line in split_lines_lossy(&complete) {
+                self.push_line(&line);
+            }
+        }
+        let mut full = Vec::new();
+        while self.pending.len() >= BATCH_MAX_LINES {
+            let rest = self.pending.split_off(BATCH_MAX_LINES);
+            full.push(std::mem::replace(&mut self.pending, rest));
+        }
+        full
+    }
+
+    /// Take every pending line (deadline flush).
+    pub fn take_pending(&mut self) -> Vec<LogcatLine> {
+        std::mem::take(&mut self.pending)
+    }
+
+    /// End of the stream: the unterminated tail becomes a last line; returns everything pending.
+    pub fn finish(&mut self) -> Vec<LogcatLine> {
+        let tail = std::mem::take(&mut self.carry);
+        for line in split_lines_lossy(&tail) {
+            self.push_line(&line);
+        }
+        self.take_pending()
+    }
+
+    pub fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// Timestamp of the last parsed line that had one (resume point, FR-009).
+    pub fn last_ts(&self) -> Option<&str> {
+        self.last_ts.as_deref()
+    }
+
+    /// A new process for the same device: drop the partial line of the previous one, keep the
+    /// resume point.
+    pub fn start_stream(&mut self) {
+        self.carry.clear();
+    }
+
+    fn push_line(&mut self, raw: &str) {
+        let line = parse_threadtime_line(raw);
+        if let Some(ts) = &line.ts {
+            self.last_ts = Some(ts.clone());
+        }
+        self.pending.push(line);
+    }
+}
 
 /// Split raw logcat bytes into lines. Invalid UTF-8 is replaced, `\r` is dropped.
 pub fn split_lines_lossy(bytes: &[u8]) -> Vec<String> {
@@ -135,5 +286,62 @@ mod tests {
     fn split_lines_strips_carriage_returns_and_trailing_empty_line() {
         let lines = split_lines_lossy(b"one\r\ntwo\n");
         assert_eq!(lines, vec!["one".to_string(), "two".to_string()]);
+    }
+
+    // R3 (lots de 500 lignes, ligne coupée gardée pour le morceau suivant)
+    #[test]
+    fn batcher_splits_full_batches_and_keeps_partial_line() {
+        let mut batcher = LineBatcher::default();
+        let mut bytes: Vec<u8> = (0..501)
+            .flat_map(|i| format!("11-21 10:15:02.{:03}  1  1 I T: {i}\n", i % 1000).into_bytes())
+            .collect();
+        bytes.extend_from_slice(b"11-21 10:15:03.000  1  1 I T: par");
+        let full = batcher.push_chunk(&bytes);
+        assert_eq!(full.len(), 1);
+        assert_eq!(full[0].len(), BATCH_MAX_LINES);
+        assert_eq!(batcher.take_pending().len(), 1);
+        assert_eq!(batcher.last_ts(), Some("11-21 10:15:02.500"));
+        let rest = batcher.finish();
+        assert_eq!(rest.len(), 1);
+        assert_eq!(rest[0].message, "par");
+        assert_eq!(batcher.last_ts(), Some("11-21 10:15:03.000"));
+    }
+
+    // FR-009 (horodatage passé en un seul argument, sans guillemets)
+    #[test]
+    fn logcat_args_since_timestamp_is_one_argument() {
+        assert_eq!(
+            logcat_args("R58M12345", &TailFrom::Since("11-21 10:15:02.123".into())),
+            [
+                "-s",
+                "R58M12345",
+                "logcat",
+                "-v",
+                "threadtime",
+                "-T",
+                "11-21 10:15:02.123"
+            ]
+        );
+    }
+
+    // R3 (vrai processus : arguments transmis, sortie lue en octets)
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spawn_logcat_runs_adb_with_logcat_args() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let adb = dir.path().join("adb");
+        std::fs::write(&adb, "#!/bin/sh\necho \"$@\"\n").unwrap();
+        std::fs::set_permissions(&adb, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut stream =
+            spawn_logcat(&adb, "emulator-5560", &TailFrom::Count(INITIAL_TAIL)).unwrap();
+        let mut out = Vec::new();
+        while let Some(chunk) = stream.next_chunk().await {
+            out.extend(chunk);
+        }
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "-s emulator-5560 logcat -v threadtime -T 500\n"
+        );
     }
 }

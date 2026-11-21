@@ -105,7 +105,7 @@ rodio = { version = "0.22", default-features = false, features = ["playback", "s
 libc = "0.2"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 
 [build-dependencies]
 # Probes PATH for direnv/mise/nix so env-provider integration tests
