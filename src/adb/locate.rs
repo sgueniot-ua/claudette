@@ -3,7 +3,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use crate::env::enriched_env;
+use crate::env::enriched_path;
 
 /// Environment inputs of the adb lookup, injected so tests never read the real machine.
 #[derive(Debug, Clone, Default)]
@@ -17,14 +17,8 @@ pub struct LocateEnv {
 
 impl LocateEnv {
     pub fn from_process() -> Self {
-        let path = enriched_env()
-            .vars
-            .get("PATH")
-            .cloned()
-            .flatten()
-            .map(OsString::from);
         Self {
-            path,
+            path: Some(enriched_path()),
             android_home: std::env::var_os("ANDROID_HOME").map(PathBuf::from),
             android_sdk_root: std::env::var_os("ANDROID_SDK_ROOT").map(PathBuf::from),
             home: dirs::home_dir(),
@@ -77,10 +71,31 @@ fn find_in_path(path: &OsStr, name: &str) -> Option<PathBuf> {
 
 fn sdk_dir_from_local_properties(worktree: &Path) -> Option<PathBuf> {
     let text = std::fs::read_to_string(worktree.join("local.properties")).ok()?;
+    parse_sdk_dir(&text)
+}
+
+/// `sdk.dir` value of a `local.properties` text. Gradle writes Windows paths
+/// with `\:` and `\\` escapes, which are unescaped here.
+fn parse_sdk_dir(text: &str) -> Option<PathBuf> {
     text.lines().find_map(|line| {
         let (key, value) = line.split_once('=')?;
-        (key.trim() == "sdk.dir").then(|| PathBuf::from(value.trim()))
+        (key.trim() == "sdk.dir").then(|| PathBuf::from(unescape_properties_value(value.trim())))
     })
+}
+
+fn unescape_properties_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(next) = chars.next_if(|n| matches!(n, ':' | '\\'))
+        {
+            out.push(next);
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn default_sdk_dir(env: &LocateEnv) -> Option<PathBuf> {
@@ -128,6 +143,15 @@ mod tests {
             ..LocateEnv::default()
         };
         assert_eq!(locate_adb(Some(tmp.path()), &env), Some(expected));
+    }
+
+    // FR-008 (R5): sdk.dir written by Gradle with escapes is unescaped
+    #[test]
+    fn locate_unescapes_local_properties_sdk_dir() {
+        assert_eq!(
+            parse_sdk_dir(r"sdk.dir=C\:\\Android\\sdk"),
+            Some(PathBuf::from(r"C:\Android\sdk"))
+        );
     }
 
     // FR-008 (R5): a PATH hit comes before ANDROID_HOME
