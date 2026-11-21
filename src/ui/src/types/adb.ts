@@ -1,6 +1,7 @@
-// Mirrors `LogLevel` / `LogcatLine` in src/model/adb.rs. Serde serializes the
-// unit variants as their bare names ("V" .. "A"), and the Option fields as null.
-export type LogLevel = "V" | "D" | "I" | "W" | "E" | "F" | "A";
+// Mirrors `LogLevel` / `LogcatLine` in src/model/adb.rs. LogLevel is
+// `#[serde(rename_all = "snake_case")]`, so the wire values are lowercase
+// ("v" .. "a"), and the Option fields serialize as null.
+export type LogLevel = "v" | "d" | "i" | "w" | "e" | "f" | "a";
 
 export interface LogcatLine {
   ts: string | null;

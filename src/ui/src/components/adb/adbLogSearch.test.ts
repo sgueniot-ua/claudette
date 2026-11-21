@@ -29,6 +29,17 @@ describe("findMatches", () => {
     expect(findMatches(buf, "ws-1", "activity")).toEqual([0]);
   });
 
+  // FR-006c: tag and message are searched field by field, so a query spanning
+  // the boundary between them does not produce a false match.
+  it("does not match a query that spans the tag and message boundary", () => {
+    const buf = createAdbLogBuffer();
+    buf.append("ws-1", [entry("ActivityManager", "start proc com.example")]);
+
+    expect(findMatches(buf, "ws-1", "manager start")).toEqual([]);
+    expect(findMatches(buf, "ws-1", "manager")).toEqual([0]);
+    expect(findMatches(buf, "ws-1", "start")).toEqual([0]);
+  });
+
   // FR-006c: a line with no tag is searched by message only.
   it("ignores a null tag without failing", () => {
     const buf = createAdbLogBuffer();

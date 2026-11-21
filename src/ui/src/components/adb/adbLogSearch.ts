@@ -15,8 +15,8 @@ export function findMatches(buf: AdbLogBuffer, workspaceId: string, query: strin
     if (!line) {
       continue;
     }
-    const haystack = `${line.tag ?? ""} ${line.message}`.toLowerCase();
-    if (haystack.includes(needle)) {
+    const inTag = (line.tag ?? "").toLowerCase().includes(needle);
+    if (inTag || line.message.toLowerCase().includes(needle)) {
       matches.push(index);
     }
   }
