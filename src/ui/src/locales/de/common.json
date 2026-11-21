@@ -32,5 +32,6 @@
   "adb_source_manual": "Chosen manually",
   "adb_source_dedicated_emulator": "Dedicated emulator",
   "adb_source_only_device": "Only connected device",
-  "adb_search_placeholder": "Search logs"
+  "adb_search_placeholder": "Search logs",
+  "adb_device_missing": "{{device}} (disconnected)"
 }

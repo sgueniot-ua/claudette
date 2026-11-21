@@ -7,7 +7,6 @@ import type { AdbDevice, DeviceKey, ResolutionSource } from "../../types/adb";
 import { adbLogBuffer } from "./adbLogBuffer";
 import { findMatches, nextMatch, prevMatch } from "./adbLogSearch";
 import { AdbLogList } from "./AdbLogList";
-import { useAdbEvents } from "./useAdbEvents";
 import styles from "./AdbPanel.module.css";
 
 const SOURCE_KEY = {
@@ -33,7 +32,6 @@ function encodeKey(key: DeviceKey): string {
 
 export function AdbPanel() {
   const { t } = useTranslation("common");
-  useAdbEvents();
   const workspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const status = useAppStore((s) => (workspaceId ? s.adbSessions[workspaceId] : undefined));
   const devices = useAppStore((s) => s.adbDevices);
@@ -45,10 +43,13 @@ export function AdbPanel() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [current, setCurrent] = useState<number | null>(null);
+  const [revealTick, setRevealTick] = useState(0);
+  const choiceMadeRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    choiceMadeRef.current = false;
     setManualKey(null);
     setSearchOpen(false);
     setQuery("");
@@ -59,7 +60,8 @@ export function AdbPanel() {
     let cancelled = false;
     adbGetWorkspaceDevice(workspaceId)
       .then((key) => {
-        if (!cancelled) {
+        // A choice made meanwhile wins over this (stale) read.
+        if (!cancelled && !choiceMadeRef.current) {
           setManualKey(key);
         }
       })
@@ -76,6 +78,11 @@ export function AdbPanel() {
     [workspaceId, searchOpen, query, version],
   );
 
+  const reveal = useMemo(
+    () => (current === null ? null : { index: current, tick: revealTick }),
+    [current, revealTick],
+  );
+
   if (!workspaceId) {
     return null;
   }
@@ -88,10 +95,15 @@ export function AdbPanel() {
     if (encoded !== "" && !key) {
       return;
     }
+    const previous = manualKey;
+    choiceMadeRef.current = true;
     setManualKey(key);
     adbSetWorkspaceDevice(workspaceId, key)
       .then((next) => setAdbSessionStatus(workspaceId, next))
-      .catch((e) => console.error("Failed to set the ADB device:", e));
+      .catch((e) => {
+        console.error("Failed to set the ADB device:", e);
+        setManualKey(previous);
+      });
   };
 
   const openSearch = () => {
@@ -123,12 +135,14 @@ export function AdbPanel() {
       e.preventDefault();
       const target = e.shiftKey ? prevMatch(matches, current) : nextMatch(matches, current);
       setCurrent(target ?? null);
+      setRevealTick((n) => n + 1);
     }
   };
 
   const onSearchChange = (value: string) => {
     setQuery(value);
     setCurrent(findMatches(adbLogBuffer, workspaceId, value)[0] ?? null);
+    setRevealTick((n) => n + 1);
   };
 
   const streamingName = status?.kind === "streaming" ? displayName(status.device) : null;
@@ -167,6 +181,8 @@ export function AdbPanel() {
   }
 
   const selected = manualKey ? encodeKey(manualKey) : "";
+  const missingChoice =
+    manualKey && !devices.some((d) => encodeKey(keyForDevice(d)) === selected) ? manualKey : null;
   const showLogs = status?.kind === "streaming" || status?.kind === "waiting" || status?.kind === "stopped";
 
   return (
@@ -183,6 +199,11 @@ export function AdbPanel() {
               onChange={(e) => chooseDevice(e.target.value)}
             >
               <option value="">{t("adb_device_automatic")}</option>
+              {missingChoice && (
+                <option value={selected} disabled>
+                  {t("adb_device_missing", { device: missingChoice.value })}
+                </option>
+              )}
               {devices.map((device) => (
                 <option
                   key={device.serial}
@@ -213,7 +234,7 @@ export function AdbPanel() {
         </div>
       )}
       {showLogs && (
-        <AdbLogList workspaceId={workspaceId} version={version} highlight={matches} reveal={current} />
+        <AdbLogList workspaceId={workspaceId} version={version} highlight={matches} reveal={reveal} />
       )}
     </div>
   );

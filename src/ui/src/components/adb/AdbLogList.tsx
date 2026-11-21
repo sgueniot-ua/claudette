@@ -24,8 +24,9 @@ interface Props {
   version: number;
   // Absolute indexes of lines to highlight (search matches).
   highlight?: readonly number[];
-  // Absolute index to scroll into view (current search match).
-  reveal?: number | null;
+  // Absolute index to scroll into view (current search match). A new object
+  // (new tick) re-reveals the same index.
+  reveal?: { index: number; tick: number } | null;
   buffer?: AdbLogBuffer;
 }
 
@@ -104,7 +105,7 @@ export function AdbLogList({ workspaceId, version, highlight, reveal = null, buf
       return;
     }
     const { first: base, count: size } = revealRef.current;
-    const offset = reveal - base;
+    const offset = reveal.index - base;
     if (offset < 0 || offset >= size) {
       return;
     }

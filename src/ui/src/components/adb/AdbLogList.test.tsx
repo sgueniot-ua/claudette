@@ -189,8 +189,9 @@ describe("AdbLogList", () => {
     const buffer = createAdbLogBuffer(1000);
     buffer.append("w", lines(0, 100));
     await show(buffer, 1);
+    const reveal = { index: 10, tick: 0 };
     await act(async () => {
-      root.render(<AdbLogList workspaceId="w" version={1} buffer={buffer} reveal={10} />);
+      root.render(<AdbLogList workspaceId="w" version={1} buffer={buffer} reveal={reveal} />);
     });
     // row 10 is at 200px; centred in the 200px viewport -> 100px
     expect(scroller().scrollTop).toBe(100);
@@ -199,8 +200,13 @@ describe("AdbLogList", () => {
     await scrollTo(300);
     await append(buffer, 100, 110);
     await act(async () => {
-      root.render(<AdbLogList workspaceId="w" version={2} buffer={buffer} reveal={10} />);
+      root.render(<AdbLogList workspaceId="w" version={2} buffer={buffer} reveal={reveal} />);
     });
     expect(scroller().scrollTop).toBe(300);
+    // a new tick on the same index re-reveals it
+    await act(async () => {
+      root.render(<AdbLogList workspaceId="w" version={2} buffer={buffer} reveal={{ index: 10, tick: 1 }} />);
+    });
+    expect(scroller().scrollTop).toBe(100);
   });
 });

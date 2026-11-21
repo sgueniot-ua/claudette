@@ -13,6 +13,21 @@ vi.mock("react-i18next", () => ({
     t: (key: string, opts?: { device?: string }) => (opts?.device ? `${key}|${opts.device}` : key),
   }),
 }));
+vi.mock("./AdbLogList", () => ({
+  AdbLogList: ({
+    highlight,
+    reveal,
+  }: {
+    highlight?: number[];
+    reveal?: { index: number; tick: number } | null;
+  }) => (
+    <div
+      data-testid="log"
+      data-highlight={(highlight ?? []).join(",")}
+      data-reveal={reveal ? `${reveal.index}:${reveal.tick}` : ""}
+    />
+  ),
+}));
 vi.mock("../../hotkeys/platform", () => ({ getHotkeyPlatform: () => "mac" }));
 vi.mock("../../services/adb", () => ({
   adbGetWorkspaceDevice: vi.fn(),
@@ -217,6 +232,41 @@ describe("AdbPanel picker", () => {
     expect(setDevice).toHaveBeenCalledWith("w1", null);
   });
 
+  it("shows a placeholder for a stored choice whose device is absent", async () => {
+    // FR-007a
+    getDevice.mockResolvedValue({ kind: "avd", value: "Gone_AVD" });
+    await render();
+    expect(picker().value).toBe("avd:Gone_AVD");
+    expect(picker().selectedOptions[0].textContent).toBe("adb_device_missing|Gone_AVD");
+  });
+
+  it("rolls back the choice when the service rejects", async () => {
+    // FR-007a
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    getDevice.mockResolvedValue({ kind: "serial", value: "R5" });
+    setDevice.mockRejectedValue(new Error("boom"));
+    await render();
+    await act(async () => {
+      picker().value = "avd:Pixel_8";
+      picker().dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(picker().value).toBe("serial:R5");
+    spy.mockRestore();
+  });
+
+  it("does not let a stale initial read overwrite an earlier choice", async () => {
+    // FR-007a
+    let resolveRead!: (k: null) => void;
+    getDevice.mockReturnValue(new Promise((r) => (resolveRead = r)));
+    await render();
+    await act(async () => {
+      picker().value = "serial:R5";
+      picker().dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => resolveRead(null));
+    expect(picker().value).toBe("serial:R5");
+  });
+
   it("only lets ready devices be selected", async () => {
     // FR-007a
     await render();
@@ -295,19 +345,84 @@ describe("AdbPanel search", () => {
     expect(chatSearch).not.toHaveBeenCalled();
   });
 
-  it("highlights matches while typing", async () => {
-    // FR-006c
-    await render();
-    pressModF(panel());
+  function typeQuery(value: string) {
     const input = container.querySelector("input") as HTMLInputElement;
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    await act(async () => {
-      setValue.call(input, "wor");
+    return act(async () => {
+      setValue.call(input, value);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const rows = Array.from(container.querySelectorAll('[data-testid="adb-log-row"]'));
-    const highlighted = rows.filter((r) => r.className.includes("highlight"));
-    expect(highlighted).toHaveLength(1);
-    expect(highlighted[0].textContent).toContain("world");
+  }
+  function key(k: string, shiftKey = false) {
+    const input = container.querySelector("input") as HTMLInputElement;
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: k, shiftKey, bubbles: true }));
+    });
+  }
+  const log = () => container.querySelector('[data-testid="log"]') as HTMLElement;
+
+  async function openWithFoo() {
+    adbLogBuffer.clear("w1");
+    adbLogBuffer.append(
+      "w1",
+      ["foo a", "bar", "foo b"].map((message) => ({
+        ts: null,
+        pid: 1,
+        tid: 1,
+        level: "i" as const,
+        tag: "T",
+        message,
+      })),
+      false,
+    );
+    await render();
+    pressModF(panel());
+    await typeQuery("foo");
+  }
+
+  it("highlights matches and reveals the first one while typing", async () => {
+    // FR-006c
+    await openWithFoo();
+    expect(log().dataset.highlight).toBe("0,2");
+    expect(log().dataset.reveal).toMatch(/^0:/);
+  });
+
+  it("Enter goes to the next match and wraps, Shift+Enter goes back", async () => {
+    // FR-006c
+    await openWithFoo();
+    key("Enter");
+    expect(log().dataset.reveal).toMatch(/^2:/);
+    key("Enter");
+    expect(log().dataset.reveal).toMatch(/^0:/);
+    key("Enter", true);
+    expect(log().dataset.reveal).toMatch(/^2:/);
+    key("Enter", true);
+    expect(log().dataset.reveal).toMatch(/^0:/);
+  });
+
+  it("Enter re-reveals the current match with a new tick", async () => {
+    // FR-006c
+    await openWithFoo();
+    await typeQuery("bar");
+    const before = log().dataset.reveal;
+    key("Enter");
+    expect(log().dataset.reveal).toMatch(/^1:/);
+    expect(log().dataset.reveal).not.toBe(before);
+  });
+
+  it("Escape gives focus back to the panel", async () => {
+    // FR-006c
+    await openWithFoo();
+    key("Escape");
+    expect(document.activeElement).toBe(panel());
+  });
+
+  it("mod+f with the search already open focuses the input", async () => {
+    // FR-006c
+    await openWithFoo();
+    act(() => panel().focus());
+    expect(document.activeElement).toBe(panel());
+    pressModF(panel());
+    expect(document.activeElement).toBe(container.querySelector("input"));
   });
 });

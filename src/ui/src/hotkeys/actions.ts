@@ -416,8 +416,8 @@ export const HOTKEY_ACTIONS = [
     scope: "adb",
     category: "keyboard_category_navigation",
     description: "keyboard_action_adb_open_search",
-    defaultBinding: allPlatforms("mod+f"),
-    match: "key",
+    defaultBinding: allPlatforms("mod+code:KeyF"),
+    match: "code",
     rebindable: true,
   },
   {
