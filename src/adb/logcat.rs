@@ -34,7 +34,7 @@ fn parse_fields(line: &str) -> Option<LogcatLine> {
         pid: Some(pid),
         tid: Some(tid),
         level: Some(level),
-        tag: Some(tag.to_string()),
+        tag: Some(tag.trim_end().to_string()),
         message: message.to_string(),
     })
 }
@@ -117,7 +117,17 @@ mod tests {
     // FR-006 (pas de panique sur octets invalides)
     #[test]
     fn invalid_utf8_is_split_into_lossy_lines() {
-        assert!(split_lines_lossy(&[0xff, b'a', b'\n']).len() == 1);
+        let lines = split_lines_lossy(&[0xff, b'a', b'\n']);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains('\u{FFFD}'));
+    }
+
+    // FR-006
+    #[test]
+    fn parse_threadtime_trims_padded_tag() {
+        let l = parse_threadtime_line("11-21 10:15:02.123  1234  1250 I chatty  : uid=1000");
+        assert_eq!(l.tag.as_deref(), Some("chatty"));
+        assert_eq!(l.message, "uid=1000");
     }
 
     // FR-006
