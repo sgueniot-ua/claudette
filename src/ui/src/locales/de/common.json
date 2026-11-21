@@ -19,5 +19,6 @@
   "retry": "Erneut versuchen",
   "skip": "Überspringen",
   "done": "Fertig",
-  "back_to_app": "Zurück zur App"
+  "back_to_app": "Zurück zur App",
+  "adb_latest_logs": "Latest logs"
 }

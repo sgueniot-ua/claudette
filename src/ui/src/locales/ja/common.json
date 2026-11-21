@@ -17,5 +17,6 @@
   "retry": "再試行",
   "skip": "スキップ",
   "done": "完了",
-  "back_to_app": "アプリに戻る"
+  "back_to_app": "アプリに戻る",
+  "adb_latest_logs": "Latest logs"
 }

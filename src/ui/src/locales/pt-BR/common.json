@@ -17,5 +17,6 @@
   "retry": "Tentar novamente",
   "skip": "Pular",
   "done": "Concluído",
-  "back_to_app": "Voltar ao app"
+  "back_to_app": "Voltar ao app",
+  "adb_latest_logs": "Latest logs"
 }
