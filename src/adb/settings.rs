@@ -103,6 +103,13 @@ mod tests {
         assert_eq!(DeviceKey::from_setting("junk"), None);
     }
 
+    // FR-007a: an empty payload is not a device, so it reads as no choice
+    #[test]
+    fn device_key_empty_payload_is_absent() {
+        assert_eq!(DeviceKey::from_setting("avd:"), None);
+        assert_eq!(DeviceKey::from_setting("serial:"), None);
+    }
+
     // FR-007a: an unknown stored value reads as no choice
     #[test]
     fn unknown_device_setting_is_absent() {
@@ -138,6 +145,16 @@ mod tests {
     fn android_mode_defaults_off() {
         let (_dir, db) = temp_db();
         assert!(!android_mode(&db, "r1").unwrap());
+    }
+
+    // FR-001a: only the stored value "true" enables the mode
+    #[test]
+    fn android_mode_only_true_enables() {
+        let (_dir, db) = temp_db();
+        for value in ["false", "1"] {
+            db.set_app_setting("repo:r1:android_mode", value).unwrap();
+            assert!(!android_mode(&db, "r1").unwrap(), "value {value:?}");
+        }
     }
 
     // FR-001a: enabling stores "true"; disabling deletes the key

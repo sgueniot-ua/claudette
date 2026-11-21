@@ -65,6 +65,7 @@ fn sdk_adb(sdk: &Path) -> Option<PathBuf> {
 
 fn find_in_path(path: &OsStr, name: &str) -> Option<PathBuf> {
     std::env::split_paths(path)
+        .filter(|dir| !dir.as_os_str().is_empty())
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.is_file())
 }
@@ -185,6 +186,49 @@ mod tests {
             ..LocateEnv::default()
         };
         assert_eq!(locate_adb(None, &env), Some(expected));
+    }
+
+    // FR-008 (R5): ANDROID_SDK_ROOT is used when ANDROID_HOME is unset
+    #[test]
+    fn locate_uses_android_sdk_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sdk = tmp.path().join("sdk");
+        let expected = adb_in(&sdk);
+
+        let env = LocateEnv {
+            android_sdk_root: Some(sdk),
+            ..LocateEnv::default()
+        };
+        assert_eq!(locate_adb(None, &env), Some(expected));
+    }
+
+    // FR-008 (R5): an sdk.dir without adb does not stop the search
+    #[test]
+    fn locate_falls_through_when_sdk_dir_has_no_adb() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("local.properties"),
+            format!("sdk.dir={}\n", tmp.path().join("empty-sdk").display()),
+        )
+        .unwrap();
+        let sdk = tmp.path().join("sdk");
+        let expected = adb_in(&sdk);
+
+        let env = LocateEnv {
+            android_home: Some(sdk),
+            ..LocateEnv::default()
+        };
+        assert_eq!(locate_adb(Some(tmp.path()), &env), Some(expected));
+    }
+
+    // FR-008 (R5): empty PATH segments are not the current directory
+    #[test]
+    fn locate_ignores_empty_path_segments() {
+        let env = LocateEnv {
+            path: Some(OsString::from(":")),
+            ..LocateEnv::default()
+        };
+        assert_eq!(locate_adb(None, &env), None);
     }
 
     // FR-008: no adb anywhere in the injected environment
