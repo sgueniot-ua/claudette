@@ -1,3 +1,4 @@
+mod adb;
 mod agent_conclusion;
 mod attachment;
 pub mod cesp;
@@ -13,6 +14,7 @@ mod repository_input;
 mod terminal_tab;
 mod workspace;
 
+pub use adb::*;
 pub use agent_conclusion::AgentConclusion;
 pub use attachment::{Attachment, AttachmentOrigin};
 pub use cesp::{
