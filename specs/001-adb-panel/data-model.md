@@ -64,7 +64,7 @@ Une ligne analysée du format `threadtime`.
 |---|---|
 | `AdbMissing` | outil adb introuvable (R5) |
 | `NoDevice` / `NeedsChoice` | voir `Resolution` |
-| `Waiting { device }` | appareil retenu, absent ou pas prêt ; reprise auto (FR-009) |
+| `Waiting { device, reason }` | appareil retenu, absent ou pas prêt ; `reason` : `Disconnected` / `Unauthorized` ; reprise auto (FR-009, FR-005) |
 | `Streaming { device, source }` | logcat en cours |
 | `Stopped` | session arrêtée (archivage, suppression, mode Android désactivé) |
 

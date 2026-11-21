@@ -35,7 +35,11 @@ Attendu : tout passe, zéro avertissement.
 | 11 | `adb emu kill` sur l'émulateur de A, puis le redémarrer | « appareil déconnecté », puis reprise seule, sans doublons | FR-008, FR-009 |
 | 11b | B avec un choix manuel, débrancher cet appareil, un autre restant connecté | « déconnecté », pas de bascule | FR-007c |
 | 12 | PATH sans adb et `ANDROID_HOME` vide | « adb introuvable » ; reste de l'app normal | FR-008 |
-| 13 | `adb shell 'while true; do log -t spam x; done'` | chat et défilement fluides | SC-004 |
+| 13 | Flux d'environ 2 000 lignes/s pendant 60 s (`adb shell 'while true; do log -t spam x; done'`), taper dans le chat | caractère affiché en < 100 ms, défilement fluide | SC-004 |
+| 13b | Volet ouvert, alterner 20 fois entre A et B (appareils distincts) | jamais l'appareil de l'autre workspace | SC-003 |
+| 13c | Volet ouvert sur A, sélectionner un workspace d'un dépôt sans mode Android, revenir sur A | volet masqué puis réaffiché | FR-003a |
+| 13d | Brancher un téléphone sans autoriser le débogage USB, le choisir | « Autorise le débogage USB sur l'appareil », puis logs après autorisation | FR-005 |
+| 13e | Changer de branche dans le worktree de A (`git switch`), l'émulateur `task-…-<nouvelle branche>` démarré | l'émulateur de la nouvelle branche est retenu | FR-007d |
 | 14 | Fermer le volet ADB | `adb logcat` de A toujours actif (`ps`) | FR-004a |
 | 14b | Archiver A ; supprimer B | plus de processus `adb logcat` pour A ni B ; choix manuel de B effacé | FR-011, FR-007a |
 | 15 | Créer un workspace | aucun émulateur créé ni démarré | FR-007b |

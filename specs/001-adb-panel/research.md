@@ -64,7 +64,9 @@ le 2026-11-21 (rendu en liste virtualisée, volets côte à côte, mode Android 
 
 - **Decision**: nom attendu `task-<slug(dépôt)>-<slug(branche)>`, tronqué à 60 caractères ;
   `slug` remplace tout caractère hors `[A-Za-z0-9._-]` par `-` puis retire les `-` des bords ;
-  dépôt = dernier segment de l'URL de l'origin sans `.git`, sinon nom du dossier racine. Fonction
+  dépôt = dernier segment de l'URL de l'origin sans `.git`, sinon nom du dossier racine ;
+  branche = branche extraite dans le worktree (`git rev-parse --abbrev-ref HEAD`), relue à chaque
+  résolution (FR-007d) ; HEAD détaché → pas d'émulateur dédié. Fonction
   pure dans `src/adb/naming.rs`, testée sur les cas de la convention existante.
 - **Rationale**: Assumption de la spec ; identique à la convention en place pour que les émulateurs
   déjà créés soient reconnus.
@@ -74,7 +76,9 @@ le 2026-11-21 (rendu en liste virtualisée, volets côte à côte, mode Android 
 - **Decision**: fonction pure `resolve_device(manual, dedicated_avd, devices) -> Resolution` dans
   le cœur : choix manuel présent → cet appareil (connecté ou non : `Offline` s'il manque, on ne
   retombe pas sur un autre, FR-008) ; sinon émulateur dédié démarré ; sinon l'unique appareil
-  `device` ; sinon `NeedsChoice` (≥ 2) ou `NoDevice` (0). Le choix manuel identifie un émulateur par
+  `device` (prêt : un appareil `unauthorized` ou `offline` ne compte pas) ; sinon `NeedsChoice`
+  (≥ 2) ou `NoDevice` (0). Appareil retenu `unauthorized` → `Waiting` avec raison `Unauthorized`
+  (FR-005). Le choix manuel identifie un émulateur par
   son nom d'AVD (son numéro de série change d'un démarrage à l'autre) et un appareil physique par
   sa série.
 

@@ -136,16 +136,18 @@ CLAUDE.md                        # domaine `adb` dans la liste des commandes Tau
 | FR-001 / FR-001a | vitest : bouton et raccourci absents sans mode Android, présents avec ; cargo : `adb_open_session` refusé sans mode |
 | FR-001b | vitest : mise en page côte à côte / pleine largeur selon les volets ouverts |
 | FR-002 / FR-003 | vitest : le volet affiche la session du workspace sélectionné, bascule au changement |
+| FR-003a | vitest : volet masqué sur un workspace sans mode Android ou distant, réaffiché au retour |
 | FR-004 | vitest : tampon par workspace conservé au retour |
 | FR-004a | vitest : fermer le volet ou changer de workspace n'appelle pas `adb_close_session` ; cargo : la session survit sans abonné |
-| FR-005 | vitest : nom affiché (AVD > modèle > série) et état |
+| FR-005 | vitest : nom affiché (AVD > modèle > série), état et message « non autorisé » ; cargo : `Unauthorized` → `Waiting`, reprise à l'autorisation |
 | FR-006 | cargo : analyse threadtime ; vitest : virtualisation, recherche, absence de saisie |
 | FR-006a | vitest : suivi du bas, gel quand on remonte, reprise par le bouton, vue stable malgré l'éviction |
 | FR-006b | cargo : premier lancement `-T 500` ; vitest : tampon plafonné à 50 000, plus anciennes évincées |
 | FR-006c | vitest : ⌘F dans le volet ouvre sa recherche, pas celle du chat |
 | FR-007 / FR-007a | cargo : `resolve_device` (4 étapes), (dé)sérialisation `DeviceKey`, clé effacée sur `Deleted` et gardée sur `Archived` |
 | FR-007c | cargo : choix manuel absent → `Unavailable`, jamais un autre appareil |
-| FR-007b | cargo : aucune référence adb dans la création de workspace (test de non-appel du module) |
+| FR-007d | cargo : la résolution lit la branche extraite (`git rev-parse --abbrev-ref HEAD` du worktree) à chaque appel ; test avec un dépôt `tempfile` dont on change la branche |
+| FR-007b | quickstart 15 + vérification en revue : aucun appel au module `adb` dans les chemins de création de workspace |
 | FR-008 | cargo : `locate` sans adb → `AdbMissing` ; vitest : messages par état |
 | FR-009 | cargo : transitions `Streaming → Waiting → Streaming`, reprise `-T <ts>` |
 | FR-010 | vitest : ouvrir ADB ne modifie pas `terminalTabs` ni `terminalPanelVisible` |

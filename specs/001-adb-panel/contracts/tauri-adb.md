@@ -30,6 +30,9 @@ contrat existant n'est modifié. Types : voir [data-model.md](../data-model.md).
 | `global.toggle-adb-panel` | `mod+shift+code:KeyA` (⌘⇧A / Ctrl+Shift+A) | actif seulement si le workspace affiché est local et que son dépôt a le mode Android |
 | `adb.open-search` (portée `adb`) | `mod+f` | focus dans le volet ADB (FR-006c) |
 
+La commande de palette « Toggle ADB panel » est masquée aux mêmes conditions que le raccourci
+(FR-001a, FR-003a).
+
 ## Réglage de dépôt
 
 Settings > Repository (`RepoSettings.tsx`) : interrupteur « Android mode » (désactivé par défaut),

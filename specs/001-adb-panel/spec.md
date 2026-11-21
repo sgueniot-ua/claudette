@@ -30,6 +30,12 @@
 - Q: Valeurs par défaut ? → A: 500 lignes à l'ouverture, 50 000 lignes gardées par workspace,
   raccourci ⌘⇧A (Ctrl+Shift+A sous Linux et Windows), ⌘/Ctrl+F dans le volet pour chercher, choix
   manuel gardé à l'archivage et effacé à la suppression.
+- Q: Volet ouvert et passage à un workspace sans mode Android ? → A: le volet se masque, puis
+  réapparaît au retour sur un workspace Android.
+- Q: Quelle branche identifie l'émulateur dédié ? → A: la branche extraite dans le worktree,
+  relue à chaque résolution ; après un renommage, un émulateur à l'ancien nom n'est plus reconnu.
+- Q: Appareil dont le débogage USB n'est pas autorisé ? → A: message « Autorise le débogage USB sur
+  l'appareil », puis reprise automatique une fois autorisé.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -88,7 +94,10 @@ avec le volet ouvert et vérifier que l'appareil montré change à chaque bascul
 1. **Given** le volet ADB ouvert sur le workspace A, **When** l'utilisateur sélectionne le
    workspace B, **Then** le volet montre l'appareil de B.
 2. **Given** l'utilisateur revient au workspace A, **When** le volet se réaffiche, **Then** il
-   retrouve la session ADB de A là où elle en était (contenu déjà affiché conservé).
+   retrouve la session ADB de A : contenu déjà affiché conservé, plus les logs reçus entre-temps.
+3. **Given** le volet ADB ouvert sur un workspace Android, **When** l'utilisateur sélectionne un
+   workspace dont le dépôt n'a pas le mode Android, **Then** le volet est masqué ; **When** il
+   revient sur un workspace Android, **Then** le volet réapparaît.
 
 ---
 
@@ -100,7 +109,7 @@ association.
 Règle d'association, dans cet ordre :
 1. l'appareil choisi à la main pour ce workspace, s'il y en a un ;
 2. sinon l'émulateur dédié à la branche du workspace, s'il est démarré ;
-3. sinon l'appareil connecté, s'il est le seul ;
+3. sinon l'appareil prêt, s'il est le seul ;
 4. sinon aucun : le volet demande à l'utilisateur de choisir parmi les appareils connectés.
 
 Un choix manuel est mémorisé pour le workspace et l'utilisateur peut le changer ou l'effacer à
@@ -139,11 +148,14 @@ que le nouvel appareil est montré.
   associer un, au lieu de montrer un autre appareil.
 - L'appareil associé est déconnecté ou éteint : le volet l'indique ; il reprend quand l'appareil
   revient, sans action de l'utilisateur.
+- L'appareil est branché mais le débogage USB n'y est pas autorisé : le volet affiche « Autorise
+  le débogage USB sur l'appareil » et reprend seul une fois l'autorisation donnée.
+- La branche du worktree est renommée ou changée : l'émulateur dédié est recherché sous le nouveau
+  nom ; un émulateur créé sous l'ancien nom n'est plus reconnu comme dédié.
 - L'outil ADB est introuvable sur la machine : le volet affiche un message explicite, le reste de
   l'application fonctionne normalement.
 - Le workspace est archivé ou supprimé : sa session ADB s'arrête.
-- Workspace distant (machine appairée) : l'appareil ADB est celui de la machine où tourne le
-  workspace, ou le volet est indisponible — voir Assumptions.
+- Workspace distant (machine appairée) : le volet est indisponible — voir Assumptions.
 - Volume de logs élevé : le volet reste fluide et ne bloque pas le reste de l'interface.
 
 ## Requirements *(mandatory)*
@@ -163,13 +175,17 @@ que le nouvel appareil est montré.
 - **FR-002**: Le volet ADB MUST montrer uniquement l'appareil associé au workspace affiché.
 - **FR-003**: Quand le workspace affiché change, le volet MUST basculer sur l'appareil du nouveau
   workspace sans action de l'utilisateur.
+- **FR-003a**: Quand le workspace affiché appartient à un dépôt sans mode Android (ou est
+  distant), le volet MUST être masqué, et MUST réapparaître au retour sur un workspace Android si
+  l'utilisateur ne l'a pas fermé entre-temps.
 - **FR-004**: Chaque workspace MUST garder sa propre session ADB : revenir à un workspace retrouve
   le contenu déjà affiché pour lui pendant la session de l'application.
 - **FR-004a**: Une session ouverte MUST continuer à recevoir les logs quand l'utilisateur quitte le
   workspace ou ferme le volet, jusqu'à l'archivage ou la suppression du workspace, la
   désactivation du mode Android de son dépôt ou la fermeture de l'application.
 - **FR-005**: Le volet MUST afficher le nom de l'appareil associé et son état (connecté,
-  déconnecté, absent).
+  déconnecté, non autorisé, absent) ; pour un appareil non autorisé, le message MUST être
+  « Autorise le débogage USB sur l'appareil », avec reprise automatique une fois autorisé.
 - **FR-006**: Le volet MUST afficher au fil de l'eau les logs (logcat) de l'appareil associé,
   en lecture seule, et permettre de chercher un texte dans les logs affichés.
 - **FR-006a**: Le volet MUST suivre les derniers logs tant que l'utilisateur est en bas ; s'il
@@ -181,7 +197,9 @@ que le nouvel appareil est montré.
   y est, sans ouvrir la recherche du chat ni celle du terminal.
 - **FR-007**: L'association workspace → appareil MUST suivre, dans l'ordre : choix manuel
   mémorisé du workspace ; sinon émulateur dédié à la branche, s'il est démarré ; sinon l'unique
-  appareil connecté ; sinon demande à l'utilisateur.
+  appareil prêt (connecté et autorisé) ; sinon demande à l'utilisateur.
+- **FR-007d**: La branche qui identifie l'émulateur dédié MUST être celle extraite dans le
+  worktree au moment de la résolution.
 - **FR-007a**: Le choix manuel MUST être mémorisé par workspace, survivre au redémarrage de
   l'application, être gardé à l'archivage et effacé à la suppression du workspace, et pouvoir être
   changé ou effacé par l'utilisateur.
@@ -207,8 +225,8 @@ que le nouvel appareil est montré.
   workspace (voir Assumptions).
 - **Association workspace → appareil** : relie un workspace à au plus un appareil ; règle selon
   FR-007 ; seul le choix manuel est mémorisé.
-- **Session ADB** : logs affichés pour un workspace (FR-006), propres à ce workspace, vivant le
-  temps de la session de l'application.
+- **Session ADB** : logs affichés pour un workspace (FR-006), propres à ce workspace ; durée de vie
+  selon FR-004a et FR-011.
 
 ## Success Criteria *(mandatory)*
 
@@ -220,8 +238,8 @@ que le nouvel appareil est montré.
   en moins de 1 seconde, dans 100 % des bascules testées.
 - **SC-003**: Avec deux appareils connectés et deux workspaces, aucune bascule ne montre
   l'appareil de l'autre workspace (0 erreur sur 20 bascules).
-- **SC-004**: Avec un flux de logs soutenu, l'interface reste réactive : la saisie dans le chat
-  et le défilement ne montrent aucun gel perceptible.
+- **SC-004**: Avec un flux de 2 000 lignes de logs par seconde pendant 60 secondes, un caractère
+  tapé dans le chat apparaît en moins de 100 ms et le défilement du volet reste fluide.
 - **SC-005**: Un utilisateur qui n'a jamais vu le volet l'ouvre et identifie l'appareil montré
   sans aide, au premier essai.
 
@@ -235,7 +253,8 @@ que le nouvel appareil est montré.
   le terminal ; seule l'association workspace → appareil, si elle est manuelle, est mémorisée.
 - Émulateur dédié : on reprend la convention de nommage existante des émulateurs par branche,
   `task-<dépôt>-<branche>` (dépôt et branche réduits aux caractères lettres, chiffres, `.`, `_`,
-  `-`, nom tronqué à 60 caractères). Un émulateur qui ne suit pas cette convention n'est jamais
+  `-`, nom tronqué à 60 caractères), où la branche est celle extraite dans le worktree
+  (FR-007d). Un émulateur qui ne suit pas cette convention n'est jamais
   pris pour l'émulateur dédié ; il reste associable par l'unique appareil connecté ou à la main.
 - Hors périmètre de cette version : workspaces distants (machine appairée) et application mobile
   Claudette ; le volet n'est proposé que pour les workspaces locaux.
