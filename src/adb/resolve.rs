@@ -240,4 +240,28 @@ mod tests {
         ];
         assert_eq!(resolve_device(None, None, &devices), Resolution::NoDevice);
     }
+
+    // FR-007
+    #[test]
+    fn resolve_manual_avd_matches_ready_emulator() {
+        let devices = [
+            device("emulator-5554", AdbDeviceState::Device, Some("Pixel_8")),
+            device("R58M12345", AdbDeviceState::Device, None),
+        ];
+        let manual = DeviceKey::Avd("Pixel_8".into());
+        assert_eq!(
+            resolve_device(Some(&manual), None, &devices),
+            Resolution::Device {
+                serial: "emulator-5554".into(),
+                source: ResolutionSource::Manual,
+            }
+        );
+    }
+
+    // FR-007
+    #[test]
+    fn resolve_lone_offline_is_no_device() {
+        let devices = [device("R58M12345", AdbDeviceState::Offline, None)];
+        assert_eq!(resolve_device(None, None, &devices), Resolution::NoDevice);
+    }
 }
