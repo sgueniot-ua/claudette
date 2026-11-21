@@ -183,4 +183,24 @@ describe("AdbLogList", () => {
     await show(buffer, 3);
     expect(scroller().scrollTop).toBe(407 - 10 * 20);
   });
+
+  // FR-006c
+  it("scrolls a revealed match into view and stops following", async () => {
+    const buffer = createAdbLogBuffer(1000);
+    buffer.append("w", lines(0, 100));
+    await show(buffer, 1);
+    await act(async () => {
+      root.render(<AdbLogList workspaceId="w" version={1} buffer={buffer} reveal={10} />);
+    });
+    // row 10 is at 200px; centred in the 200px viewport -> 100px
+    expect(scroller().scrollTop).toBe(100);
+    expect(button()).not.toBeNull();
+    // buffer growth must not re-scroll to the match
+    await scrollTo(300);
+    await append(buffer, 100, 110);
+    await act(async () => {
+      root.render(<AdbLogList workspaceId="w" version={2} buffer={buffer} reveal={10} />);
+    });
+    expect(scroller().scrollTop).toBe(300);
+  });
 });

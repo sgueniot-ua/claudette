@@ -24,6 +24,8 @@ interface Props {
   version: number;
   // Absolute indexes of lines to highlight (search matches).
   highlight?: readonly number[];
+  // Absolute index to scroll into view (current search match).
+  reveal?: number | null;
   buffer?: AdbLogBuffer;
 }
 
@@ -46,7 +48,7 @@ function LogRow({ line, top, highlighted }: { line: LogcatLine; top: number; hig
   );
 }
 
-export function AdbLogList({ workspaceId, version, highlight, buffer = adbLogBuffer }: Props) {
+export function AdbLogList({ workspaceId, version, highlight, reveal = null, buffer = adbLogBuffer }: Props) {
   const { t } = useTranslation("common");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -92,6 +94,26 @@ export function AdbLogList({ workspaceId, version, highlight, buffer = adbLogBuf
       scrollToOffset(el, Math.max(0, shifted));
     }
   }, [version, workspaceId, generation, first, count, scrollToOffset]);
+
+  // Only a change of the target match scrolls; buffer updates must not.
+  const revealRef = useRef({ first, count });
+  revealRef.current = { first, count };
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (reveal === null || !el) {
+      return;
+    }
+    const { first: base, count: size } = revealRef.current;
+    const offset = reveal - base;
+    if (offset < 0 || offset >= size) {
+      return;
+    }
+    setFollow(false);
+    const top = offset * ADB_ROW_HEIGHT;
+    if (top < el.scrollTop || top + ADB_ROW_HEIGHT > el.scrollTop + el.clientHeight) {
+      scrollToOffset(el, Math.max(0, top - el.clientHeight / 2));
+    }
+  }, [reveal, setFollow, scrollToOffset]);
 
   const onScroll = () => {
     const el = scrollRef.current;

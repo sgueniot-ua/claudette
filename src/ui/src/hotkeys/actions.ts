@@ -1,4 +1,4 @@
-export type HotkeyScope = "global" | "terminal" | "file-viewer";
+export type HotkeyScope = "global" | "terminal" | "file-viewer" | "adb";
 export type KeyMatch = "key" | "code";
 
 export interface PlatformBinding {
@@ -406,6 +406,18 @@ export const HOTKEY_ACTIONS = [
     description: "keyboard_action_terminal_open_search",
     defaultBinding: allPlatforms("mod+code:KeyF"),
     match: "code",
+    rebindable: true,
+  },
+  {
+    // Cmd/Ctrl+F with focus inside the ADB panel opens the panel's log
+    // search. The panel intercepts the press and stops propagation, so the
+    // global chat-search handler never fires.
+    id: "adb.open-search",
+    scope: "adb",
+    category: "keyboard_category_navigation",
+    description: "keyboard_action_adb_open_search",
+    defaultBinding: allPlatforms("mod+f"),
+    match: "key",
     rebindable: true,
   },
   {

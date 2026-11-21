@@ -417,6 +417,7 @@
   "keyboard_action_terminal_copy_selection": "Terminal-Auswahl kopieren",
   "keyboard_action_terminal_paste": "Ins Terminal einfügen",
   "keyboard_action_terminal_open_search": "Terminal-Scrollback durchsuchen",
+  "keyboard_action_adb_open_search": "Search ADB logs",
   "keyboard_action_close_tab": "Aktiven Tab schließen (Datei, Diff oder Chat-Session)",
   "keyboard_action_file_undo_operation": "Datei-Operation rückgängig",
   "keyboard_action_file_toggle_markdown_preview": "Markdown-Vorschau umschalten",

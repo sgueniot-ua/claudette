@@ -18,5 +18,17 @@
   "skip": "Omitir",
   "done": "Listo",
   "back_to_app": "Volver a la app",
-  "adb_latest_logs": "Latest logs"
+  "adb_latest_logs": "Latest logs",
+  "adb_missing": "adb was not found. Install Android SDK platform-tools or set ANDROID_HOME.",
+  "adb_no_device": "No Android device connected. Connect a device or start an emulator, then pick it here.",
+  "adb_needs_choice": "Several devices are connected. Choose the one for this workspace.",
+  "adb_waiting_disconnected": "{{device}} is disconnected. Logs resume when it reconnects.",
+  "adb_waiting_unauthorized": "Allow USB debugging on the device.",
+  "adb_stopped": "Session stopped.",
+  "adb_device_label": "Device",
+  "adb_device_automatic": "Automatic",
+  "adb_source_manual": "Chosen manually",
+  "adb_source_dedicated_emulator": "Dedicated emulator",
+  "adb_source_only_device": "Only connected device",
+  "adb_search_placeholder": "Search logs"
 }
