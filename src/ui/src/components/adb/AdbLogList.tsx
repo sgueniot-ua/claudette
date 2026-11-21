@@ -53,12 +53,11 @@ export function AdbLogList({ workspaceId, version, highlight, buffer = adbLogBuf
   const [viewport, setViewport] = useState(0);
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
-  // Absolute index of the first fully-or-partly visible row while frozen.
-  const anchorRef = useRef(0);
-  const lastSpanRef = useRef({ first: 0, end: 0 });
+  const lastSyncRef = useRef({ workspaceId, generation: 0, first: 0 });
 
   const first = buffer.firstIndex(workspaceId);
   const count = buffer.size(workspaceId);
+  const generation = buffer.generation(workspaceId);
   const highlighted = useMemo(() => new Set(highlight ?? []), [highlight]);
 
   const setFollow = useCallback((value: boolean) => {
@@ -78,22 +77,21 @@ export function AdbLogList({ workspaceId, version, highlight, buffer = adbLogBuf
       return;
     }
     setViewport(el.clientHeight);
-    const last = lastSpanRef.current;
-    const end = first + count;
-    // Absolute indexes restart at 0 on clear/reset: a new session resumes following.
-    if (end < last.end || first < last.first) {
+    const last = lastSyncRef.current;
+    lastSyncRef.current = { workspaceId, generation, first };
+    // A clear/reset (or another workspace) starts a new session: resume following.
+    if (last.workspaceId !== workspaceId || last.generation !== generation) {
       followingRef.current = true;
       setFollowing(true);
     }
-    lastSpanRef.current = { first, end };
     if (followingRef.current) {
       scrollToOffset(el, count * ADB_ROW_HEIGHT);
-    } else {
-      // Anchor on the absolute index so eviction does not shift the content.
-      const offset = Math.max(0, anchorRef.current - first) * ADB_ROW_HEIGHT;
-      scrollToOffset(el, offset);
+    } else if (first !== last.first) {
+      // Shift by the evicted rows only, keeping the sub-row offset.
+      const shifted = el.scrollTop - (first - last.first) * ADB_ROW_HEIGHT;
+      scrollToOffset(el, Math.max(0, shifted));
     }
-  }, [version, workspaceId, first, count, scrollToOffset]);
+  }, [version, workspaceId, generation, first, count, scrollToOffset]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -102,13 +100,8 @@ export function AdbLogList({ workspaceId, version, highlight, buffer = adbLogBuf
     }
     const top = el.scrollTop;
     setScrollTop(top);
-    const atBottom = count * ADB_ROW_HEIGHT - top - el.clientHeight <= ADB_ROW_HEIGHT;
-    if (atBottom) {
-      setFollow(true);
-    } else {
-      anchorRef.current = first + Math.floor(top / ADB_ROW_HEIGHT);
-      setFollow(false);
-    }
+    const atBottom = count * ADB_ROW_HEIGHT - top - el.clientHeight < ADB_ROW_HEIGHT;
+    setFollow(atBottom);
   };
 
   const resumeFollow = () => {

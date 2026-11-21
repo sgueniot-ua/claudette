@@ -19,11 +19,18 @@ export interface AdbLogBuffer {
   size(workspaceId: string): number;
   evicted(workspaceId: string): number;
   firstIndex(workspaceId: string): number;
+  // Session counter: bumped by clear and by append with reset, never decreases.
+  generation(workspaceId: string): number;
   clear(workspaceId: string): void;
 }
 
 export function createAdbLogBuffer(capacity = ADB_LOG_CAPACITY): AdbLogBuffer {
   const workspaces = new Map<string, WorkspaceLog>();
+  const generations = new Map<string, number>();
+
+  function bump(workspaceId: string) {
+    generations.set(workspaceId, (generations.get(workspaceId) ?? 0) + 1);
+  }
 
   function ensure(workspaceId: string): WorkspaceLog {
     let log = workspaces.get(workspaceId);
@@ -48,6 +55,7 @@ export function createAdbLogBuffer(capacity = ADB_LOG_CAPACITY): AdbLogBuffer {
     append(workspaceId, lines, reset = false) {
       if (reset) {
         workspaces.delete(workspaceId);
+        bump(workspaceId);
       }
       const log = ensure(workspaceId);
       for (const line of lines) {
@@ -79,8 +87,13 @@ export function createAdbLogBuffer(capacity = ADB_LOG_CAPACITY): AdbLogBuffer {
       return workspaces.get(workspaceId)?.evicted ?? 0;
     },
 
+    generation(workspaceId) {
+      return generations.get(workspaceId) ?? 0;
+    },
+
     clear(workspaceId) {
       workspaces.delete(workspaceId);
+      bump(workspaceId);
     },
   };
 }

@@ -156,4 +156,31 @@ describe("AdbLogList", () => {
     expect(button()).toBeNull();
     expect(container.textContent).toContain("msg-9");
   });
+
+  // FR-006a
+  it("resumes following when a reset is followed by more lines than before", async () => {
+    const buffer = createAdbLogBuffer(1000);
+    buffer.append("w", lines(0, 100));
+    await show(buffer, 1);
+    await scrollTo(400);
+    expect(button()).not.toBeNull();
+    await append(buffer, 0, 300, true);
+    await show(buffer, 2);
+    expect(button()).toBeNull();
+    expect(container.textContent).toContain("msg-299");
+  });
+
+  // FR-006a
+  it("does not move a frozen non-row-aligned scroll position", async () => {
+    const buffer = createAdbLogBuffer(100);
+    buffer.append("w", lines(0, 90));
+    await show(buffer, 1);
+    await scrollTo(407);
+    await append(buffer, 90, 95); // no eviction
+    await show(buffer, 2);
+    expect(scroller().scrollTop).toBe(407);
+    await append(buffer, 95, 110); // evicts 10
+    await show(buffer, 3);
+    expect(scroller().scrollTop).toBe(407 - 10 * 20);
+  });
 });

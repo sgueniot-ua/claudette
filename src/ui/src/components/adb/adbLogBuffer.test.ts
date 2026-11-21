@@ -99,4 +99,17 @@ describe("createAdbLogBuffer", () => {
     expect(buf.get("ws-1", 1)?.message).toBe("x1");
     expect(buf.get("ws-1", 2)?.message).toBe("x2");
   });
+
+  // FR-006b
+  it("bumps the generation on clear and on reset append only", () => {
+    const buf = createAdbLogBuffer(10);
+    expect(buf.generation("ws-1")).toBe(0);
+    buf.append("ws-1", [line("a")]);
+    expect(buf.generation("ws-1")).toBe(0);
+    buf.append("ws-1", [line("b")], true);
+    expect(buf.generation("ws-1")).toBe(1);
+    buf.clear("ws-1");
+    expect(buf.generation("ws-1")).toBe(2);
+    expect(buf.generation("ws-2")).toBe(0);
+  });
 });

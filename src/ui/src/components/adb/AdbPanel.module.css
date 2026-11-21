@@ -77,7 +77,7 @@
   border: 1px solid var(--accent-primary);
   border-radius: var(--radius-md);
   background: var(--accent-primary);
-  color: var(--text-primary);
+  color: var(--on-accent);
   font-size: 12px;
   cursor: pointer;
 }
