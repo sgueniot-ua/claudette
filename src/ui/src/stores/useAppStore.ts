@@ -28,6 +28,7 @@ import {
   createCheckpointsSlice,
   type CheckpointsSlice,
 } from "./slices/checkpointsSlice";
+import { createAdbSlice, type AdbSlice } from "./slices/adbSlice";
 import { createDiffSlice, type DiffSlice } from "./slices/diffSlice";
 import {
   createFileTreeSlice,
@@ -121,7 +122,8 @@ export type AppState = RepositoriesSlice &
   RemoteSlice &
   SystemSlice &
   TabOrderSlice &
-  WorkspaceClaudeFlagsSlice;
+  WorkspaceClaudeFlagsSlice &
+  AdbSlice;
 
 export const useAppStore = create<AppState>()((...a) => ({
   ...createRepositoriesSlice(...a),
@@ -146,6 +148,7 @@ export const useAppStore = create<AppState>()((...a) => ({
   ...createSystemSlice(...a),
   ...createTabOrderSlice(...a),
   ...createWorkspaceClaudeFlagsSlice(...a),
+  ...createAdbSlice(...a),
 }));
 
 /**
