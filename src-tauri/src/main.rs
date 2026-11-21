@@ -1255,6 +1255,13 @@ fn main() {
             commands::diff::discard_files,
             commands::diff::load_commit_file_diff,
             // Terminal
+            commands::adb::adb_get_android_mode,
+            commands::adb::adb_set_android_mode,
+            commands::adb::adb_open_session,
+            commands::adb::adb_close_session,
+            commands::adb::adb_list_devices,
+            commands::adb::adb_set_workspace_device,
+            commands::adb::adb_get_workspace_device,
             commands::terminal::create_terminal_tab,
             commands::terminal::delete_terminal_tab,
             commands::terminal::ensure_claudette_terminal_tab,
@@ -1588,6 +1595,13 @@ fn shutdown_runtime_handler(_app: &tauri::AppHandle, _event: tauri::RunEvent) {
             // (e.g. cargo-watch's nxv serve) that a plain PG signal —
             // or a bare TerminateProcess on Windows — would miss.
             cleanup_subprocesses_on_exit(&app_state);
+
+            // Stop every ADB logcat session (kills the adb child processes).
+            if let Ok(guard) = app_state.adb_sessions.try_read()
+                && let Some(sessions) = guard.clone()
+            {
+                tauri::async_runtime::block_on(sessions.stop_all());
+            }
 
             // try_write avoids blocking if another thread holds the lock
             // during shutdown — in that case Drop will still fire.

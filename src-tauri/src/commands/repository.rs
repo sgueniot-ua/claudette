@@ -272,6 +272,9 @@ pub async fn remove_repository(
         }
     }
 
+    // Stop the ADB logcat sessions of the repo's workspaces.
+    crate::commands::adb::stop_repo_sessions(&state, &id).await;
+
     // Drop every env-provider watch rooted at the repo's main
     // checkout or any of its workspace worktrees. Without this, the
     // watcher would keep consuming OS watch slots (inotify cap on

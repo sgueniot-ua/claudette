@@ -43,6 +43,7 @@ impl TauriHooks {
 impl OpsHooks for TauriHooks {
     fn workspace_changed(&self, workspace_id: &str, kind: WorkspaceChangeKind) {
         rebuild_tray(&self.app);
+        crate::commands::adb::spawn_teardown(&self.app, vec![workspace_id.to_string()], kind);
 
         // Push the change to the frontend so CLI- and remote-driven
         // creates/archives appear without a manual reload. The fresh
@@ -96,6 +97,7 @@ impl OpsHooks for TauriHooks {
         // (the motivating example for bulk cleanup) used to fire 72
         // rebuilds + 72 DB re-opens inside one IPC call.
         rebuild_tray(&self.app);
+        crate::commands::adb::spawn_teardown(&self.app, workspace_ids.to_vec(), kind);
 
         // One DB query to look up every still-extant workspace row
         // referenced by the batch. For `Deleted` the rows are gone, so

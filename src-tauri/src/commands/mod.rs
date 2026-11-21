@@ -1,3 +1,4 @@
+pub mod adb;
 #[cfg(feature = "alternative-backends")]
 pub mod agent_backends;
 #[cfg(not(feature = "alternative-backends"))]

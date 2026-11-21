@@ -479,6 +479,8 @@ pub struct AppState {
     /// Each value carries its owning `workspace_id` for reverse lookups
     /// (tray aggregation, notifications, worktree path resolution).
     pub agents: RwLock<HashMap<String, AgentSessionState>>,
+    /// ADB logcat sessions; created lazily by the first `adb_open_session` once `adb` is found.
+    pub adb_sessions: RwLock<Option<Arc<claudette::adb::session::AdbSessions>>>,
     /// Active PTY processes keyed by pty_id.
     pub ptys: RwLock<HashMap<u64, PtyHandle>>,
     /// Active file-tail streams for agent-owned background task terminal tabs.
@@ -668,6 +670,7 @@ impl AppState {
             db_path,
             worktree_base_dir: RwLock::new(worktree_base_dir),
             agents: RwLock::new(HashMap::new()),
+            adb_sessions: RwLock::new(None),
             ptys: RwLock::new(HashMap::new()),
             agent_task_tailers: RwLock::new(HashMap::new()),
             next_pty_id: AtomicU64::new(1),
