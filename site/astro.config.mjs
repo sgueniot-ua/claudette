@@ -80,6 +80,7 @@ export default defineConfig({
             { slug: 'features/diff-viewer' },
             { slug: 'features/file-editor' },
             { slug: 'features/integrated-terminal' },
+            { slug: 'features/android-adb-panel' },
             { slug: 'features/task-history' },
             { slug: 'features/notifications' },
             { slug: 'features/voice-input' },

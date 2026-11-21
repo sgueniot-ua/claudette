@@ -1,0 +1,57 @@
+---
+title: Android ADB Panel
+description: Read-only logcat of the workspace's Android device, shown beside the terminal.
+---
+
+For Android repositories, Claudette can show a read-only **logcat** (threadtime format) of the device or emulator that belongs to a workspace, right beside the integrated terminal.
+
+## Enabling Android Mode
+
+Turn on **Settings → Repository → Android mode** for the repository. It is off by default and is not shown for remote repositories.
+
+## Opening the Panel
+
+- Click the phone icon next to the terminal toggle.
+- Press `⌘⇧A` (macOS) or `Ctrl + Shift + A`. The shortcut is `global.toggle-adb-panel` and can be rebound in **Settings → Keyboard**.
+- Run **Toggle ADB Panel** from the command palette.
+
+The panel appears beside the terminal (terminal on the left, ADB panel on the right, with a draggable divider). When the terminal is closed, the panel takes the full width. Workspaces without Android mode, and remote workspaces, do not show the panel; it reappears when you return to a workspace that has it.
+
+## Which Device a Workspace Uses
+
+Claudette picks the device in this order:
+
+1. **Your manual choice**, made with the device picker in the panel. It is kept when the workspace is archived and cleared when it is deleted. Choosing **Automatic** clears it.
+2. **The workspace's dedicated emulator**, if it is running. Its name is `task-<repo>-<branch>`, where `<repo>` is the last segment of the origin URL without `.git` and `<branch>` is the branch checked out in the worktree. Characters other than `A-Z a-z 0-9 . _ -` become `-`, and the name is capped at 60 characters.
+3. **The only ready device**, when exactly one is connected.
+4. Otherwise, you choose from the picker.
+
+If a manually chosen device disconnects, Claudette waits for it to come back instead of falling back to another device.
+
+## States and Messages
+
+| State | What it means |
+|-------|---------------|
+| adb not found | `adb` was not located. Claudette searches `sdk.dir` in `local.properties`, your `PATH`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and the default SDK location. |
+| No device | No device or emulator is connected. |
+| Several devices | More than one device is ready and none is chosen; pick one. |
+| Disconnected | The chosen device went away. Logging resumes automatically after it reconnects. |
+| Allow USB debugging on the device | The device is connected but has not authorized this computer. |
+
+## Searching
+
+Press `⌘F` / `Ctrl + F` inside the panel to search. `Enter` and `Shift+Enter` move to the next and previous match, and `Esc` closes the search. The shortcut is `adb.open-search` and can be rebound.
+
+## Following the Latest Lines
+
+The panel follows the latest lines. Scrolling up freezes the view so you can read; the **Latest logs** button jumps back to the bottom and resumes following.
+
+## Limits and Lifetime
+
+- A new session starts with 500 lines of history.
+- Up to 50,000 lines are kept per workspace.
+- Sessions keep running in the background until the workspace is archived or deleted, Android mode is turned off, or the app quits.
+
+## Out of Scope
+
+Remote workspaces, the mobile app, creating or starting emulators, and typing commands in the panel are not supported.

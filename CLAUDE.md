@@ -112,7 +112,7 @@ Feature flags in `claudette-tauri`:
 
 ### Tauri commands
 
-Commands in `src-tauri/src/commands/` are organized by domain: `agent_backends`, `apps`, `auth`, `boot`, `cesp`, `chat`, `claude_flags`, `cli`, `community`, `data`, `debug`, `devtools`, `diagnostics`, `dialog`, `diff`, `env`, `files`, `grammars`, `mcp`, `metrics`, `pinned_prompts`, `plan`, `plugin`, `plugins_runtime`, `remote`, `repository`, `scheduling`, `scm`, `settings`, `shell`, `slash_commands`, `storage`, `terminal`, `updater`, `usage`, `voice`, `workspace`. Each is a thin wrapper — business logic belongs in the `claudette` crate.
+Commands in `src-tauri/src/commands/` are organized by domain: `adb`, `agent_backends`, `apps`, `auth`, `boot`, `cesp`, `chat`, `claude_flags`, `cli`, `community`, `data`, `debug`, `devtools`, `diagnostics`, `dialog`, `diff`, `env`, `files`, `grammars`, `mcp`, `metrics`, `pinned_prompts`, `plan`, `plugin`, `plugins_runtime`, `remote`, `repository`, `scheduling`, `scm`, `settings`, `shell`, `slash_commands`, `storage`, `terminal`, `updater`, `usage`, `voice`, `workspace`. Each is a thin wrapper — business logic belongs in the `claudette` crate.
 
 ### CLI client
 
@@ -128,6 +128,8 @@ src/
   migrations/           — versioned .sql files + MIGRATIONS registry
   git.rs                — async git worktree operations
   diff.rs               — diff parsing and git diff operations
+  adb/                  — ADB panel core (module dir): locate `adb`, device monitor, dedicated-emulator
+                          naming (`task-<repo>-<branch>`), per-workspace logcat sessions.
   agent/                — agent runtime (module dir): Claude CLI subprocess + JSON streaming,
                           plus alternative backends (`codex_app_server.rs`, `harness.rs` shared
                           scaffolding).
