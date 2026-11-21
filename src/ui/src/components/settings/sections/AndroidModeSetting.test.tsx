@@ -103,6 +103,16 @@ describe("AndroidModeSetting", () => {
     expect(useAppStore.getState().androidModeByRepo["r1"]).toBe(true);
   });
 
+  it("toggles when the label is clicked", async () => {
+    // FR-001a
+    const c = await render(repo());
+    const label = c.querySelector("label")!;
+    await act(async () => {
+      label.click();
+    });
+    expect(adbMocks.adbSetAndroidMode).toHaveBeenCalledWith("r1", true);
+  });
+
   it("leaves the state unchanged when saving fails", async () => {
     // FR-001a
     vi.spyOn(console, "error").mockImplementation(() => {});

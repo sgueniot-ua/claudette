@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../../stores/useAppStore";
 import { adbSetAndroidMode } from "../../../services/adb";
@@ -11,6 +11,7 @@ interface AndroidModeSettingProps {
 
 export function AndroidModeSetting({ repo }: AndroidModeSettingProps) {
   const { t } = useTranslation("settings");
+  const inputId = useId();
   const enabled = useAppStore((s) => s.androidModeByRepo[repo.id] ?? false);
   const loadAndroidMode = useAppStore((s) => s.loadAndroidMode);
   const setAndroidMode = useAppStore((s) => s.setAndroidMode);
@@ -37,16 +38,18 @@ export function AndroidModeSetting({ repo }: AndroidModeSettingProps) {
   return (
     <div className={styles.settingRow}>
       <div className={styles.settingInfo}>
-        <div className={styles.settingLabel}>{t("repo_android_mode_label")}</div>
+        <label htmlFor={inputId} className={styles.settingLabel}>
+          {t("repo_android_mode_label")}
+        </label>
         <div className={styles.settingDescription}>
           {t("repo_android_mode_description")}
         </div>
       </div>
       <div className={styles.settingControl}>
         <input
+          id={inputId}
           type="checkbox"
           checked={enabled}
-          aria-label={t("repo_android_mode_label")}
           onChange={(e) => void toggle(e.target.checked)}
         />
       </div>
