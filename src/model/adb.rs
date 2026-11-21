@@ -90,8 +90,33 @@ pub enum AdbSessionStatus {
         reason: WaitReason,
     },
     Streaming {
-        device: String,
+        device: AdbDevice,
         source: ResolutionSource,
     },
     Stopped,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // FR-005
+    #[test]
+    fn streaming_status_carries_full_device() {
+        let status = AdbSessionStatus::Streaming {
+            device: AdbDevice {
+                serial: "emulator-5554".into(),
+                state: AdbDeviceState::Device,
+                model: Some("sdk gphone".into()),
+                avd_name: Some("task-demo-feat-a".into()),
+            },
+            source: ResolutionSource::DedicatedEmulator,
+        };
+        let json = serde_json::to_value(&status).unwrap();
+        assert_eq!(json["kind"], "streaming");
+        assert_eq!(json["device"]["avd_name"], "task-demo-feat-a");
+        assert_eq!(json["source"], "dedicated_emulator");
+        let back: AdbSessionStatus = serde_json::from_value(json).unwrap();
+        assert_eq!(back, status);
+    }
 }
