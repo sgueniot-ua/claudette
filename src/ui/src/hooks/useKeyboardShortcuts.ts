@@ -16,6 +16,7 @@ import {
   executeNewWorkspace,
 } from "../hotkeys/contextActions";
 import type { HotkeyActionId } from "../hotkeys/actions";
+import { isAdbAvailable } from "../components/adb/adbVisibility";
 import {
   computeStatusVisibleWorkspaces,
   filterSidebarWorkspaces,
@@ -260,6 +261,12 @@ export function useKeyboardShortcuts() {
               else focusChatPrompt();
             });
             return;
+          case "global.toggle-adb-panel": {
+            const store = useAppStore.getState();
+            const workspace = store.workspaces.find((w) => w.id === store.selectedWorkspaceId);
+            if (isAdbAvailable(workspace, store.androidModeByRepo)) store.toggleAdbPanel();
+            return;
+          }
           case "global.open-settings": {
             const store = useAppStore.getState();
             if (store.settingsOpen) store.closeSettings();

@@ -443,6 +443,7 @@
   "keyboard_action_open_command_palette_file_mode": "Go to file (Quick Open)",
   "keyboard_action_open_command_palette_file_mode_alt": "Go to file (Quick Open alias)",
   "keyboard_action_toggle_terminal_panel": "Toggle terminal panel",
+  "keyboard_action_toggle_adb_panel": "Toggle ADB panel",
   "keyboard_action_focus_toggle": "Focus terminal or chat",
   "keyboard_action_open_settings": "Open settings",
   "keyboard_action_open_chat_search": "Search chat",

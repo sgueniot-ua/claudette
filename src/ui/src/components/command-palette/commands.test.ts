@@ -24,6 +24,8 @@ function makeContext(overrides: Partial<CommandContext> = {}): CommandContext {
     toggleSidebar: vi.fn(),
     toggleTerminalPanel: vi.fn(),
     toggleRightSidebar: vi.fn(),
+    adbAvailable: false,
+    toggleAdbPanel: vi.fn(),
     toggleFuzzyFinder: vi.fn(),
     openModal: vi.fn(),
     openSettings: vi.fn(),
@@ -410,5 +412,22 @@ describe("groupCommandsByCategory — keyboard navigation invariant", () => {
     for (const cat of CATEGORY_ORDER) {
       expect(declared).toContain(cat);
     }
+  });
+});
+
+describe("buildCommands — ADB panel command", () => {
+  it("is absent when the ADB panel is not available", () => {
+    // FR-001a
+    expect(buildCommands(makeContext()).find((c) => c.id === "toggle-adb")).toBeUndefined();
+  });
+
+  it("toggles the panel and closes the palette when available", () => {
+    // FR-001
+    const ctx = makeContext({ adbAvailable: true });
+    const cmd = buildCommands(ctx).find((c) => c.id === "toggle-adb");
+    expect(cmd?.name).toBe("Toggle ADB Panel");
+    cmd!.execute();
+    expect(ctx.toggleAdbPanel).toHaveBeenCalledOnce();
+    expect(ctx.close).toHaveBeenCalledOnce();
   });
 });

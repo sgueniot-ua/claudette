@@ -117,6 +117,16 @@ export const HOTKEY_ACTIONS = [
     suppressUnderOverlay: true,
   },
   {
+    id: "global.toggle-adb-panel",
+    scope: "global",
+    category: "keyboard_category_navigation",
+    description: "keyboard_action_toggle_adb_panel",
+    defaultBinding: allPlatforms("mod+shift+code:KeyA"),
+    match: "code",
+    rebindable: true,
+    suppressUnderOverlay: true,
+  },
+  {
     id: "global.focus-toggle",
     scope: "global",
     category: "keyboard_category_navigation",

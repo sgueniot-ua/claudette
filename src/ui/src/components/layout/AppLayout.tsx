@@ -8,6 +8,10 @@ import { ChatPanel } from "../chat/ChatPanel";
 import { DiffViewer } from "../diff/DiffViewer";
 import { FileViewer } from "../file-viewer/FileViewer";
 import { TerminalPanel } from "../terminal/TerminalPanel";
+import { AdbPanel } from "../adb/AdbPanel";
+import { useAdbEvents } from "../adb/useAdbEvents";
+import { isAdbAvailable } from "../adb/adbVisibility";
+import { adbOpenSession } from "../../services/adb";
 import { RightSidebar } from "../right-sidebar/RightSidebar";
 import { FuzzyFinder } from "../fuzzy-finder/FuzzyFinder";
 import { CommandPalette } from "../command-palette/CommandPalette";
@@ -41,6 +45,20 @@ export function AppLayout() {
   const terminalPanelVisible = useAppStore((s) => s.terminalPanelVisible);
   const terminalHeight = useAppStore((s) => s.terminalHeight);
   const setTerminalHeight = useAppStore((s) => s.setTerminalHeight);
+  const adbPanelVisible = useAppStore((s) => s.adbPanelVisible);
+  const adbPanelWidth = useAppStore((s) => s.adbPanelWidth);
+  const setAdbPanelWidth = useAppStore((s) => s.setAdbPanelWidth);
+  const setAdbSessionStatus = useAppStore((s) => s.setAdbSessionStatus);
+  const loadAndroidMode = useAppStore((s) => s.loadAndroidMode);
+  const selectedWorkspace = useAppStore((s) =>
+    s.workspaces.find((w) => w.id === s.selectedWorkspaceId),
+  );
+  const adbAvailable = useAppStore((s) =>
+    isAdbAvailable(
+      s.workspaces.find((w) => w.id === s.selectedWorkspaceId),
+      s.androidModeByRepo,
+    ),
+  );
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const schedulerOpen = useAppStore((s) => s.schedulerOpen);
   const fuzzyFinderOpen = useAppStore((s) => s.fuzzyFinderOpen);
@@ -54,7 +72,8 @@ export function AppLayout() {
   useWorkspaceFileWatcher();
   useWorkspaceEnvironmentPreparation();
   useQueuedMessageAutoDispatch();
-
+  // Consumes the ADB events even while the panel is hidden or never opened.
+  useAdbEvents();
 
   // Main-pane priority: an explicitly opened file from the Files tree
   // takes precedence over a diff selection, and a diff selection takes
@@ -76,7 +95,8 @@ export function AppLayout() {
     el.style.setProperty("--sidebar-w", `${sidebarWidth}px`);
     el.style.setProperty("--right-sidebar-w", `${rightSidebarWidth}px`);
     el.style.setProperty("--terminal-h", `${terminalHeight}px`);
-  }, [sidebarWidth, rightSidebarWidth, terminalHeight, sidebarVisible, rightSidebarVisible, terminalPanelVisible]);
+    el.style.setProperty("--adb-w", `${adbPanelWidth}px`);
+  }, [sidebarWidth, rightSidebarWidth, terminalHeight, adbPanelWidth, sidebarVisible, rightSidebarVisible, terminalPanelVisible]);
 
   const handleLeftResizeEnd = useCallback((finalWidth: number) => {
     setSidebarWidth(finalWidth);
@@ -89,6 +109,45 @@ export function AppLayout() {
   const handleTerminalResizeEnd = useCallback((finalHeight: number) => {
     setTerminalHeight(finalHeight);
   }, [setTerminalHeight]);
+
+  const handleAdbResizeEnd = useCallback((finalWidth: number) => {
+    setAdbPanelWidth(finalWidth);
+  }, [setAdbPanelWidth]);
+
+  // The Android mode of a repository is read when one of its workspaces is
+  // selected; the ADB panel is only offered once it is known to be on.
+  const selectedRepoId =
+    selectedWorkspace && selectedWorkspace.remote_connection_id === null
+      ? selectedWorkspace.repository_id
+      : null;
+  useEffect(() => {
+    if (!selectedRepoId) return;
+    loadAndroidMode(selectedRepoId).catch((e) =>
+      console.error("Failed to load the Android mode:", e),
+    );
+  }, [selectedRepoId, loadAndroidMode]);
+
+  const adbShown = !schedulerOpen && !!selectedWorkspaceId && adbAvailable && adbPanelVisible;
+  const terminalShown = !schedulerOpen && !!selectedWorkspaceId && terminalPanelVisible;
+
+  // Mount the ADB panel on first display, then keep it mounted (hidden via
+  // CSS) so closing it never drops its state. Its logcat session runs on
+  // until the workspace is archived or deleted, so closing never ends it.
+  const [adbMounted, setAdbMounted] = useState(false);
+  const adbOpenedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!adbShown || !selectedWorkspaceId) return;
+    setAdbMounted(true);
+    if (adbOpenedRef.current.has(selectedWorkspaceId)) return;
+    const workspaceId = selectedWorkspaceId;
+    adbOpenedRef.current.add(workspaceId);
+    adbOpenSession(workspaceId)
+      .then((status) => setAdbSessionStatus(workspaceId, status))
+      .catch((e) => {
+        adbOpenedRef.current.delete(workspaceId);
+        console.error("Failed to open the ADB session:", e);
+      });
+  }, [adbShown, selectedWorkspaceId, setAdbSessionStatus]);
 
   // Lazy-mount SettingsPage: defer initial mount until the user first opens
   // settings, then keep it mounted so subsequent toggles are instant.
@@ -181,7 +240,7 @@ export function AppLayout() {
               only useful when a selected workspace's panel is visible, so we
               conditionally render it.
             */}
-            {!schedulerOpen && selectedWorkspaceId && terminalPanelVisible && (
+            {(terminalShown || adbShown) && (
               <ResizeHandle
                 direction="vertical"
                 targetRef={mainRef}
@@ -192,13 +251,41 @@ export function AppLayout() {
                 onResizeEnd={handleTerminalResizeEnd}
               />
             )}
+            {/* The bottom area is shared: terminal on the left, ADB panel on
+                the right. Each is hidden in place, never unmounted. */}
             <div
               className={`${styles.terminal} ${
-                !schedulerOpen && selectedWorkspaceId && terminalPanelVisible ? "" : styles.terminalHidden
+                terminalShown || adbShown ? "" : styles.terminalHidden
               }`}
-              aria-hidden={schedulerOpen || !selectedWorkspaceId || !terminalPanelVisible}
+              aria-hidden={!terminalShown && !adbShown}
             >
-              <TerminalPanel />
+              <div
+                className={`${styles.terminalPane} ${terminalShown ? "" : styles.hidden}`}
+                aria-hidden={!terminalShown}
+              >
+                <TerminalPanel />
+              </div>
+              {terminalShown && adbShown && (
+                <ResizeHandle
+                  direction="horizontal"
+                  targetRef={mainRef}
+                  cssVar="--adb-w"
+                  min={240}
+                  max={1200}
+                  invert
+                  onResizeEnd={handleAdbResizeEnd}
+                />
+              )}
+              {adbMounted && (
+                <div
+                  className={`${styles.adbPane} ${terminalShown ? "" : styles.adbPaneAlone} ${
+                    adbShown ? "" : styles.hidden
+                  }`}
+                  aria-hidden={!adbShown}
+                >
+                  <AdbPanel />
+                </div>
+              )}
             </div>
           </div>
           {!schedulerOpen && selectedWorkspaceId && (

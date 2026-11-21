@@ -19,6 +19,13 @@ const store = vi.hoisted(() => ({
   settingsOpen: false,
   fuzzyFinderOpen: false,
   commandPaletteOpen: false,
+  workspaces: [],
+  adbPanelVisible: false,
+  adbPanelWidth: 480,
+  setAdbPanelWidth: vi.fn(),
+  setAdbSessionStatus: vi.fn(),
+  loadAndroidMode: vi.fn(),
+  androidModeByRepo: {},
 }));
 
 vi.mock("../../stores/useAppStore", () => ({
@@ -39,6 +46,8 @@ vi.mock("../command-palette/CommandPalette", () => ({ CommandPalette: () => <div
 vi.mock("./Dashboard", () => ({ Dashboard: () => <div /> }));
 vi.mock("../modals/ModalRouter", () => ({ ModalRouter: () => <div /> }));
 vi.mock("../settings/SettingsPage", () => ({ SettingsPage: () => <div /> }));
+vi.mock("../adb/AdbPanel", () => ({ AdbPanel: () => <div /> }));
+vi.mock("../adb/useAdbEvents", () => ({ useAdbEvents: vi.fn() }));
 vi.mock("./ResizeHandle", () => ({ ResizeHandle: () => <div /> }));
 vi.mock("./Toast", () => ({ ToastContainer: () => <div /> }));
 vi.mock("../shared/AppTooltip", () => ({ AppTooltip: () => <div /> }));

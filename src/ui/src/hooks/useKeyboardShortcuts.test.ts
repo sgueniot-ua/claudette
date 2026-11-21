@@ -352,3 +352,74 @@ describe("useKeyboardShortcuts jump-to-project / workspace", () => {
     expect(selectRepositorySpy).not.toHaveBeenCalled();
   });
 });
+
+describe("useKeyboardShortcuts ADB panel toggle", () => {
+  const workspace = {
+    id: "ws-adb",
+    repository_id: "repo-adb",
+    remote_connection_id: null,
+  } as Workspace;
+
+  async function pressAdbHotkey() {
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "A",
+          code: "KeyA",
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    useAppStore.setState({
+      activeModal: null,
+      commandPaletteOpen: false,
+      fuzzyFinderOpen: false,
+      settingsOpen: false,
+      settingsOverlayCount: 0,
+      workspaces: [workspace],
+      selectedWorkspaceId: "ws-adb",
+      androidModeByRepo: {},
+      adbPanelVisible: false,
+    });
+  });
+
+  afterEach(async () => {
+    if (root) {
+      await act(async () => {
+        root!.unmount();
+      });
+    }
+    root = null;
+    container = null;
+    document.body.innerHTML = "";
+    useAppStore.setState({
+      workspaces: [],
+      selectedWorkspaceId: null,
+      androidModeByRepo: {},
+      adbPanelVisible: false,
+    });
+  });
+
+  it("does nothing without the Android mode", async () => {
+    // FR-001a
+    await renderHarness();
+    await pressAdbHotkey();
+    expect(useAppStore.getState().adbPanelVisible).toBe(false);
+  });
+
+  it("toggles the panel when the Android mode is on", async () => {
+    // FR-001
+    useAppStore.setState({ androidModeByRepo: { "repo-adb": true } });
+    await renderHarness();
+    await pressAdbHotkey();
+    expect(useAppStore.getState().adbPanelVisible).toBe(true);
+    await pressAdbHotkey();
+    expect(useAppStore.getState().adbPanelVisible).toBe(false);
+  });
+});

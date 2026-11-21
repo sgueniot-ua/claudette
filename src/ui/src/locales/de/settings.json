@@ -382,6 +382,7 @@
   "keyboard_action_open_command_palette_file_mode": "Gehe zu Datei (Quick Open)",
   "keyboard_action_open_command_palette_file_mode_alt": "Gehe zu Datei (Quick-Open-Alias)",
   "keyboard_action_toggle_terminal_panel": "Terminal-Panel umschalten",
+  "keyboard_action_toggle_adb_panel": "Toggle ADB panel",
   "keyboard_action_focus_toggle": "Fokus auf Terminal oder Chat",
   "keyboard_action_open_settings": "Einstellungen öffnen",
   "keyboard_action_open_chat_search": "Chat durchsuchen",

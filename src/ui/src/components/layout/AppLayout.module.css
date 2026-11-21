@@ -12,6 +12,7 @@
   --sidebar-w: 260px;
   --right-sidebar-w: 250px;
   --terminal-h: 300px;
+  --adb-w: 480px;
 }
 
 .main[data-resizing="true"] .sidebar,
@@ -99,6 +100,7 @@
 
 .terminal {
   flex-shrink: 0;
+  display: flex;
   height: var(--terminal-h);
   border-top: 1px solid var(--sidebar-border);
   overflow: hidden;
@@ -109,6 +111,29 @@
     transform var(--transition-normal),
     border-color var(--transition-normal);
   will-change: height, opacity, transform;
+}
+
+.terminalPane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.adbPane {
+  flex-shrink: 0;
+  width: var(--adb-w);
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid var(--sidebar-border);
+}
+
+/* ADB alone in the bottom area: full width, no divider. */
+.adbPaneAlone {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  border-left: none;
 }
 
 .terminalHidden {

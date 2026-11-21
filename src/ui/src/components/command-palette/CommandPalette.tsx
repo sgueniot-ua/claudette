@@ -1,3 +1,4 @@
+import { isAdbAvailable } from "../adb/adbVisibility";
 import {
   useState,
   useMemo,
@@ -92,6 +93,8 @@ export function CommandPalette() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const toggleTerminalPanel = useAppStore((s) => s.toggleTerminalPanel);
   const toggleRightSidebar = useAppStore((s) => s.toggleRightSidebar);
+  const toggleAdbPanel = useAppStore((s) => s.toggleAdbPanel);
+  const androidModeByRepo = useAppStore((s) => s.androidModeByRepo);
   const toggleFuzzyFinder = useAppStore((s) => s.toggleFuzzyFinder);
   const openModal = useAppStore((s) => s.openModal);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
@@ -126,6 +129,15 @@ export function CommandPalette() {
     const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
     return ws?.repository_id ?? null;
   }, [selectedWorkspaceId, workspaces]);
+
+  const adbAvailable = useMemo(
+    () =>
+      isAdbAvailable(
+        workspaces.find((w) => w.id === selectedWorkspaceId),
+        androidModeByRepo,
+      ),
+    [workspaces, selectedWorkspaceId, androidModeByRepo],
+  );
 
   const thinkingEnabled = useAppStore(
     (s) => (selectedSessionId ? s.thinkingEnabled[selectedSessionId] ?? false : false),
@@ -385,6 +397,8 @@ export function CommandPalette() {
         toggleSidebar,
         toggleTerminalPanel,
         toggleRightSidebar,
+        adbAvailable,
+        toggleAdbPanel,
         toggleFuzzyFinder,
         openModal,
         openSettings: useAppStore.getState().openSettings,
@@ -432,7 +446,7 @@ export function CommandPalette() {
         updateWorkspace: (id: string, updates: Record<string, unknown>) => updateWorkspace(id, updates),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [themes, selectedWorkspaceId, selectedSessionId, currentRepoId, thinkingEnabled, planMode, fastMode, effortLevel, selectedModel, selectedModelProvider, keybindings, enterThemeMode, enterFileMode, applyThemeById, handleCreateWorkspace, clearAgentApproval],
+    [themes, selectedWorkspaceId, selectedSessionId, currentRepoId, adbAvailable, thinkingEnabled, planMode, fastMode, effortLevel, selectedModel, selectedModelProvider, keybindings, enterThemeMode, enterFileMode, applyThemeById, handleCreateWorkspace, clearAgentApproval],
   );
 
   // Build sub-menu command lists

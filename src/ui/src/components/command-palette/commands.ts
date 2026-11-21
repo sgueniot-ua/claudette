@@ -22,6 +22,7 @@ import {
   ZoomOut,
   FolderOpen,
   File,
+  Smartphone,
 } from "lucide-react";
 import type { ThemeDefinition } from "../../types/theme";
 import { getHotkeyLabel } from "../../hotkeys/display";
@@ -113,6 +114,9 @@ export interface CommandContext {
   toggleSidebar: () => void;
   toggleTerminalPanel: () => void;
   toggleRightSidebar: () => void;
+  /** True when the ADB panel is offered for the selected workspace. */
+  adbAvailable: boolean;
+  toggleAdbPanel: () => void;
   toggleFuzzyFinder: () => void;
   openModal: (name: string, data?: Record<string, unknown>) => void;
   openSettings: (section?: string) => void;
@@ -308,6 +312,17 @@ export function buildCommands(ctx: CommandContext): Command[] {
     keywords: ["shell", "console", "pty"],
     execute: () => { ctx.toggleTerminalPanel(); ctx.close(); },
   });
+  if (ctx.adbAvailable) {
+    cmds.push({
+      id: "toggle-adb",
+      name: "Toggle ADB Panel",
+      category: "ui",
+      icon: Smartphone,
+      shortcut: shortcut("global.toggle-adb-panel"),
+      keywords: ["android", "logcat", "adb", "device"],
+      execute: () => { ctx.toggleAdbPanel(); ctx.close(); },
+    });
+  }
   cmds.push({
     id: "toggle-changes",
     name: "Toggle Changes Panel",

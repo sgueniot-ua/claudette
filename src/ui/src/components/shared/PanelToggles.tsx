@@ -1,6 +1,7 @@
-import { PanelLeft, PanelBottom, PanelRight } from "lucide-react";
+import { PanelLeft, PanelBottom, PanelRight, Smartphone } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { getHotkeyLabel, tooltipAttributes } from "../../hotkeys/display";
+import { isAdbAvailable } from "../adb/adbVisibility";
 import styles from "./PanelToggles.module.css";
 
 const isMac =
@@ -13,10 +14,19 @@ export function PanelToggles() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const toggleTerminalPanel = useAppStore((s) => s.toggleTerminalPanel);
   const toggleRightSidebar = useAppStore((s) => s.toggleRightSidebar);
+  const adbPanelVisible = useAppStore((s) => s.adbPanelVisible);
+  const toggleAdbPanel = useAppStore((s) => s.toggleAdbPanel);
+  const adbAvailable = useAppStore((s) =>
+    isAdbAvailable(
+      s.workspaces.find((w) => w.id === s.selectedWorkspaceId),
+      s.androidModeByRepo,
+    ),
+  );
   const metaKeyHeld = useAppStore((s) => s.metaKeyHeld);
   const keybindings = useAppStore((s) => s.keybindings);
   const sidebarShortcut = getHotkeyLabel("global.toggle-sidebar", keybindings, isMac);
   const terminalShortcut = getHotkeyLabel("global.toggle-terminal-panel", keybindings, isMac);
+  const adbShortcut = getHotkeyLabel("global.toggle-adb-panel", keybindings, isMac);
   const changesShortcut = getHotkeyLabel("global.toggle-right-sidebar", keybindings, isMac);
 
   return (
@@ -47,6 +57,21 @@ export function PanelToggles() {
           <kbd aria-hidden="true" className={`shortcut-badge ${metaKeyHeld ? "shortcut-badge-visible" : ""}`}>{terminalShortcut}</kbd>
         )}
       </button>
+      {adbAvailable && (
+        <button
+          type="button"
+          className={`${styles.toggle} ${adbPanelVisible ? styles.active : ""}`}
+          onClick={toggleAdbPanel}
+          {...tooltipAttributes("Toggle ADB panel", "global.toggle-adb-panel", keybindings, isMac, "bottom")}
+          aria-label="Toggle ADB panel"
+          aria-pressed={adbPanelVisible}
+        >
+          <Smartphone size={16} />
+          {adbShortcut && (
+            <kbd aria-hidden="true" className={`shortcut-badge ${metaKeyHeld ? "shortcut-badge-visible" : ""}`}>{adbShortcut}</kbd>
+          )}
+        </button>
+      )}
       <button
         type="button"
         className={`${styles.toggle} ${rightSidebarVisible ? styles.active : ""}`}
