@@ -187,6 +187,7 @@ describe("AppLayout ADB panel", () => {
     // FR-003a
     await setState({
       workspaces: [{ ...androidWs, remote_connection_id: "c1" }, plainWs],
+      androidModeByRepo: { "repo-a": true },
       adbPanelVisible: true,
     });
     await render();
@@ -225,5 +226,46 @@ describe("AppLayout ADB panel", () => {
     expect(useAppStore.getState().terminalTabs).toBe(tabs);
     expect(useAppStore.getState().terminalPanelVisible).toBe(true);
     expect(container.querySelector('[data-testid="terminal-panel"]')).not.toBeNull();
+  });
+  it("hides the panel while the scheduler is open", async () => {
+    // FR-001b
+    await render();
+    await setState({ adbPanelVisible: true });
+    expect(adbPane()!.getAttribute("aria-hidden")).toBe("false");
+    await setState({ schedulerOpen: true });
+    expect(adbPane()!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("retries a failed adbOpenSession on the next display", async () => {
+    // FR-004a
+    adb.adbOpenSession
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ kind: "no_device" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await render();
+    await setState({ adbPanelVisible: true });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(1);
+    await setState({ adbPanelVisible: false });
+    await setState({ adbPanelVisible: true });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().adbSessions["ws-a"]).toEqual({ kind: "no_device" });
+    vi.restoreAllMocks();
+  });
+
+  it("opens a session once for a second Android workspace shown while visible", async () => {
+    // FR-004a
+    const second = { id: "ws-b", repository_id: "repo-b", remote_connection_id: null } as Workspace;
+    adb.modeByRepo = { "repo-a": true, "repo-b": true };
+    await setState({ workspaces: [androidWs, plainWs, second] });
+    await render();
+    await setState({ adbPanelVisible: true });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(1);
+    await setState({ androidModeByRepo: { "repo-a": true, "repo-b": true } });
+    await setState({ selectedWorkspaceId: "ws-b" });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(2);
+    expect(adb.adbOpenSession).toHaveBeenLastCalledWith("ws-b");
+    await setState({ selectedWorkspaceId: "ws-a" });
+    await setState({ selectedWorkspaceId: "ws-b" });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(2);
   });
 });

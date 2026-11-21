@@ -264,7 +264,15 @@ export function useKeyboardShortcuts() {
           case "global.toggle-adb-panel": {
             const store = useAppStore.getState();
             const workspace = store.workspaces.find((w) => w.id === store.selectedWorkspaceId);
-            if (isAdbAvailable(workspace, store.androidModeByRepo)) store.toggleAdbPanel();
+            if (!isAdbAvailable(workspace, store.androidModeByRepo)) return;
+            store.toggleAdbPanel();
+            requestAnimationFrame(() => {
+              if (useAppStore.getState().adbPanelVisible) {
+                document.querySelector<HTMLElement>('[data-testid="adb-panel"]')?.focus();
+              } else {
+                focusChatPrompt();
+              }
+            });
             return;
           }
           case "global.open-settings": {

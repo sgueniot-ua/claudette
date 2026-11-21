@@ -422,4 +422,24 @@ describe("useKeyboardShortcuts ADB panel toggle", () => {
     await pressAdbHotkey();
     expect(useAppStore.getState().adbPanelVisible).toBe(false);
   });
+  it("focuses the ADB panel when the toggle opens it, the chat prompt when it closes it", async () => {
+    // FR-001
+    useAppStore.setState({ androidModeByRepo: { "repo-adb": true } });
+    const panel = document.createElement("div");
+    panel.tabIndex = -1;
+    panel.setAttribute("data-testid", "adb-panel");
+    const chat = document.createElement("textarea");
+    chat.setAttribute("data-chat-input", "");
+    document.body.append(panel, chat);
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    await renderHarness();
+    await pressAdbHotkey();
+    expect(document.activeElement).toBe(panel);
+    await pressAdbHotkey();
+    expect(document.activeElement).toBe(chat);
+    vi.restoreAllMocks();
+  });
 });
