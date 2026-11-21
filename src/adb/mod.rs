@@ -6,5 +6,6 @@ pub mod logcat;
 pub mod monitor;
 pub mod naming;
 pub mod resolve;
+pub mod runner;
 pub mod session;
 pub mod settings;

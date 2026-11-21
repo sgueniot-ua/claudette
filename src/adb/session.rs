@@ -2,9 +2,7 @@
 //! re-resolved on every device-list change, resumed after a disconnection.
 
 use std::collections::HashMap;
-use std::io;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{mpsc, watch};
@@ -14,25 +12,10 @@ use tokio::time::Instant;
 use super::logcat::{BATCH_MAX_DELAY, INITIAL_TAIL, LineBatcher, LogcatStream, TailFrom};
 use super::monitor::DeviceList;
 use super::resolve::{matches_key, resolve_device};
+pub use super::runner::{AdbRunner, ProcessAdbRunner};
 use crate::model::{
     AdbDevice, AdbDeviceState, AdbSessionStatus, DeviceKey, LogcatLine, Resolution, WaitReason,
 };
-
-/// Everything a session needs from `adb` and git. Faked in tests.
-// async_trait's expansion marks the boxed futures `#[must_use]`, which newer
-// clippy flags as `double_must_use` on the generated trait methods.
-#[allow(clippy::double_must_use)]
-#[async_trait::async_trait]
-pub trait AdbRunner: Send + Sync {
-    /// Raw output of `adb devices -l`.
-    async fn devices(&self) -> io::Result<String>;
-    /// AVD name of an emulator (`emu avd name`), `None` on failure.
-    async fn avd_name(&self, serial: &str) -> Option<String>;
-    /// Start `adb -s <serial> logcat -v threadtime -T <tail>`.
-    fn spawn_logcat(&self, serial: &str, tail: &TailFrom) -> io::Result<Box<dyn LogcatStream>>;
-    /// Dedicated emulator of the branch checked out in `worktree`, read at each resolution (FR-007d).
-    async fn dedicated_avd(&self, worktree: &Path) -> Option<String>;
-}
 
 /// Receives what sessions produce; Task 6 forwards it as Tauri events.
 pub trait AdbSink: Send + Sync {
@@ -41,58 +24,6 @@ pub trait AdbSink: Send + Sync {
     fn lines(&self, workspace_id: &str, lines: Vec<LogcatLine>, reset: bool);
     fn status(&self, workspace_id: &str, status: AdbSessionStatus);
     fn devices(&self, devices: &[AdbDevice]);
-}
-
-/// The real runner: shells out to the `adb` found by `locate_adb`.
-pub struct ProcessAdbRunner {
-    adb: PathBuf,
-}
-
-impl ProcessAdbRunner {
-    pub fn new(adb: PathBuf) -> Self {
-        Self { adb }
-    }
-
-    async fn output(&self, args: &[&str]) -> io::Result<std::process::Output> {
-        let mut cmd = crate::process::command(&self.adb);
-        cmd.args(args);
-        crate::env::enriched_env().apply(&mut cmd);
-        cmd.stdin(Stdio::null()).kill_on_drop(true);
-        cmd.output().await
-    }
-}
-
-#[async_trait::async_trait]
-impl AdbRunner for ProcessAdbRunner {
-    async fn devices(&self) -> io::Result<String> {
-        let out = self.output(&["devices", "-l"]).await?;
-        if !out.status.success() {
-            return Err(io::Error::other(format!(
-                "adb devices failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            )));
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    }
-
-    async fn avd_name(&self, serial: &str) -> Option<String> {
-        let out = self
-            .output(&["-s", serial, "emu", "avd", "name"])
-            .await
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        super::monitor::parse_avd_name(&String::from_utf8_lossy(&out.stdout))
-    }
-
-    fn spawn_logcat(&self, serial: &str, tail: &TailFrom) -> io::Result<Box<dyn LogcatStream>> {
-        super::logcat::spawn_logcat(&self.adb, serial, tail)
-    }
-
-    async fn dedicated_avd(&self, worktree: &Path) -> Option<String> {
-        super::naming::dedicated_avd_for_worktree(worktree).await
-    }
 }
 
 /// What `open` needs to start a workspace session.
@@ -166,6 +97,7 @@ impl AdbSessions {
                     stream: None,
                     streaming_serial: None,
                     selected: None,
+                    waiting_for: None,
                     batcher: LineBatcher::default(),
                     deadline: None,
                     retry: false,
@@ -252,6 +184,9 @@ struct SessionTask {
     streaming_serial: Option<String>,
     /// Device the session follows (streamed or waited for); decides resume vs reset.
     selected: Option<DeviceKey>,
+    /// Device the current association waits for when it leaves the list; cleared when the
+    /// manual choice changes (association becomes automatic again).
+    waiting_for: Option<DeviceKey>,
     batcher: LineBatcher,
     deadline: Option<Instant>,
     /// The logcat process ended or failed to start: try again at the next poll.
@@ -285,6 +220,7 @@ impl SessionTask {
                 }
                 Some(manual) = self.manual_rx.recv() => {
                     self.manual = manual;
+                    self.waiting_for = None;
                     self.resolve().await;
                 }
                 chunk = next_chunk(&mut self.stream) => match chunk {
@@ -310,6 +246,7 @@ impl SessionTask {
                 if self.stream.is_some() && self.streaming_serial.as_deref() == Some(&serial) {
                     // Same process; its key may have gained an AVD name since the last poll.
                     self.selected = Some(device_key(&device));
+                    self.waiting_for = self.selected.clone();
                     self.set_status(AdbSessionStatus::Streaming { device, source });
                     return;
                 }
@@ -328,10 +265,12 @@ impl SessionTask {
                         self.batcher.start_stream();
                         self.stream = Some(stream);
                         self.streaming_serial = Some(serial);
+                        self.waiting_for = Some(key);
                         self.set_status(AdbSessionStatus::Streaming { device, source });
                     }
                     Err(_) => {
                         self.retry = true;
+                        self.waiting_for = Some(key.clone());
                         self.set_status(self.waiting(key));
                     }
                 }
@@ -341,12 +280,13 @@ impl SessionTask {
                 if self.selected.as_ref() != Some(&key) {
                     self.select(key.clone());
                 }
+                self.waiting_for = Some(key.clone());
                 self.set_status(self.waiting(key));
             }
             Resolution::NoDevice => {
                 self.end_stream();
                 // A followed device that left the list is waited for (Streaming → Waiting).
-                let status = match self.selected.clone() {
+                let status = match self.waiting_for.clone() {
                     Some(key) => self.waiting(key),
                     None => AdbSessionStatus::NoDevice,
                 };
@@ -410,7 +350,7 @@ impl SessionTask {
             self.sink.lines(&self.workspace_id, lines, false);
         }
         self.retry = true;
-        if let Some(key) = self.selected.clone() {
+        if let Some(key) = self.waiting_for.clone() {
             self.set_status(self.waiting(key));
         }
     }
@@ -455,6 +395,8 @@ async fn sleep_until_opt(deadline: Option<Instant>) {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+    use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
@@ -471,6 +413,7 @@ mod tests {
         devices_calls: AtomicUsize,
         avd_names: Mutex<HashMap<String, String>>,
         avd_calls: AtomicUsize,
+        dedicated: Mutex<Option<String>>,
         spawns: Mutex<Vec<Vec<String>>>,
         streams: Mutex<Vec<FakeStreamCtl>>,
     }
@@ -545,7 +488,7 @@ mod tests {
             Ok(Box::new(FakeStream { rx, dropped }))
         }
         async fn dedicated_avd(&self, _worktree: &Path) -> Option<String> {
-            None
+            self.dedicated.lock().unwrap().clone()
         }
     }
 
@@ -950,5 +893,74 @@ mod tests {
     async fn no_device_reports_no_device() {
         let (_runner, _sink, sessions) = setup(NONE);
         assert_eq!(sessions.open(ctx(None)).await, AdbSessionStatus::NoDevice);
+    }
+
+    // US3 sc.7 / FR-008 (choix manuel effacé : association automatique, NoDevice sans appareil)
+    #[tokio::test(start_paused = true)]
+    async fn clearing_manual_choice_without_device_reports_no_device() {
+        let (runner, sink, sessions) = setup(NONE);
+        let status = sessions
+            .open(ctx(Some(DeviceKey::Avd("Pixel_8".into()))))
+            .await;
+        assert_eq!(
+            status,
+            waiting(DeviceKey::Avd("Pixel_8".into()), WaitReason::Disconnected)
+        );
+
+        sessions.re_resolve("ws-1", None).await;
+        until(|| sink.statuses().len() == 2).await;
+        assert_eq!(sink.statuses()[1], AdbSessionStatus::NoDevice);
+
+        runner.set_devices("List of devices attached\nR58M12345\tdevice model:sdk_gphone\n");
+        until(|| runner.spawns().len() == 1).await;
+        assert_eq!(runner.spawns()[0][1], "R58M12345");
+        assert_eq!(runner.spawns()[0][6], "500");
+        until(|| sink.statuses().len() == 3).await;
+        assert_eq!(
+            sink.statuses()[2],
+            streaming("R58M12345", None, ResolutionSource::OnlyDevice)
+        );
+        assert_eq!(sink.batches(), vec![(0, true)]);
+    }
+
+    // FR-007d / FR-007 (émulateur dédié choisi parmi plusieurs appareils prêts)
+    #[tokio::test(start_paused = true)]
+    async fn dedicated_emulator_is_chosen_among_ready_devices() {
+        let (runner, _sink, sessions) = setup(
+            "List of devices attached\nemulator-5554\tdevice model:sdk_gphone\nemulator-5556\tdevice model:sdk_gphone\nR58M12345\tdevice model:sdk_gphone\n",
+        );
+        {
+            let mut names = runner.avd_names.lock().unwrap();
+            names.insert("emulator-5554".into(), "Pixel_8".into());
+            names.insert("emulator-5556".into(), "task-demo-feat-a".into());
+        }
+        *runner.dedicated.lock().unwrap() = Some("task-demo-feat-a".into());
+        let status = sessions.open(ctx(None)).await;
+        assert_eq!(
+            status,
+            streaming(
+                "emulator-5556",
+                Some("task-demo-feat-a"),
+                ResolutionSource::DedicatedEmulator
+            )
+        );
+        assert_eq!(runner.spawns()[0][1], "emulator-5556");
+    }
+
+    // FR-011 (arrêt pendant l'attente : rien après Stopped)
+    #[tokio::test(start_paused = true)]
+    async fn stop_while_waiting_emits_nothing_after_stopped() {
+        let (runner, sink, sessions) = setup(NONE);
+        let status = sessions
+            .open(ctx(Some(DeviceKey::Serial("R58M12345".into()))))
+            .await;
+        assert!(matches!(status, AdbSessionStatus::Waiting { .. }));
+        sessions.stop("ws-1").await;
+        let events = sink.events().len();
+        runner.set_devices("List of devices attached\nR58M12345\tdevice model:sdk_gphone\n");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(sink.statuses().last(), Some(&AdbSessionStatus::Stopped));
+        assert_eq!(sink.events().len(), events);
+        assert!(runner.spawns().is_empty());
     }
 }

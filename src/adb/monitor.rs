@@ -8,7 +8,8 @@ use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
 
 use super::devices::parse_devices;
-use super::session::{AdbRunner, AdbSink};
+use super::runner::AdbRunner;
+use super::session::AdbSink;
 use crate::model::{AdbDevice, AdbDeviceState};
 
 /// Interval between two `adb devices -l` polls (R4).
