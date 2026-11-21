@@ -683,5 +683,7 @@
   "claude_flags_no_match": "Keine Flags passen zu deiner Suche.",
   "claude_flags_tab_badge_tooltip": "„Dangerously skip permissions“ ist für diesen Workspace aktiviert",
   "claude_flags_footer_tooltip_empty": "Keine zusätzlichen Flags konfiguriert",
-  "claude_flags_tooltip_overflow": "…und {{count}} weitere"
+  "claude_flags_tooltip_overflow": "…und {{count}} weitere",
+  "repo_android_mode_label": "Android mode",
+  "repo_android_mode_description": "Show the ADB panel for this repository's workspaces."
 }

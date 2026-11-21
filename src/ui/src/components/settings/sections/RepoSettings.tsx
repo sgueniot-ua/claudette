@@ -16,6 +16,7 @@ import { MCP_SOURCE_LABELS } from "../../../types/mcp";
 import { RepoIcon } from "../../shared/RepoIcon";
 import { IconPicker } from "../../modals/IconPicker";
 import { ClaudeFlagsSettings } from "./ClaudeFlagsSettings";
+import { AndroidModeSetting } from "./AndroidModeSetting";
 import { EnvPanel } from "./EnvPanel";
 import { RequiredInputsEditor } from "./RequiredInputsEditor";
 import {
@@ -803,6 +804,8 @@ export function RepoSettings({ repoId }: RepoSettingsProps) {
           </select>
         </div>
       </div>
+
+      <AndroidModeSetting repo={repo} />
 
       {ciAutoFix !== "false" && (
         <div className={styles.fieldGroup}>

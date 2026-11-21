@@ -701,5 +701,7 @@
   "claude_flags_no_match": "No flags match your search.",
   "claude_flags_tab_badge_tooltip": "Dangerously skip permissions is enabled for this workspace",
   "claude_flags_footer_tooltip_empty": "No extra flags configured",
-  "claude_flags_tooltip_overflow": "…and {{count}} more"
+  "claude_flags_tooltip_overflow": "…and {{count}} more",
+  "repo_android_mode_label": "Android mode",
+  "repo_android_mode_description": "Show the ADB panel for this repository's workspaces."
 }
