@@ -4,4 +4,5 @@ pub mod devices;
 pub mod locate;
 pub mod logcat;
 pub mod naming;
+pub mod resolve;
 pub mod settings;
