@@ -8,6 +8,7 @@
   "status_needs_input": "❓ Necesita atención",
   "status_running": "● En ejecución",
   "status_idle": "○ Inactivo",
+  "project_chats": "Chats del proyecto",
   "menu_settings": "Configuración",
   "menu_show": "Mostrar Claudette",
   "menu_quit": "Salir",

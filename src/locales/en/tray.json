@@ -8,6 +8,7 @@
   "status_needs_input": "❓ Needs Input",
   "status_running": "● Running",
   "status_idle": "○ Idle",
+  "project_chats": "Project chats",
   "menu_settings": "Settings",
   "menu_show": "Show Claudette",
   "menu_quit": "Quit",

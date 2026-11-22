@@ -8,6 +8,7 @@
   "status_needs_input": "❓ 需要输入",
   "status_running": "● 运行中",
   "status_idle": "○ 空闲",
+  "project_chats": "项目聊天",
   "menu_settings": "设置",
   "menu_show": "显示 Claudette",
   "menu_quit": "退出",

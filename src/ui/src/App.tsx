@@ -17,6 +17,7 @@ import { deriveScmCiState } from "./utils/scmChecks";
 import { KEYBINDING_SETTING_PREFIX } from "./hotkeys/bindings";
 import type { WorkspaceOrderModeByRepo } from "./utils/workspaceOrdering";
 import { useCiAutoFixSession } from "./hooks/useCiAutoFixSession";
+import { openProjectChatTarget } from "./hooks/useOpenProjectChat";
 import { useMcpStatus } from "./hooks/useMcpStatus";
 import { useChatSessionCreatedEvent } from "./hooks/useChatSessionCreatedEvent";
 import { useRemoteConnectionLifecycle } from "./hooks/useRemoteConnectionLifecycle";
@@ -669,6 +670,14 @@ function App() {
       }
     });
 
+    // Tray "Project chats" item: open (or create) the repo's project chats.
+    const unlistenTrayProjectChats = listen<string>(
+      "tray-open-project-chats",
+      (event) => {
+        void openProjectChatTarget(event.payload);
+      },
+    );
+
     // Listen for open-settings events from app menu / tray.
     const unlistenSettings = listen("open-settings", () => {
       useAppStore.getState().openSettings();
@@ -971,6 +980,7 @@ function App() {
         unlisten();
       });
       unlistenTray.then((fn) => fn());
+      unlistenTrayProjectChats.then((fn) => fn());
       unlistenSettings.then((fn) => fn());
       unlistenShortcuts.then((fn) => fn());
       unlistenZoomIn.then((fn) => fn());

@@ -307,6 +307,9 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
                         rebuild_tray(&handle);
                     }
                 });
+            } else if let Some(repo_id) = id.strip_prefix("projectchats:") {
+                show_and_focus(app);
+                let _ = app.emit("tray-open-project-chats", repo_id.to_string());
             } else if id == "open-settings" {
                 show_and_focus(app);
                 let _ = app.emit("open-settings", ());
@@ -593,6 +596,88 @@ fn compute_tray_state_from_agents(
     TrayState::Idle
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum TrayStatus {
+    NeedsInputPlan,
+    NeedsInput,
+    Running,
+    Idle,
+}
+
+struct TrayWorktreeRow {
+    workspace_id: String,
+    display_name: String,
+    status: TrayStatus,
+}
+
+struct TrayRepoEntry {
+    repo_id: String,
+    repo_name: String,
+    project_chats: Option<TrayStatus>,
+    worktrees: Vec<TrayWorktreeRow>,
+}
+
+/// Aggregate the agent sessions of one workspace into a single tray status.
+fn workspace_tray_status(
+    agents: &std::collections::HashMap<String, crate::state::AgentSessionState>,
+    workspace_id: &str,
+) -> TrayStatus {
+    let sessions: Vec<_> = agents
+        .values()
+        .filter(|s| s.workspace_id == workspace_id)
+        .collect();
+    if let Some(waiting) = sessions.iter().find(|s| s.needs_attention) {
+        match waiting.attention_kind {
+            Some(AttentionKind::Plan) => TrayStatus::NeedsInputPlan,
+            _ => TrayStatus::NeedsInput,
+        }
+    } else if sessions.iter().any(|s| s.active_pid.is_some()) {
+        TrayStatus::Running
+    } else {
+        TrayStatus::Idle
+    }
+}
+
+/// Pure per-repository tray entries, in the DB's repo order: every local
+/// repository is listed (even with no active workspace), carrying its project
+/// chats status (`None` when it has no active `repository` workspace) and its
+/// active worktree workspaces. The `repository` workspace is never a worktree
+/// row.
+fn tray_repo_entries(
+    repos: &[claudette::model::Repository],
+    workspaces: &[claudette::model::Workspace],
+    agents: &std::collections::HashMap<String, crate::state::AgentSessionState>,
+) -> Vec<TrayRepoEntry> {
+    repos
+        .iter()
+        .map(|repo| {
+            let active = workspaces
+                .iter()
+                .filter(|ws| ws.repository_id == repo.id && ws.status == WorkspaceStatus::Active);
+            let mut project_chats = None;
+            let mut worktrees = Vec::new();
+            for ws in active {
+                let status = workspace_tray_status(agents, &ws.id);
+                if ws.is_repository_rooted() {
+                    project_chats = Some(status);
+                } else {
+                    worktrees.push(TrayWorktreeRow {
+                        workspace_id: ws.id.clone(),
+                        display_name: ws.display_name(&repo.name).to_string(),
+                        status,
+                    });
+                }
+            }
+            TrayRepoEntry {
+                repo_id: repo.id.clone(),
+                repo_name: repo.name.clone(),
+                project_chats,
+                worktrees,
+            }
+        })
+        .collect()
+}
+
 /// Build a menu listing workspaces grouped by repository. Opens its own
 /// DB connection — prefer `build_tray_menu_with_db` when the caller
 /// already has a `Database` open so we don't pay the file-open twice.
@@ -620,60 +705,56 @@ fn build_tray_menu_with_db(app: &AppHandle, db: &Database) -> Result<Menu<tauri:
         Err(_) => &empty,
     };
 
-    // Group active workspaces by repo, preserving the user's repo sort order.
-    // Iterate repos first (sorted by sort_order, name from DB), then attach
-    // matching workspaces — this guarantees the tray matches the sidebar.
-    let mut by_repo: Vec<(String, String, Vec<_>)> = Vec::new();
-    for repo in &repos {
-        let repo_ws: Vec<_> = workspaces
-            .iter()
-            .filter(|ws| ws.repository_id == repo.id && ws.status == WorkspaceStatus::Active)
-            .collect();
-        if !repo_ws.is_empty() {
-            by_repo.push((repo.name.clone(), repo.id.clone(), repo_ws));
-        }
-    }
+    // Every local repo, in the user's repo sort order (matches the sidebar).
+    let entries = tray_repo_entries(&repos, &workspaces, agents);
+    let status_text = |status: TrayStatus| match status {
+        TrayStatus::NeedsInputPlan => t(locale, "status_needs_input_plan"),
+        TrayStatus::NeedsInput => t(locale, "status_needs_input"),
+        TrayStatus::Running => t(locale, "status_running"),
+        TrayStatus::Idle => t(locale, "status_idle"),
+    };
 
     // Build menu items.
     let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
 
-    for (repo_name, repo_id, ws_list) in &by_repo {
+    for entry in &entries {
         // Repo name as a disabled header.
         let header = MenuItem::with_id(
             app,
-            format!("repo:{repo_id}"),
-            repo_name,
+            format!("repo:{}", entry.repo_id),
+            &entry.repo_name,
             false,
             None::<&str>,
         )
         .map_err(|e| e.to_string())?;
         items.push(Box::new(header));
 
-        for ws in ws_list {
-            // Aggregate across all sessions in this workspace.
-            let ws_sessions: Vec<_> = agents
-                .values()
-                .filter(|s| s.workspace_id == ws.id)
-                .collect();
-            let is_running = ws_sessions.iter().any(|s| s.active_pid.is_some());
-            let needs_input = ws_sessions.iter().any(|s| s.needs_attention);
-            let attention_kind = ws_sessions
-                .iter()
-                .find(|s| s.needs_attention)
-                .and_then(|s| s.attention_kind);
-            let status = if needs_input {
-                match attention_kind {
-                    Some(crate::state::AttentionKind::Plan) => t(locale, "status_needs_input_plan"),
-                    _ => t(locale, "status_needs_input"),
-                }
-            } else if is_running {
-                t(locale, "status_running")
-            } else {
-                t(locale, "status_idle")
-            };
-            let label = format!("  {}  {}", ws.display_name(repo_name), status);
-            let item = MenuItem::with_id(app, format!("ws:{}", ws.id), &label, true, None::<&str>)
-                .map_err(|e| e.to_string())?;
+        // Project chats item first, with the aggregated status when the
+        // repository workspace exists.
+        let project_label = match entry.project_chats {
+            Some(status) => format!("  {}  {}", t(locale, "project_chats"), status_text(status)),
+            None => format!("  {}", t(locale, "project_chats")),
+        };
+        let project_item = MenuItem::with_id(
+            app,
+            format!("projectchats:{}", entry.repo_id),
+            &project_label,
+            true,
+            None::<&str>,
+        )
+        .map_err(|e| e.to_string())?;
+        items.push(Box::new(project_item));
+
+        for row in &entry.worktrees {
+            let label = format!("  {}  {}", row.display_name, status_text(row.status));
+            let item = MenuItem::with_id(
+                app,
+                format!("ws:{}", row.workspace_id),
+                &label,
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
             items.push(Box::new(item));
         }
     }
@@ -806,6 +887,110 @@ mod tests {
             posted_env_trust_warning: false,
             pending_history_prelude: None,
         }
+    }
+
+    fn repo(id: &str, name: &str) -> claudette::model::Repository {
+        claudette::model::Repository {
+            id: id.into(),
+            path: format!("/tmp/{name}"),
+            name: name.into(),
+            path_slug: name.into(),
+            icon: None,
+            created_at: String::new(),
+            setup_script: None,
+            custom_instructions: None,
+            sort_order: 0,
+            branch_rename_preferences: None,
+            setup_script_auto_run: false,
+            archive_script: None,
+            archive_script_auto_run: false,
+            base_branch: None,
+            default_remote: None,
+            required_inputs: None,
+            path_valid: true,
+        }
+    }
+
+    fn ws(
+        id: &str,
+        repo_id: &str,
+        kind: claudette::model::WorkspaceKind,
+        status: WorkspaceStatus,
+    ) -> claudette::model::Workspace {
+        claudette::model::Workspace {
+            id: id.into(),
+            repository_id: repo_id.into(),
+            name: id.into(),
+            branch_name: "main".into(),
+            worktree_path: None,
+            status,
+            kind,
+            agent_status: claudette::model::AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: String::new(),
+            sort_order: 0,
+            input_values: None,
+        }
+    }
+
+    #[test]
+    fn tray_lists_project_chats_item_first_for_each_local_repo() {
+        // FR-013
+        use claudette::model::WorkspaceKind::{Repository, Worktree};
+        let repos = vec![repo("r1", "alpha"), repo("r2", "beta")];
+        let workspaces = vec![
+            ws("w1", "r1", Worktree, WorkspaceStatus::Active),
+            ws("p1", "r1", Repository, WorkspaceStatus::Active),
+            ws("w2", "r2", Worktree, WorkspaceStatus::Active),
+        ];
+        let mut agents = HashMap::new();
+        agents.insert("a".to_string(), session_in("p1", Some(1), false));
+        agents.insert("b".to_string(), session_in("w1", None, true));
+
+        let entries = tray_repo_entries(&repos, &workspaces, &agents);
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].repo_id, "r1");
+        assert_eq!(entries[0].project_chats, Some(TrayStatus::Running));
+        // The repository workspace is not a `ws:` row.
+        assert_eq!(entries[0].worktrees.len(), 1);
+        assert_eq!(entries[0].worktrees[0].workspace_id, "w1");
+        assert_eq!(entries[0].worktrees[0].status, TrayStatus::NeedsInput);
+        assert_eq!(entries[1].repo_id, "r2");
+        assert_eq!(entries[1].project_chats, None);
+        assert_eq!(entries[1].worktrees.len(), 1);
+    }
+
+    #[test]
+    fn tray_lists_repo_without_active_workspace() {
+        // FR-013
+        use claudette::model::WorkspaceKind::Worktree;
+        let repos = vec![repo("r1", "alpha"), repo("r2", "beta")];
+        let workspaces = vec![ws("w1", "r2", Worktree, WorkspaceStatus::Archived)];
+
+        let entries = tray_repo_entries(&repos, &workspaces, &HashMap::new());
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].repo_name, "alpha");
+        assert_eq!(entries[0].project_chats, None);
+        assert!(entries[0].worktrees.is_empty());
+        assert!(entries[1].worktrees.is_empty());
+    }
+
+    #[test]
+    fn tray_skips_remote_repos() {
+        // FR-013: remote (paired-server) projects live in the frontend's
+        // remote state, never in the local `repositories` table, so every repo
+        // fed to the tray is local. An archived repository workspace is not
+        // active, so it yields no project chats status.
+        use claudette::model::WorkspaceKind::Repository;
+        let repos = vec![repo("r1", "alpha")];
+        let workspaces = vec![ws("p1", "r1", Repository, WorkspaceStatus::Archived)];
+
+        let entries = tray_repo_entries(&repos, &workspaces, &HashMap::new());
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].project_chats, None);
     }
 
     #[test]

@@ -8,6 +8,7 @@
   "status_needs_input": "❓ 入力が必要",
   "status_running": "● 実行中",
   "status_idle": "○ 待機中",
+  "project_chats": "プロジェクトのチャット",
   "menu_settings": "設定",
   "menu_show": "Claudette を表示",
   "menu_quit": "終了",
