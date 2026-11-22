@@ -1317,6 +1317,7 @@ async fn clear_monitor_on_exit(
         status,
     };
     let _ = app.emit("claude-remote-control-status", &payload);
+    super::activity::emit_activity_changed(app, workspace_id, chat_session_id);
     crate::tray::rebuild_tray(app);
 }
 

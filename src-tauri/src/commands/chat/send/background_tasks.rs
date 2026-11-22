@@ -291,18 +291,26 @@ pub(super) async fn arm_background_task_from_system_notification(
     output_file: Option<&str>,
 ) {
     let app_state = app.state::<AppState>();
-    let mut agents = app_state.agents.write().await;
-    if let Some(session) = agents.get_mut(chat_session_id) {
-        session.running_background_tasks.insert(task_id.to_string());
-        // Output path is trusted here: it originates from the CLI's own
-        // System event, not from tool-result text. Recording it lets the
-        // wake prompt inline the task's output (see
-        // `clone_trusted_background_output_path`).
-        if let Some(path) = output_file.map(str::trim).filter(|s| !s.is_empty()) {
-            session
-                .background_task_output_paths
-                .insert(task_id.to_string(), path.to_string());
-        }
+    let workspace_id = {
+        let mut agents = app_state.agents.write().await;
+        agents.get_mut(chat_session_id).map(|session| {
+            session.running_background_tasks.insert(task_id.to_string());
+            // Output path is trusted here: it originates from the CLI's own
+            // System event, not from tool-result text. Recording it lets the
+            // wake prompt inline the task's output (see
+            // `clone_trusted_background_output_path`).
+            if let Some(path) = output_file.map(str::trim).filter(|s| !s.is_empty()) {
+                session
+                    .background_task_output_paths
+                    .insert(task_id.to_string(), path.to_string());
+            }
+            session.workspace_id.clone()
+        })
+    };
+    // Subagents and Workflows create no terminal tab, so this signal is the
+    // only way the UI learns a background task is now running (FR-006).
+    if let Some(ws) = workspace_id {
+        crate::commands::chat::activity::emit_activity_changed(app, &ws, chat_session_id);
     }
 }
 

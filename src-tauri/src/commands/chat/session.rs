@@ -186,6 +186,7 @@ pub async fn archive_chat_session(
             .map_err(|e| e.to_string())?;
         None
     };
+    super::activity::emit_activity_changed(&app, &workspace_id, &session_id);
 
     // Rebuild the tray so per-workspace running/attention aggregates reflect
     // the removed agent (and, if this was the last session, the auto-created

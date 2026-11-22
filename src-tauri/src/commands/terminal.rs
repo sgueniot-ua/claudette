@@ -265,12 +265,16 @@ pub async fn stop_agent_background_task(
         return Err("Agent session is not running".to_string());
     };
     ps.send_task_stop(&task_id).await?;
-    {
+    let workspace_id = {
         let mut agents = state.agents.write().await;
-        if let Some(session) = agents.get_mut(&chat_session_id) {
+        agents.get_mut(&chat_session_id).map(|session| {
             session.running_background_tasks.remove(&task_id);
             session.background_task_output_paths.remove(&task_id);
-        }
+            session.workspace_id.clone()
+        })
+    };
+    if let Some(ws) = &workspace_id {
+        crate::commands::chat::activity::emit_activity_changed(&app, ws, &chat_session_id);
     }
 
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;

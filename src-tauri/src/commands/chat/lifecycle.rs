@@ -150,10 +150,11 @@ pub async fn reset_agent_session(
 ) -> Result<(), String> {
     let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
     let chat_session_id = session_id;
-    let persisted_sid = db
+    let persisted = db
         .get_chat_session(&chat_session_id)
-        .map_err(|e| e.to_string())?
-        .and_then(|session| session.session_id);
+        .map_err(|e| e.to_string())?;
+    let workspace_id = persisted.as_ref().map(|s| s.workspace_id.clone());
+    let persisted_sid = persisted.and_then(|session| session.session_id);
 
     // Drain pending permissions under the lock, remove the session, capture
     // its session_id and any active PID; the deny sends, process kill,
@@ -168,6 +169,9 @@ pub async fn reset_agent_session(
         let pid_to_kill = removed.and_then(|s| s.active_pid);
         (drained, ended_sid, pid_to_kill)
     };
+    if let (Some(ws), Some(_)) = (&workspace_id, &ended_sid) {
+        activity::emit_activity_changed(&app, ws, &chat_session_id);
+    }
 
     if let Some((ref ps, drained)) = to_deny_reset {
         deny_drained_permissions(drained, ps, "Session reset.").await;
@@ -384,6 +388,7 @@ pub async fn prepare_cross_harness_migration(
 
         apply_migration_to_session(session, prelude)
     };
+    activity::emit_activity_changed(&app, &workspace_id, &chat_session_id);
 
     if let Some((ps, drained)) = snapshot.drained_permissions {
         deny_drained_permissions(drained, &ps, "Session migrated to a different runtime.").await;

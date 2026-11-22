@@ -2827,6 +2827,11 @@ pub async fn send_chat_message(
                                                 session.running_background_tasks.insert(task_id);
                                             }
                                         }
+                                        crate::commands::chat::activity::emit_activity_changed(
+                                            &app,
+                                            &ws_id,
+                                            &chat_session_id_for_stream,
+                                        );
                                         background_task_inputs
                                             .finish_workflow_tool_result(tool_use_id);
                                     }

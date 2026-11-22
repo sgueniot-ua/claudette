@@ -1295,6 +1295,52 @@ pub(crate) async fn handle_stop_agent(
     Ok(json!(null))
 }
 
+/// The live CLI handle a `control_response` is written to; checked before the
+/// pending entry is taken so an inactive session keeps its request.
+fn active_persistent_session(
+    session: &AgentSessionState,
+) -> Result<Arc<PersistentSession>, String> {
+    session
+        .persistent_session
+        .clone()
+        .ok_or_else(|| "Agent session is not active".to_string())
+}
+
+/// Under one lock: find the session, run `precheck` on it, verify the pending
+/// request for `tool_use_id` passes `accepts` (given its tool name), and
+/// remove it. Then, with the lock released, signal the activity change
+/// BEFORE the caller's fallible send — the entry is already gone (FR-008).
+pub(crate) async fn take_pending_and_signal<T>(
+    state: &ServerState,
+    chat_session_id: &str,
+    tool_use_id: &str,
+    precheck: impl FnOnce(&AgentSessionState) -> Result<T, String>,
+    accepts: impl FnOnce(&str) -> Result<(), String>,
+) -> Result<(PendingPermission, T), String> {
+    let (pending, checked, workspace_id) = {
+        let mut agents = state.agents.write().await;
+        let session = agents.get_mut(chat_session_id).ok_or("Session not found")?;
+        let checked = precheck(session)?;
+        match session.pending_permissions.get(tool_use_id) {
+            None => {
+                let pending_ids: Vec<String> =
+                    session.pending_permissions.keys().cloned().collect();
+                return Err(format!(
+                    "No pending permission request for tool_use_id {tool_use_id} (pending: {pending_ids:?})"
+                ));
+            }
+            Some(p) => accepts(&p.tool_name)?,
+        }
+        let pending = session
+            .pending_permissions
+            .remove(tool_use_id)
+            .expect("checked above");
+        (pending, checked, session.workspace_id.clone())
+    };
+    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
+    Ok((pending, checked))
+}
+
 /// Resolve a pending `AskUserQuestion` request. Mirrors the desktop's
 /// `submit_agent_answer` in `src-tauri/src/commands/chat/interaction.rs`:
 /// look up the pending entry by `tool_use_id`, verify it's an
@@ -1308,37 +1354,22 @@ pub async fn handle_submit_agent_answer(
     answers: std::collections::HashMap<String, String>,
     annotations: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
-    let (pending, ps, workspace_id) = {
-        let mut agents = state.agents.write().await;
-        let session = agents.get_mut(chat_session_id).ok_or("Session not found")?;
-        let ps = session
-            .persistent_session
-            .clone()
-            .ok_or("Agent session is not active")?;
-        match session.pending_permissions.get(tool_use_id) {
-            None => {
-                let pending_ids: Vec<String> =
-                    session.pending_permissions.keys().cloned().collect();
-                return Err(format!(
-                    "No pending permission request for tool_use_id {tool_use_id} (pending: {pending_ids:?})"
-                ));
+    let (pending, ps) = take_pending_and_signal(
+        state,
+        chat_session_id,
+        tool_use_id,
+        active_persistent_session,
+        |tool_name| {
+            if tool_name == "AskUserQuestion" {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Pending tool for {tool_use_id} is {tool_name}, not AskUserQuestion"
+                ))
             }
-            Some(p) if p.tool_name != "AskUserQuestion" => {
-                return Err(format!(
-                    "Pending tool for {tool_use_id} is {}, not AskUserQuestion",
-                    p.tool_name
-                ));
-            }
-            _ => {}
-        }
-        let pending = session
-            .pending_permissions
-            .remove(tool_use_id)
-            .expect("checked above");
-        (pending, ps, session.workspace_id.clone())
-    };
-    // Signal before the fallible send: the pending entry is already removed.
-    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
+        },
+    )
+    .await?;
 
     let mut updated_input = pending.original_input.clone();
     if !updated_input.is_object() {
@@ -1412,37 +1443,22 @@ pub async fn handle_submit_approval(
     reason: Option<String>,
     kind: ApprovalKind,
 ) -> Result<serde_json::Value, String> {
-    let (pending, ps, workspace_id) = {
-        let mut agents = state.agents.write().await;
-        let session = agents.get_mut(chat_session_id).ok_or("Session not found")?;
-        let ps = session
-            .persistent_session
-            .clone()
-            .ok_or("Agent session is not active")?;
-        match session.pending_permissions.get(tool_use_id) {
-            None => {
-                let pending_ids: Vec<String> =
-                    session.pending_permissions.keys().cloned().collect();
-                return Err(format!(
-                    "No pending permission request for tool_use_id {tool_use_id} (pending: {pending_ids:?})"
-                ));
+    let (pending, ps) = take_pending_and_signal(
+        state,
+        chat_session_id,
+        tool_use_id,
+        active_persistent_session,
+        |tool_name| {
+            if kind.accepts(tool_name) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Pending tool for {tool_use_id} is {tool_name}, not an approval request accepted by this handler"
+                ))
             }
-            Some(p) if !kind.accepts(&p.tool_name) => {
-                return Err(format!(
-                    "Pending tool for {tool_use_id} is {}, not an approval request accepted by this handler",
-                    p.tool_name
-                ));
-            }
-            _ => {}
-        }
-        let pending = session
-            .pending_permissions
-            .remove(tool_use_id)
-            .expect("checked above");
-        (pending, ps, session.workspace_id.clone())
-    };
-    // Signal before the fallible send: the pending entry is already removed.
-    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
+        },
+    )
+    .await?;
 
     let response = if approved {
         json!({

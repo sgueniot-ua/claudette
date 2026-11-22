@@ -303,7 +303,12 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
                         let mut agents = app_state.agents.write().await;
                         clear_workspace_attention_in(&mut agents, &ws_id)
                     };
-                    if cleared > 0 {
+                    for session_id in &cleared {
+                        crate::commands::chat::activity::emit_activity_changed(
+                            &handle, &ws_id, session_id,
+                        );
+                    }
+                    if !cleared.is_empty() {
                         rebuild_tray(&handle);
                     }
                 });
@@ -543,8 +548,8 @@ pub fn has_running_agents(
 }
 
 /// Authoritatively clear `needs_attention` / `attention_kind` for every
-/// session in `agents` belonging to `workspace_id`. Returns the number of
-/// sessions whose flags actually changed.
+/// session in `agents` belonging to `workspace_id`. Returns the ids of the
+/// sessions whose flags actually changed (each gets an activity signal).
 ///
 /// This is the "click on the tray badge → make it go away" primitive. It
 /// runs server-side, so the badge clears even when the frontend cache has
@@ -553,12 +558,12 @@ pub fn has_running_agents(
 pub(crate) fn clear_workspace_attention_in(
     agents: &mut std::collections::HashMap<String, crate::state::AgentSessionState>,
     workspace_id: &str,
-) -> usize {
-    let mut cleared = 0;
-    for session in agents.values_mut() {
+) -> Vec<String> {
+    let mut cleared = Vec::new();
+    for (session_id, session) in agents.iter_mut() {
         if session.workspace_id == workspace_id && session.needs_attention {
             session.reset_attention();
-            cleared += 1;
+            cleared.push(session_id.clone());
         }
     }
     cleared
@@ -892,9 +897,11 @@ mod tests {
         agents.insert("s2".to_string(), session_in("ws1", None, true));
         agents.insert("s3".to_string(), session_in("ws2", Some(2), true));
 
-        let cleared = clear_workspace_attention_in(&mut agents, "ws1");
+        let mut cleared = clear_workspace_attention_in(&mut agents, "ws1");
+        cleared.sort();
 
-        assert_eq!(cleared, 2, "both ws1 sessions should be cleared");
+        // FR-008: every cleared session is returned so the caller signals it.
+        assert_eq!(cleared, ["s1", "s2"], "both ws1 sessions should be cleared");
         assert!(!agents["s1"].needs_attention);
         assert!(agents["s1"].attention_kind.is_none());
         assert!(!agents["s1"].attention_notification_sent);
@@ -915,7 +922,7 @@ mod tests {
 
         // No ws1 session has needs_attention=true; no-op.
         let cleared = clear_workspace_attention_in(&mut agents, "ws1");
-        assert_eq!(cleared, 0);
+        assert!(cleared.is_empty());
         assert!(agents["s2"].needs_attention, "ws2 must remain untouched");
     }
 
@@ -928,7 +935,7 @@ mod tests {
         agents.insert("s1".to_string(), session_in("ws1", Some(1), true));
 
         let cleared = clear_workspace_attention_in(&mut agents, "ws-missing");
-        assert_eq!(cleared, 0);
+        assert!(cleared.is_empty());
         assert!(
             agents["s1"].needs_attention,
             "untouched workspace stays set"

@@ -73,7 +73,10 @@ fn session_activity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::handler::handle_stop_agent;
+    use crate::handler::{
+        ApprovalKind, handle_stop_agent, handle_submit_agent_answer, handle_submit_approval,
+        take_pending_and_signal,
+    };
     use claudette::model::{AgentStatus, AttentionKind, Repository, Workspace};
 
     fn make_repo(id: &str) -> Repository {
@@ -252,5 +255,108 @@ mod tests {
         assert!(handle_stop_agent(&state, &sid).await.is_err());
 
         assert_eq!(rx.try_recv().unwrap()["event"], "agent-activity-changed");
+    }
+
+    /// State whose session `sid` (workspace `w1`) has one pending `tool_name`
+    /// request keyed `t1`, plus a subscription to the server events.
+    async fn state_with_pending(
+        dir: &tempfile::TempDir,
+        tool_name: &str,
+    ) -> (
+        ServerState,
+        String,
+        tokio::sync::broadcast::Receiver<serde_json::Value>,
+    ) {
+        let (state, sid) = state_with_workspace(dir);
+        let mut a = agent("w1", &sid, None);
+        a.pending_permissions
+            .insert("t1".into(), pending(tool_name));
+        state.agents.write().await.insert(sid.clone(), a);
+        let rx = state.events.subscribe();
+        (state, sid, rx)
+    }
+
+    // FR-008: answering a question removes the request and signals the change.
+    #[tokio::test]
+    async fn answer_take_emits_activity_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, sid, mut rx) = state_with_pending(&dir, "AskUserQuestion").await;
+
+        let (taken, ()) = take_pending_and_signal(
+            &state,
+            &sid,
+            "t1",
+            |_| Ok(()),
+            |tool| {
+                (tool == "AskUserQuestion")
+                    .then_some(())
+                    .ok_or_else(|| "not a question".to_string())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(taken.tool_name, "AskUserQuestion");
+        assert!(
+            state.agents.read().await[&sid]
+                .pending_permissions
+                .is_empty()
+        );
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            serde_json::json!({
+                "event": "agent-activity-changed",
+                "payload": {"workspace_id": "w1", "chat_session_id": sid},
+            })
+        );
+    }
+
+    // FR-008: a rejected request is kept and signals nothing.
+    #[tokio::test]
+    async fn rejected_take_keeps_request_and_stays_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, sid, mut rx) = state_with_pending(&dir, "ExitPlanMode").await;
+
+        let result = take_pending_and_signal(
+            &state,
+            &sid,
+            "t1",
+            |_| Ok(()),
+            |_| Err("wrong kind".to_string()),
+        )
+        .await;
+
+        assert_eq!(result.err().as_deref(), Some("wrong kind"));
+        assert!(
+            state.agents.read().await[&sid]
+                .pending_permissions
+                .contains_key("t1")
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    // FR-008: both handlers route through the signalling take; with no live
+    // CLI they fail before taking, so the request stays and nothing is sent.
+    #[tokio::test]
+    async fn answer_and_approval_without_live_cli_keep_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, sid, mut rx) = state_with_pending(&dir, "ExitPlanMode").await;
+
+        let answer = handle_submit_agent_answer(&state, &sid, "t1", HashMap::new(), None).await;
+        let approval =
+            handle_submit_approval(&state, &sid, "t1", true, None, ApprovalKind::PlanModeOnly)
+                .await;
+
+        assert_eq!(answer.err().as_deref(), Some("Agent session is not active"));
+        assert_eq!(
+            approval.err().as_deref(),
+            Some("Agent session is not active")
+        );
+        assert!(
+            state.agents.read().await[&sid]
+                .pending_permissions
+                .contains_key("t1")
+        );
+        assert!(rx.try_recv().is_err());
     }
 }

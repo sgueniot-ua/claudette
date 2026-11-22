@@ -383,12 +383,23 @@ async fn block_on_interactive(
             // The reply channel was dropped (stop / reset / migrate). Clear any
             // lingering pending entry so the card doesn't stick around, then
             // tell the agent the interaction was abandoned.
-            let mut agents = state.agents.write().await;
-            if let Some(session) = agents.get_mut(chat_session_id) {
-                session.pending_permissions.remove(&tool_use_id);
-                if session.pending_permissions.is_empty() {
-                    session.reset_attention();
-                }
+            let changed = {
+                let mut agents = state.agents.write().await;
+                agents.get_mut(chat_session_id).is_some_and(|session| {
+                    session.pending_permissions.remove(&tool_use_id);
+                    let cleared = session.pending_permissions.is_empty();
+                    if cleared {
+                        session.reset_attention();
+                    }
+                    cleared
+                })
+            };
+            if changed {
+                crate::commands::chat::activity::emit_activity_changed(
+                    app,
+                    workspace_id,
+                    chat_session_id,
+                );
             }
             tracing::info!(
                 target: "claudette::agent_mcp",
