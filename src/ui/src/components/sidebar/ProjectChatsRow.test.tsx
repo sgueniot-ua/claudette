@@ -71,14 +71,17 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   };
 }
 
-async function render(repo: Repository = makeRepo()): Promise<HTMLElement> {
+async function render(
+  repo: Repository = makeRepo(),
+  showRepoName = false,
+): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   roots.push(root);
   containers.push(container);
   await act(async () => {
-    root.render(<ProjectChatsRow repo={repo} />);
+    root.render(<ProjectChatsRow repo={repo} showRepoName={showRepoName} />);
   });
   return container;
 }
@@ -109,6 +112,15 @@ describe("ProjectChatsRow", () => {
     expect(c.textContent).toContain("project_chats_row");
     expect(c.textContent).toContain("feature/x");
     expect(c.querySelector('[title="status_running"]')).not.toBeNull();
+  });
+
+  it("status section rows show the repository name", async () => { // FR-013
+    const repo = makeRepo({ name: "my-repo" });
+    const withoutWs = await render(repo, true);
+    expect(withoutWs.textContent).toContain("my-repo");
+    useAppStore.setState({ workspaces: [makeWorkspace()] });
+    const withWs = await render(repo, true);
+    expect(withWs.textContent).toContain("my-repo · feature/x");
   });
 
   it("shows the attention indicator from the project sessions", async () => {

@@ -24,7 +24,7 @@ import { resolveScmPrIcon } from "../shared/workspaceStatusIcon";
 import { RepoIcon } from "../shared/RepoIcon";
 import { WorkspaceEnvSpinner } from "./WorkspaceEnvSpinner";
 import { ProjectChatsRow } from "./ProjectChatsRow";
-import { ProjectChatsSection } from "./ProjectChatsSection";
+import { StatusProjectChatsSection } from "./StatusProjectChatsSection";
 import { WorkspaceScmLinkIcon } from "./WorkspaceScmLinkIcon";
 import { HelpMenu } from "./HelpMenu";
 import { UpdateBanner } from "../layout/UpdateBanner";
@@ -971,7 +971,7 @@ export const Sidebar = memo(function Sidebar() {
 
       <div className={styles.list}>
         {sidebarGroupBy === "status" && (
-          <ProjectChatsSection
+          <StatusProjectChatsSection
             repos={statusProjectRepos}
             jumpNumberByRepoId={statusProjectJumpNumberByRepoId}
           />

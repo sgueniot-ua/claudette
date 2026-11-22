@@ -5,7 +5,7 @@ import styles from "./Sidebar.module.css";
 
 /** Status-mode "Project chats" section, pinned above the status groups: one
  *  row per local repo. `jumpNumberByRepoId` carries the ⌘1–9 slots. */
-export function ProjectChatsSection({
+export function StatusProjectChatsSection({
   repos,
   jumpNumberByRepoId,
 }: {
@@ -23,6 +23,7 @@ export function ProjectChatsSection({
         <ProjectChatsRow
           key={repo.id}
           repo={repo}
+          showRepoName
           jumpNumber={jumpNumberByRepoId.get(repo.id)}
         />
       ))}

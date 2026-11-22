@@ -10,11 +10,16 @@
 
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openProjectChatTarget } from "../../hooks/useOpenProjectChat";
 import { FuzzyFinder, filterFuzzyWorkspaces, filterFuzzyProjectChats } from "./FuzzyFinder";
 import type { Repository } from "../../types/repository";
 import { useAppStore } from "../../stores/useAppStore";
 import type { Workspace } from "../../types/workspace";
+
+vi.mock("../../hooks/useOpenProjectChat", () => ({
+  openProjectChatTarget: vi.fn(async () => {}),
+}));
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -125,5 +130,33 @@ describe("filterFuzzyProjectChats", () => {
     expect(filterFuzzyProjectChats(repos, "").map((r) => r.id)).toEqual(["r1", "r2"]);
     expect(filterFuzzyProjectChats(repos, "BET").map((r) => r.id)).toEqual(["r2"]);
     expect(filterFuzzyProjectChats(repos, "chats").map((r) => r.id)).toEqual(["r1", "r2"]);
+  });
+});
+
+describe("FuzzyFinder project chats entry", () => {
+  afterEach(async () => {
+    if (root) await act(async () => root!.unmount());
+    root = null;
+    document.body.innerHTML = "";
+    useAppStore.setState({ fuzzyFinderOpen: false });
+  });
+
+  it("selecting a project chats entry opens it and closes the finder", async () => { // FR-013
+    vi.mocked(openProjectChatTarget).mockClear();
+    useAppStore.setState({
+      workspaces: [],
+      repositories: [
+        { id: "r1", name: "alpha", remote_connection_id: null } as unknown as Repository,
+      ],
+      fuzzyFinderOpen: true,
+    });
+    await mount();
+    const entry = container!.querySelector<HTMLElement>("[class*=result]:not([class*=results])");
+    expect(entry?.textContent).toContain("alpha");
+    await act(async () => {
+      entry!.click();
+    });
+    expect(openProjectChatTarget).toHaveBeenCalledWith("r1");
+    expect(useAppStore.getState().fuzzyFinderOpen).toBe(false);
   });
 });

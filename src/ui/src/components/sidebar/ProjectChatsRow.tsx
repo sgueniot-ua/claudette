@@ -19,9 +19,12 @@ import rowStyles from "./ProjectChatsRow.module.css";
 export function ProjectChatsRow({
   repo,
   jumpNumber,
+  showRepoName = false,
 }: {
   repo: Repository;
   jumpNumber?: number;
+  /** Status-mode section: the sub-label carries the repo name. */
+  showRepoName?: boolean;
 }) {
   const { t } = useTranslation("sidebar");
   const { open } = useOpenProjectChat();
@@ -89,7 +92,15 @@ export function ProjectChatsRow({
       )}
       <div className={styles.wsInfo}>
         <span className={styles.wsName}>{label}</span>
-        {ws && <span className={styles.wsBranch}>{ws.branch_name}</span>}
+        {(showRepoName || ws) && (
+          <span className={styles.wsBranch}>
+            {showRepoName
+              ? ws
+                ? `${repo.name} · ${ws.branch_name}`
+                : repo.name
+              : ws?.branch_name}
+          </span>
+        )}
       </div>
       {jumpNumber && <JumpShortcutBadge number={jumpNumber} />}
     </div>
