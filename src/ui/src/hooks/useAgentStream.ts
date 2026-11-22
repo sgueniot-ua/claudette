@@ -57,6 +57,10 @@ import {
   clearPromptStartTimeIfWorkspaceIdle,
   syncWorkspaceTurnStatus,
 } from "../components/chat/chatTurnLifecycle";
+import {
+  listenToSessionActivityChanges,
+  refreshSessionBackgroundStatus,
+} from "../components/chat/sessionActivityRefresh";
 
 const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 const CODEX_COMMAND_APPROVAL_TOOL = "CodexCommandApproval";
@@ -662,6 +666,7 @@ export function useAgentStream() {
         // User stop or crash has no prior `result` → Stopped.
         updateChatSession(sessionId, { agent_status: wasFinalized ? "Idle" : "Stopped" });
         syncWorkspaceTurnStatus(wsId);
+        void refreshSessionBackgroundStatus(wsId, sessionId);
         clearPromptStartTimeIfWorkspaceIdle(wsId);
         setStreamingContent(sessionId, "");
         clearStreamingThinking(sessionId);
@@ -1154,6 +1159,8 @@ export function useAgentStream() {
             turnSawUsageRef.current[sessionId] = false;
             updateChatSession(sessionId, { agent_status: "Idle" });
             syncWorkspaceTurnStatus(wsId);
+            // Background tasks started during the turn keep it IdleWithBackground.
+            void refreshSessionBackgroundStatus(wsId, sessionId);
             clearPromptStartTimeIfWorkspaceIdle(wsId);
             useAppStore.getState().markWorkspaceAsUnread(wsId);
             break;
@@ -1638,9 +1645,18 @@ export function useAgentStream() {
         });
       }
       syncWorkspaceTurnStatus(wsId);
+      // The tab-derived status above misses subagents and Workflows; Rust has the last word.
+      void refreshSessionBackgroundStatus(wsId, sessionId);
     });
     return () => {
       active = false;
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listenToSessionActivityChanges();
+    return () => {
       unlisten.then((fn) => fn());
     };
   }, []);

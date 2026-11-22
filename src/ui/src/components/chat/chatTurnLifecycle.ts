@@ -53,11 +53,15 @@ function hasRunningActiveSession(state: AppState, workspaceId: string): boolean 
 }
 
 function hasActiveBackgroundTask(state: AppState, workspaceId: string): boolean {
-  const activeSessionIds = new Set(
-    (state.sessionsByWorkspace[workspaceId] ?? [])
-      .filter((session) => session.status === "Active")
-      .map((session) => session.id),
+  const activeSessions = (state.sessionsByWorkspace[workspaceId] ?? []).filter(
+    (session) => session.status === "Active",
   );
+  // Rust-sourced session status also covers subagents and Workflows, which
+  // have no task tab.
+  if (activeSessions.some((session) => session.agent_status === "IdleWithBackground")) {
+    return true;
+  }
+  const activeSessionIds = new Set(activeSessions.map((session) => session.id));
   return Object.entries(state.agentBackgroundTasksBySessionId).some(
     ([sessionId, tabs]) =>
       activeSessionIds.has(sessionId) &&
