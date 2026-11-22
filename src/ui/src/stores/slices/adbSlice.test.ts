@@ -38,7 +38,7 @@ describe("adbSlice", () => {
     expect(useAppStore.getState().terminalTabs).toBe(tabs);
   });
 
-  // FR-002
+  // FR-001b
   it("clamps the panel width to 240..1200", () => {
     expect(useAppStore.getState().adbPanelWidth).toBe(480);
     useAppStore.getState().setAdbPanelWidth(100);

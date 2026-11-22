@@ -291,7 +291,7 @@ describe("AdbPanel picker", () => {
 
 describe("AdbPanel workspace switching", () => {
   it("shows the device of the selected workspace", async () => {
-    // FR-003
+    // FR-002, FR-003
     setSession("w1", { kind: "streaming", device: device("A1"), source: "manual" });
     setSession("w2", { kind: "streaming", device: device("B2"), source: "only_device" });
     await render();
