@@ -14,7 +14,8 @@ use super::monitor::DeviceList;
 use super::resolve::{matches_key, resolve_device};
 pub use super::runner::{AdbRunner, ProcessAdbRunner};
 use crate::model::{
-    AdbDevice, AdbDeviceState, AdbSessionStatus, DeviceKey, LogcatLine, Resolution, WaitReason,
+    AdbDevice, AdbDeviceState, AdbSessionStatus, DeviceKey, LogcatLine, Resolution,
+    ResolutionSource, WaitReason,
 };
 
 /// Receives what sessions produce; Task 6 forwards it as Tauri events.
@@ -246,7 +247,20 @@ impl SessionTask {
             Some(_) => None,
             None => self.runner.dedicated_avd(&self.worktree).await,
         };
-        match resolve_device(self.manual.as_ref(), dedicated.as_deref(), &self.devices) {
+        // FR-007e: the device streamed as the only ready one stays while it is ready.
+        let current = match self.status_tx.borrow().as_ref() {
+            Some(AdbSessionStatus::Streaming {
+                device,
+                source: ResolutionSource::OnlyDevice,
+            }) if self.stream.is_some() => Some(device.serial.clone()),
+            _ => None,
+        };
+        match resolve_device(
+            self.manual.as_ref(),
+            dedicated.as_deref(),
+            current.as_deref(),
+            &self.devices,
+        ) {
             Resolution::Device { serial, source } => {
                 let Some(device) = self.devices.iter().find(|d| d.serial == serial).cloned() else {
                     return;
@@ -410,7 +424,6 @@ mod tests {
 
     use super::*;
     use crate::adb::logcat::logcat_args;
-    use crate::model::ResolutionSource;
 
     const ONE: &str = "List of devices attached\nemulator-5560\tdevice model:sdk_gphone\n";
     const NONE: &str = "List of devices attached\n\n";
@@ -939,6 +952,26 @@ mod tests {
             streaming("R58M12345", None, ResolutionSource::OnlyDevice)
         );
         assert_eq!(sink.batches(), vec![(0, true)]);
+    }
+
+    // FR-007e (un second appareil prêt se connecte : l'appareil en cours est gardé)
+    #[tokio::test(start_paused = true)]
+    async fn second_ready_device_keeps_current_stream() {
+        let (runner, sink, sessions) =
+            setup("List of devices attached\nR58M12345\tdevice model:sdk_gphone\n");
+        sessions.open(ctx(None)).await;
+        runner.set_devices(
+            "List of devices attached\nR58M12345\tdevice model:sdk_gphone\nemulator-5554\tdevice model:sdk_gphone\n",
+        );
+        let calls = runner.devices_calls.load(Ordering::SeqCst);
+        until(|| runner.devices_calls.load(Ordering::SeqCst) >= calls + 2).await;
+
+        assert_eq!(runner.spawns().len(), 1);
+        assert!(!runner.dropped(0));
+        assert_eq!(
+            sink.statuses(),
+            vec![streaming("R58M12345", None, ResolutionSource::OnlyDevice)]
+        );
     }
 
     // FR-007d / FR-007 (émulateur dédié choisi parmi plusieurs appareils prêts)

@@ -4,10 +4,12 @@ use crate::model::{AdbDevice, AdbDeviceState, DeviceKey, Resolution, ResolutionS
 ///
 /// Order: manual choice, then the dedicated emulator when it is running and ready, then the only
 /// ready device, then a choice between several ready devices. A manual choice never falls back to
-/// another device.
+/// another device. `current` is the serial streamed as the only ready device: it is kept while
+/// it stays ready, even when another ready device connects.
 pub fn resolve_device(
     manual: Option<&DeviceKey>,
     dedicated_avd: Option<&str>,
+    current: Option<&str>,
     devices: &[AdbDevice],
 ) -> Resolution {
     let ready: Vec<&AdbDevice> = devices
@@ -57,7 +59,13 @@ pub fn resolve_device(
                 _ => Resolution::NoDevice,
             }
         }
-        _ => Resolution::NeedsChoice,
+        _ => match current.filter(|serial| ready.iter().any(|device| device.serial == *serial)) {
+            Some(serial) => Resolution::Device {
+                serial: serial.to_string(),
+                source: ResolutionSource::OnlyDevice,
+            },
+            None => Resolution::NeedsChoice,
+        },
     }
 }
 
@@ -94,7 +102,7 @@ mod tests {
         ];
         let manual = DeviceKey::Serial("R58M12345".into());
         assert_eq!(
-            resolve_device(Some(&manual), Some("task-demo-feat-a"), &devices),
+            resolve_device(Some(&manual), Some("task-demo-feat-a"), None, &devices),
             Resolution::Device {
                 serial: "R58M12345".into(),
                 source: ResolutionSource::Manual,
@@ -108,7 +116,7 @@ mod tests {
         let devices = [device("R58M12345", AdbDeviceState::Device, None)];
         let manual = DeviceKey::Avd("Pixel_8".into());
         assert_eq!(
-            resolve_device(Some(&manual), None, &devices),
+            resolve_device(Some(&manual), None, None, &devices),
             Resolution::Unavailable {
                 key: DeviceKey::Avd("Pixel_8".into()),
                 source: ResolutionSource::Manual,
@@ -128,7 +136,7 @@ mod tests {
             ),
         ];
         assert_eq!(
-            resolve_device(None, Some("task-demo-feat-a"), &devices),
+            resolve_device(None, Some("task-demo-feat-a"), None, &devices),
             Resolution::Device {
                 serial: "emulator-5556".into(),
                 source: ResolutionSource::DedicatedEmulator,
@@ -148,7 +156,7 @@ mod tests {
             device("R58M12345", AdbDeviceState::Device, None),
         ];
         assert_eq!(
-            resolve_device(None, Some("task-demo-feat-a"), &devices),
+            resolve_device(None, Some("task-demo-feat-a"), None, &devices),
             Resolution::Device {
                 serial: "R58M12345".into(),
                 source: ResolutionSource::OnlyDevice,
@@ -161,7 +169,7 @@ mod tests {
     fn resolve_only_ready_device() {
         let devices = [device("R58M12345", AdbDeviceState::Device, None)];
         assert_eq!(
-            resolve_device(None, None, &devices),
+            resolve_device(None, None, None, &devices),
             Resolution::Device {
                 serial: "R58M12345".into(),
                 source: ResolutionSource::OnlyDevice,
@@ -177,7 +185,7 @@ mod tests {
             device("emulator-5554", AdbDeviceState::Unauthorized, None),
         ];
         assert_eq!(
-            resolve_device(None, None, &devices),
+            resolve_device(None, None, None, &devices),
             Resolution::Device {
                 serial: "R58M12345".into(),
                 source: ResolutionSource::OnlyDevice,
@@ -193,7 +201,7 @@ mod tests {
             device("emulator-5554", AdbDeviceState::Device, Some("Pixel_8")),
         ];
         assert_eq!(
-            resolve_device(None, None, &devices),
+            resolve_device(None, None, None, &devices),
             Resolution::NeedsChoice
         );
     }
@@ -201,7 +209,7 @@ mod tests {
     // FR-005
     #[test]
     fn resolve_no_device() {
-        assert_eq!(resolve_device(None, None, &[]), Resolution::NoDevice);
+        assert_eq!(resolve_device(None, None, None, &[]), Resolution::NoDevice);
     }
 
     // FR-007c
@@ -210,7 +218,7 @@ mod tests {
         let devices = [device("R58M12345", AdbDeviceState::Unauthorized, None)];
         let manual = DeviceKey::Serial("R58M12345".into());
         assert_eq!(
-            resolve_device(Some(&manual), None, &devices),
+            resolve_device(Some(&manual), None, None, &devices),
             Resolution::Unavailable {
                 key: DeviceKey::Serial("R58M12345".into()),
                 source: ResolutionSource::Manual,
@@ -223,7 +231,7 @@ mod tests {
     fn resolve_single_unauthorized_device_is_unavailable() {
         let devices = [device("R58M12345", AdbDeviceState::Unauthorized, None)];
         assert_eq!(
-            resolve_device(None, None, &devices),
+            resolve_device(None, None, None, &devices),
             Resolution::Unavailable {
                 key: DeviceKey::Serial("R58M12345".into()),
                 source: ResolutionSource::OnlyDevice,
@@ -238,7 +246,10 @@ mod tests {
             device("R58M12345", AdbDeviceState::Unauthorized, None),
             device("emulator-5554", AdbDeviceState::Unauthorized, None),
         ];
-        assert_eq!(resolve_device(None, None, &devices), Resolution::NoDevice);
+        assert_eq!(
+            resolve_device(None, None, None, &devices),
+            Resolution::NoDevice
+        );
     }
 
     // FR-007
@@ -250,7 +261,7 @@ mod tests {
         ];
         let manual = DeviceKey::Avd("Pixel_8".into());
         assert_eq!(
-            resolve_device(Some(&manual), None, &devices),
+            resolve_device(Some(&manual), None, None, &devices),
             Resolution::Device {
                 serial: "emulator-5554".into(),
                 source: ResolutionSource::Manual,
@@ -262,6 +273,75 @@ mod tests {
     #[test]
     fn resolve_lone_offline_is_no_device() {
         let devices = [device("R58M12345", AdbDeviceState::Offline, None)];
-        assert_eq!(resolve_device(None, None, &devices), Resolution::NoDevice);
+        assert_eq!(
+            resolve_device(None, None, None, &devices),
+            Resolution::NoDevice
+        );
+    }
+
+    // FR-007e
+    #[test]
+    fn resolve_keeps_current_when_second_ready_device_connects() {
+        let devices = [
+            device("R58M12345", AdbDeviceState::Device, None),
+            device("emulator-5554", AdbDeviceState::Device, Some("Pixel_8")),
+        ];
+        assert_eq!(
+            resolve_device(None, None, Some("R58M12345"), &devices),
+            Resolution::Device {
+                serial: "R58M12345".into(),
+                source: ResolutionSource::OnlyDevice,
+            }
+        );
+    }
+
+    // FR-007e
+    #[test]
+    fn resolve_needs_choice_when_current_gone_and_several_remain() {
+        let devices = [
+            device("emulator-5554", AdbDeviceState::Device, Some("Pixel_8")),
+            device("emulator-5556", AdbDeviceState::Device, None),
+        ];
+        assert_eq!(
+            resolve_device(None, None, Some("R58M12345"), &devices),
+            Resolution::NeedsChoice
+        );
+    }
+
+    // FR-007e
+    #[test]
+    fn resolve_dedicated_beats_current() {
+        let devices = [
+            device("R58M12345", AdbDeviceState::Device, None),
+            device(
+                "emulator-5556",
+                AdbDeviceState::Device,
+                Some("task-demo-feat-a"),
+            ),
+        ];
+        assert_eq!(
+            resolve_device(None, Some("task-demo-feat-a"), Some("R58M12345"), &devices),
+            Resolution::Device {
+                serial: "emulator-5556".into(),
+                source: ResolutionSource::DedicatedEmulator,
+            }
+        );
+    }
+
+    // FR-007e
+    #[test]
+    fn resolve_manual_beats_current() {
+        let devices = [
+            device("R58M12345", AdbDeviceState::Device, None),
+            device("emulator-5554", AdbDeviceState::Device, Some("Pixel_8")),
+        ];
+        let manual = DeviceKey::Avd("Pixel_8".into());
+        assert_eq!(
+            resolve_device(Some(&manual), None, Some("R58M12345"), &devices),
+            Resolution::Device {
+                serial: "emulator-5554".into(),
+                source: ResolutionSource::Manual,
+            }
+        );
     }
 }
