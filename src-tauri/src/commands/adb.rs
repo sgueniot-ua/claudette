@@ -421,6 +421,18 @@ mod tests {
         }
     }
 
+    // FR-007b (la création d'un workspace ne touche ni session ni émulateur)
+    #[tokio::test]
+    async fn created_hook_does_nothing() {
+        let (_dir, path, _db) = db_with_workspace();
+        let sink = Arc::new(NullSink::default());
+        let sessions = AdbSessions::new(Arc::new(IdleRunner), sink.clone());
+        teardown_workspace(Some(&sessions), &path, "w1", WorkspaceChangeKind::Created).await;
+        assert!(sink.stopped.lock().unwrap().is_empty());
+        assert_eq!(sessions.status("w1"), None);
+        assert!(sessions.devices().is_empty());
+    }
+
     // Contract: event payload field names consumed by the frontend.
     #[test]
     fn event_payload_field_names() {
