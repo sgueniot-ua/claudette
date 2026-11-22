@@ -313,6 +313,11 @@ pub async fn remove_repository(
     db.delete_repository_with_summaries(&id)
         .map_err(|e| e.to_string())?;
 
+    let ids: Vec<String> = repo_workspaces.iter().map(|w| w.id.clone()).collect();
+    if let Err(e) = claudette::adb::settings::forget_repo(&db, &id, &ids) {
+        tracing::warn!(target: "claudette::adb", repo_id = %id, error = %e, "failed to forget ADB settings");
+    }
+
     crate::tray::rebuild_tray(&app);
 
     Ok(())

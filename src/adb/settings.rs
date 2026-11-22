@@ -79,6 +79,20 @@ pub fn delete_workspace_device(db: &Database, workspace_id: &str) -> Result<(), 
     db.delete_app_setting(&workspace_device_key(workspace_id))
 }
 
+/// Forget the ADB settings of a removed repository: its Android mode and the manual device
+/// choice of each of its workspaces.
+pub fn forget_repo(
+    db: &Database,
+    repo_id: &str,
+    workspace_ids: &[String],
+) -> Result<(), rusqlite::Error> {
+    db.delete_app_setting(&android_mode_key(repo_id))?;
+    for id in workspace_ids {
+        delete_workspace_device(db, id)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +187,20 @@ mod tests {
         set_android_mode(&db, "r1", false).unwrap();
         assert!(!android_mode(&db, "r1").unwrap());
         assert_eq!(db.get_app_setting("repo:r1:android_mode").unwrap(), None);
+    }
+
+    // FR-011 (suppression d'un dépôt : ses réglages ADB sont effacés)
+    #[test]
+    fn forget_repo_deletes_mode_and_device_choices() {
+        let (_dir, db) = temp_db();
+        set_android_mode(&db, "r1", true).unwrap();
+        set_android_mode(&db, "r2", true).unwrap();
+        set_workspace_device(&db, "w1", Some(&DeviceKey::Serial("R58".into()))).unwrap();
+        set_workspace_device(&db, "w2", Some(&DeviceKey::Serial("R59".into()))).unwrap();
+        forget_repo(&db, "r1", &["w1".to_string()]).unwrap();
+        assert!(!android_mode(&db, "r1").unwrap());
+        assert_eq!(workspace_device(&db, "w1").unwrap(), None);
+        assert!(android_mode(&db, "r2").unwrap());
+        assert!(workspace_device(&db, "w2").unwrap().is_some());
     }
 }
