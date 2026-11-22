@@ -1,12 +1,12 @@
 import { useCallback, useState } from "react";
 import i18n from "../i18n";
 import { useAppStore } from "../stores/useAppStore";
-import { openProjectChat } from "../services/tauri";
+import { createChatSession, listChatSessions, openProjectChat } from "../services/tauri";
 
 /**
  * Open the project chats of a local repository: select its `repository`
- * workspace when the store already has it (ChatPanel loads its sessions;
- * ⌘T / + create more), otherwise ask the backend to create the workspace and
+ * workspace when the store already has it (creating a chat if none is
+ * active; ⌘T / + create more), otherwise ask the backend to create the workspace and
  * its first chat session. Failures surface as a toast. Non-React so keyboard
  * shortcuts and the tray listener can reuse it.
  */
@@ -18,11 +18,28 @@ export async function openProjectChatTarget(repoId: string): Promise<void> {
       w.kind === "repository" &&
       w.status === "Active",
   );
-  if (existing) {
-    s.selectWorkspace(existing.id);
-    return;
-  }
   try {
+    if (existing) {
+      // FR-013: an existing workspace whose chats are all archived must get a
+      // fresh chat, else the user lands on an empty tab bar. The backend
+      // `open_project_chat` always creates a session, so it is not used here.
+      const loaded = s.sessionsLoadedByWorkspace[existing.id];
+      let sessions = s.sessionsByWorkspace[existing.id] ?? [];
+      if (!loaded) {
+        sessions = await listChatSessions(existing.id, false);
+        useAppStore.getState().setSessionsForWorkspace(existing.id, sessions);
+      }
+      const st = useAppStore.getState();
+      if (sessions.some((x) => x.status === "Active")) {
+        st.selectWorkspace(existing.id);
+        return;
+      }
+      const session = await createChatSession(existing.id);
+      st.addChatSession(session);
+      st.selectWorkspace(existing.id);
+      st.selectSession(existing.id, session.id);
+      return;
+    }
     const { workspace, session } = await openProjectChat(repoId);
     const st = useAppStore.getState();
     // The backend emits no workspace-changed event for project chats.

@@ -154,7 +154,13 @@ describe("ProjectChatsRow", () => {
 
   it("click selects the existing project workspace without creating a chat", async () => {
     // FR-013
-    useAppStore.setState({ workspaces: [makeWorkspace()] });
+    useAppStore.setState({
+      workspaces: [makeWorkspace()],
+      sessionsByWorkspace: {
+        "w-project": [{ id: "s1", status: "Active" } as never],
+      },
+      sessionsLoadedByWorkspace: { "w-project": true },
+    });
     const c = await render();
     await act(async () => {
       (c.firstElementChild as HTMLElement).click();
