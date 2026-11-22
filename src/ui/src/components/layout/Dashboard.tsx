@@ -12,7 +12,6 @@ import { SessionStatusIcon, type SessionStatusKind } from "../shared/SessionStat
 import { resolveScmPrIcon } from "../shared/workspaceStatusIcon";
 import { formatElapsedSeconds } from "../chat/chatHelpers";
 import { WelcomeEmptyState } from "./WelcomeEmptyState";
-import { ProjectChatsSection } from "./ProjectChatsSection";
 import { useCreateWorkspace } from "../../hooks/useCreateWorkspace";
 import { useScmProvider } from "../../hooks/useScmProvider";
 import { restoreWorkspace } from "../../services/tauri";
@@ -389,7 +388,6 @@ export function Dashboard() {
             }
           />
           <ProjectViewScmLists repoId={scopedRepo.id} />
-          <ProjectChatsSection repoId={scopedRepo.id} />
           {scopedWorkspaceRows.length > 0 && (
             <div className={styles.workspacesSection}>
               <button

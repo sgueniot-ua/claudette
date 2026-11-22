@@ -304,10 +304,7 @@
   "agents_queued": "{{count}} wartend",
   "task_progress_count": "{{completed}}/{{total}} Aufgaben",
   "tab_rename_failed": "Umbenennen fehlgeschlagen: {{error}}",
-  "project_chats_title": "Chats",
   "project_chats_shared_notice": "Projekt-Chats nutzen direkt den Projektordner: keine Isolation, Änderungen landen in denselben Dateien.",
-  "project_chats_new": "Neuer Chat",
-  "project_chats_empty": "In diesem Projekt gibt es noch keine Chats.",
   "project_chat_badge": "Projekt",
   "project_chats_open_failed": "Chat konnte nicht geöffnet werden: {{error}}"
 }

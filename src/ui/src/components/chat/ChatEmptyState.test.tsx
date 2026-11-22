@@ -4,6 +4,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Workspace } from "../../types/workspace";
+import { useAppStore } from "../../stores/useAppStore";
 import { ChatEmptyState } from "./ChatEmptyState";
 
 const hookMocks = vi.hoisted(() => ({
@@ -85,6 +87,26 @@ describe("ChatEmptyState", () => {
 
     expect(container.textContent).toBe("Send a message to start a conversation");
     expect(hookMocks.useEnvElapsedSeconds).toHaveBeenCalledWith(null);
+  });
+
+  it("empty project chat shows the shared-folder notice", async () => {
+    // FR-005
+    useAppStore.setState({
+      workspaces: [
+        {
+          id: "ws-project",
+          kind: "repository",
+        } as Workspace,
+      ],
+    });
+    const container = await render(
+      <ChatEmptyState
+        workspaceEnvironmentPreparing={false}
+        workspaceId="ws-project"
+      />,
+    );
+    expect(container.textContent).toContain("project_chats_shared_notice");
+    useAppStore.setState({ workspaces: [] });
   });
 
   it("explains that env preparation is blocking the first send", async () => {

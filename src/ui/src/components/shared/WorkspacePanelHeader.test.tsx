@@ -85,6 +85,15 @@ describe("WorkspacePanelHeader project badge", () => {
     expect(c.textContent).toContain("project_chat_badge");
   });
 
+  it("project badge has the shared-folder tooltip", async () => {
+    // FR-005
+    const c = await renderHeader("repository");
+    const badge = Array.from(c.querySelectorAll("span")).find(
+      (el) => el.textContent === "project_chat_badge",
+    );
+    expect(badge?.getAttribute("title")).toBe("project_chats_shared_notice");
+  });
+
   it("shows no badge for worktree workspaces", async () => {
     // FR-012
     const c = await renderHeader("worktree");

@@ -1,6 +1,7 @@
 import { LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useAppStore } from "../../stores/useAppStore";
 import { useEnvElapsedSeconds } from "../../hooks/useEnvElapsedSeconds";
 import { formatEnvProviderName } from "../../utils/workspaceEnvironment";
 import styles from "./ChatPanel.module.css";
@@ -19,8 +20,19 @@ export function ChatEmptyState({
     workspaceEnvironmentPreparing ? workspaceId : null,
   );
 
+  const isProjectChat = useAppStore((s) =>
+    s.workspaces.some((w) => w.id === workspaceId && w.kind === "repository"),
+  );
+
   if (!workspaceEnvironmentPreparing) {
-    return <div className={styles.empty}>{t("send_message_to_start")}</div>;
+    return (
+      <div className={styles.empty}>
+        {t("send_message_to_start")}
+        {isProjectChat && (
+          <div className={styles.emptySub}>{t("project_chats_shared_notice")}</div>
+        )}
+      </div>
+    );
   }
 
   const providerName = envPlugin ? formatEnvProviderName(envPlugin) : null;

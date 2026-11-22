@@ -306,10 +306,7 @@
   "agents_queued": "{{count}} queued",
   "task_progress_count": "{{completed}}/{{total}} tasks",
   "tab_rename_failed": "Rename failed: {{error}}",
-  "project_chats_title": "Chats",
   "project_chats_shared_notice": "Project chats share the project folder directly: no isolation, changes land in the same files.",
-  "project_chats_new": "New chat",
-  "project_chats_empty": "No chats yet in this project.",
   "project_chat_badge": "Project",
   "project_chats_open_failed": "Chat failed to open: {{error}}"
 }

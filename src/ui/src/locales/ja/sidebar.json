@@ -91,5 +91,6 @@
   "remote_needs_repair": "{{name}} はこのデバイスを受け付けなくなりました。トークンで再ペアリングしてください",
   "remote_cancel_reconnect": "再接続を中止",
   "remote_revoke_failed": "{{name}} を削除しましたが、そのマシンでのアクセスを取り消せませんでした（{{error}}）。そのマシンで「{{reset}}」を使って取り消してください。",
-  "scheduler_status": "ループ中 {{looping}} · 予定 {{scheduled}} · 要対応 {{attention}}"
+  "scheduler_status": "ループ中 {{looping}} · 予定 {{scheduled}} · 要対応 {{attention}}",
+  "project_chats_row": "プロジェクトのチャット"
 }

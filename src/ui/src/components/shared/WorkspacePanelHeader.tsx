@@ -66,7 +66,12 @@ export function WorkspacePanelHeader() {
         <span className={styles.repoName}>{ws.name}</span>
       )}
       {ws.kind === "repository" && (
-        <span className={styles.projectBadge}>{t("project_chat_badge")}</span>
+        <span
+          className={styles.projectBadge}
+          title={t("project_chats_shared_notice")}
+        >
+          {t("project_chat_badge")}
+        </span>
       )}
       {scmLinkEl}
     </span>

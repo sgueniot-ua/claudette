@@ -23,6 +23,7 @@ import { SchedulerButton } from "./SchedulerButton";
 import { resolveScmPrIcon } from "../shared/workspaceStatusIcon";
 import { RepoIcon } from "../shared/RepoIcon";
 import { WorkspaceEnvSpinner } from "./WorkspaceEnvSpinner";
+import { ProjectChatsRow } from "./ProjectChatsRow";
 import { WorkspaceScmLinkIcon } from "./WorkspaceScmLinkIcon";
 import { HelpMenu } from "./HelpMenu";
 import { UpdateBanner } from "../layout/UpdateBanner";
@@ -1293,6 +1294,7 @@ export const Sidebar = memo(function Sidebar() {
                 )}
               </div>
 
+              {!collapsed && <ProjectChatsRow repo={repo} />}
               {!collapsed && repoWorkspaces.map((ws) => renderWorkspace(ws, true))}
               {/* Show loading workspace while creating */}
               {!collapsed && creatingWorkspace && creatingWorkspace.repoId === repo.id && (

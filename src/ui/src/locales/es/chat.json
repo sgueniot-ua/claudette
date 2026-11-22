@@ -232,10 +232,7 @@
   "agents_queued": "{{count}} en cola",
   "task_progress_count": "{{completed}}/{{total}} tareas",
   "tab_rename_failed": "No se pudo renombrar: {{error}}",
-  "project_chats_title": "Chats",
   "project_chats_shared_notice": "Los chats de proyecto comparten directamente la carpeta del proyecto: sin aislamiento, los cambios se aplican a los mismos archivos.",
-  "project_chats_new": "Nuevo chat",
-  "project_chats_empty": "Aún no hay chats en este proyecto.",
   "project_chat_badge": "Proyecto",
   "project_chats_open_failed": "No se pudo abrir el chat: {{error}}"
 }
