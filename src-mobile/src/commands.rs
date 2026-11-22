@@ -64,6 +64,56 @@ fn spawn_event_forwarder(
     })
 }
 
+/// Tauri event telling the webview whether the WSS link to a server is up.
+/// Emitted directly (not wrapped like forwarded server events).
+pub(crate) const CONNECTION_STATE_EVENT: &str = "remote-connection-state";
+
+pub(crate) fn connection_state_payload(connection_id: &str, connected: bool) -> serde_json::Value {
+    serde_json::json!({"connection_id": connection_id, "connected": connected})
+}
+
+/// Resolve once the transport reports closed (`true`) or its sender is dropped.
+pub(crate) async fn wait_for_close(mut closed: tokio::sync::watch::Receiver<bool>) {
+    // `wait_for` errs only when the sender is gone, which also means closed.
+    let _ = closed.wait_for(|is_closed| *is_closed).await;
+}
+
+fn emit_connected(app: &tauri::AppHandle, connection_id: &str) {
+    if let Err(e) = app.emit(
+        CONNECTION_STATE_EVENT,
+        connection_state_payload(connection_id, true),
+    ) {
+        tracing::warn!(
+            target: "claudette::mobile",
+            error = %e,
+            "failed to emit connection state to webview"
+        );
+    }
+}
+
+/// Spawn the per-connection watch that emits `connected: false` when the
+/// transport closes. Aborted with the owning `Connection`, so a replaced
+/// connection never reports a stale drop.
+fn spawn_connection_watch(
+    app: tauri::AppHandle,
+    connection_id: String,
+    transport: Arc<dyn Transport>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        wait_for_close(transport.closed()).await;
+        if let Err(e) = app.emit(
+            CONNECTION_STATE_EVENT,
+            connection_state_payload(&connection_id, false),
+        ) {
+            tracing::warn!(
+                target: "claudette::mobile",
+                error = %e,
+                "failed to emit connection state to webview"
+            );
+        }
+    })
+}
+
 #[derive(Serialize)]
 pub struct VersionInfo {
     pub version: &'static str,
@@ -180,6 +230,7 @@ pub async fn pair_with_connection_string(
     let transport_arc: Arc<dyn Transport> = Arc::from(transport);
     let forwarder =
         spawn_event_forwarder(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
+    let watch = spawn_connection_watch(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
 
     manager
         .insert(Connection {
@@ -190,8 +241,11 @@ pub async fn pair_with_connection_string(
             fingerprint,
             transport: transport_arc,
             event_forwarder: Some(forwarder),
+            connection_watch: Some(watch),
         })
         .await;
+
+    emit_connected(&app, &saved.id);
 
     Ok(PairResult { connection: saved })
 }
@@ -239,19 +293,25 @@ pub async fn connect_saved(
     // dropped — and any RPC commands mid-flight may still hold clones.
     // An explicit `close()` here sends the WS close frame immediately
     // so the server doesn't see a lingering peer.
-    if let Some(old) = manager.remove(&saved.id).await
-        && let Err(e) = old.transport.close().await
-    {
-        tracing::warn!(
-            target: "claudette::mobile",
-            error = %e,
-            "failed to close prior transport on reconnect"
-        );
+    //
+    // `old` is dropped (aborting its connection watch) BEFORE the close, so
+    // the close never surfaces as a stale `connected: false`.
+    if let Some(old) = manager.remove(&saved.id).await {
+        let old_transport = Arc::clone(&old.transport);
+        drop(old);
+        if let Err(e) = old_transport.close().await {
+            tracing::warn!(
+                target: "claudette::mobile",
+                error = %e,
+                "failed to close prior transport on reconnect"
+            );
+        }
     }
 
     let transport_arc: Arc<dyn Transport> = Arc::from(transport);
     let forwarder =
         spawn_event_forwarder(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
+    let watch = spawn_connection_watch(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
 
     manager
         .insert(Connection {
@@ -262,8 +322,11 @@ pub async fn connect_saved(
             fingerprint: saved.fingerprint.clone(),
             transport: transport_arc,
             event_forwarder: Some(forwarder),
+            connection_watch: Some(watch),
         })
         .await;
+
+    emit_connected(&app, &saved.id);
 
     Ok(saved)
 }
@@ -379,5 +442,62 @@ mod tests {
         let parsed = parse_connection_string("  claudette://h:1/t  \n").unwrap();
         assert_eq!(parsed.host, "h");
         assert_eq!(parsed.port, 1);
+    }
+
+    // FR-013
+    #[test]
+    fn connection_state_payload_shape() {
+        assert_eq!(
+            connection_state_payload("c", false),
+            serde_json::json!({"connection_id": "c", "connected": false})
+        );
+    }
+
+    // FR-013
+    #[tokio::test]
+    async fn wait_for_close_returns_on_true() {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        tx.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_millis(100), wait_for_close(rx))
+            .await
+            .expect("wait_for_close should finish once the value is true");
+    }
+
+    #[tokio::test]
+    async fn wait_for_close_returns_when_sender_dropped() {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        drop(tx);
+        tokio::time::timeout(std::time::Duration::from_millis(100), wait_for_close(rx))
+            .await
+            .expect("wait_for_close should finish when the sender is dropped");
+    }
+
+    #[tokio::test]
+    async fn wait_for_close_pending_while_open() {
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), wait_for_close(rx))
+                .await
+                .is_err()
+        );
+    }
+
+    // FR-013: an aborted watch (replaced connection) must never report a stale close.
+    #[tokio::test]
+    async fn aborted_watch_never_fires() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        let fired = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&fired);
+        let handle = tokio::spawn(async move {
+            wait_for_close(rx).await;
+            flag.store(true, Ordering::SeqCst);
+        });
+        tokio::task::yield_now().await;
+        handle.abort();
+        let _ = handle.await;
+        let _ = tx.send(true);
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(!fired.load(Ordering::SeqCst));
     }
 }

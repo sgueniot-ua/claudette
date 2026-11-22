@@ -24,6 +24,9 @@ pub struct Connection {
     pub fingerprint: String,
     pub transport: Arc<dyn Transport>,
     pub event_forwarder: Option<JoinHandle<()>>,
+    /// Emits `remote-connection-state` `connected: false` when the transport
+    /// closes. Aborted on drop like `event_forwarder`.
+    pub connection_watch: Option<JoinHandle<()>>,
 }
 
 impl Clone for Connection {
@@ -40,6 +43,7 @@ impl Clone for Connection {
             fingerprint: self.fingerprint.clone(),
             transport: Arc::clone(&self.transport),
             event_forwarder: None,
+            connection_watch: None,
         }
     }
 }
@@ -47,6 +51,9 @@ impl Clone for Connection {
 impl Drop for Connection {
     fn drop(&mut self) {
         if let Some(handle) = self.event_forwarder.take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.connection_watch.take() {
             handle.abort();
         }
     }
