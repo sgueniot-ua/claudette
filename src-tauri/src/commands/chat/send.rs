@@ -2818,20 +2818,25 @@ pub async fn send_chat_message(
                                             .is_workflow_tool_result(tool_use_id)
                                         && let Some(task_id) = parse_workflow_task_binding(&text)
                                     {
-                                        {
+                                        let armed = {
                                             let app_state = app.state::<AppState>();
                                             let mut agents = app_state.agents.write().await;
-                                            if let Some(session) =
-                                                agents.get_mut(&chat_session_id_for_stream)
-                                            {
-                                                session.running_background_tasks.insert(task_id);
-                                            }
+                                            agents.get_mut(&chat_session_id_for_stream).is_some_and(
+                                                |session| {
+                                                    session
+                                                        .running_background_tasks
+                                                        .insert(task_id);
+                                                    true
+                                                },
+                                            )
+                                        };
+                                        if armed {
+                                            crate::commands::chat::activity::emit_activity_changed(
+                                                &app,
+                                                &ws_id,
+                                                &chat_session_id_for_stream,
+                                            );
                                         }
-                                        crate::commands::chat::activity::emit_activity_changed(
-                                            &app,
-                                            &ws_id,
-                                            &chat_session_id_for_stream,
-                                        );
                                         background_task_inputs
                                             .finish_workflow_tool_result(tool_use_id);
                                     }

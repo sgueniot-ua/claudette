@@ -209,9 +209,7 @@ pub async fn dispatch(
         }
         "reset_agent_session" => {
             let chat_session_id = param_chat_session_id(&params);
-            let mut agents = state.agents.write().await;
-            agents.remove(&chat_session_id);
-            Ok(json!(null))
+            handle_reset_agent_session(state, &chat_session_id).await
         }
         "list_repositories" => {
             let db = open_db(state).map_err(|e| e.to_string());
@@ -1295,6 +1293,19 @@ pub(crate) async fn handle_stop_agent(
     Ok(json!(null))
 }
 
+/// Drop the session's live agent state; signal the change only when a
+/// session was actually removed (FR-008).
+pub(crate) async fn handle_reset_agent_session(
+    state: &ServerState,
+    chat_session_id: &str,
+) -> Result<serde_json::Value, String> {
+    let removed = state.agents.write().await.remove(chat_session_id);
+    if let Some(session) = removed {
+        crate::activity::emit_activity_changed(state, &session.workspace_id, chat_session_id);
+    }
+    Ok(json!(null))
+}
+
 /// The live CLI handle a `control_response` is written to; checked before the
 /// pending entry is taken so an inactive session keeps its request.
 fn active_persistent_session(
@@ -2065,7 +2076,7 @@ fn handle_rename_chat_session(
     Ok(json!(null))
 }
 
-async fn handle_archive_chat_session(
+pub(crate) async fn handle_archive_chat_session(
     state: &ServerState,
     chat_session_id: &str,
     auto_replace: bool,
@@ -2099,6 +2110,8 @@ async fn handle_archive_chat_session(
             .map_err(|e| e.to_string())?;
         None
     };
+    // The archived session leaves the activity list (FR-008, FR-009).
+    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
     if let Some(fresh) = fresh {
         return serde_json::to_value(fresh).map_err(|e| e.to_string());
     }

@@ -74,8 +74,8 @@ fn session_activity(
 mod tests {
     use super::*;
     use crate::handler::{
-        ApprovalKind, handle_stop_agent, handle_submit_agent_answer, handle_submit_approval,
-        take_pending_and_signal,
+        ApprovalKind, handle_archive_chat_session, handle_reset_agent_session, handle_stop_agent,
+        handle_submit_agent_answer, handle_submit_approval, take_pending_and_signal,
     };
     use claudette::model::{AgentStatus, AttentionKind, Repository, Workspace};
 
@@ -169,6 +169,9 @@ mod tests {
 
         let result = build_workspaces_activity(&db, &*state.agents.read().await).unwrap();
 
+        // Guard against a vacuous `all` over an empty result.
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].sessions.len(), 1);
         assert!(result.iter().all(|w| {
             w.agent_status != AgentStatus::IdleWithBackground
                 && w.sessions
@@ -358,5 +361,68 @@ mod tests {
                 .contains_key("t1")
         );
         assert!(rx.try_recv().is_err());
+    }
+
+    // FR-008: resetting a live session removes it and signals the change.
+    #[tokio::test]
+    async fn reset_emits_activity_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, sid) = state_with_workspace(&dir);
+        state
+            .agents
+            .write()
+            .await
+            .insert(sid.clone(), agent("w1", &sid, Some(1)));
+        let mut rx = state.events.subscribe();
+
+        handle_reset_agent_session(&state, &sid).await.unwrap();
+
+        assert!(!state.agents.read().await.contains_key(&sid));
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            serde_json::json!({
+                "event": "agent-activity-changed",
+                "payload": {"workspace_id": "w1", "chat_session_id": sid},
+            })
+        );
+    }
+
+    // FR-008: resetting a session with no live state changes nothing.
+    #[tokio::test]
+    async fn reset_of_unknown_session_stays_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, _sid) = state_with_workspace(&dir);
+        let mut rx = state.events.subscribe();
+
+        handle_reset_agent_session(&state, "missing").await.unwrap();
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    // FR-008, FR-009: archiving drops the live agent and signals the change.
+    #[tokio::test]
+    async fn archive_emits_activity_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, sid) = state_with_workspace(&dir);
+        state
+            .agents
+            .write()
+            .await
+            .insert(sid.clone(), agent("w1", &sid, None));
+        let mut rx = state.events.subscribe();
+
+        handle_archive_chat_session(&state, &sid, false)
+            .await
+            .unwrap();
+
+        assert!(!state.agents.read().await.contains_key(&sid));
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        assert!(events.contains(&serde_json::json!({
+            "event": "agent-activity-changed",
+            "payload": {"workspace_id": "w1", "chat_session_id": sid},
+        })));
     }
 }

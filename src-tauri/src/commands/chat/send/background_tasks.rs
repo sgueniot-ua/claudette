@@ -1083,12 +1083,21 @@ pub(super) fn schedule_background_task_wake(
             build_background_task_completion_prompt(&completion, trusted_output.as_deref());
         let local_user_message_uuid = uuid::Uuid::new_v4().to_string();
         let ps_pid = ps.pid();
-        {
+        let wake_started = {
             let mut agents = app_state.agents.write().await;
-            if let Some(session) = agents.get_mut(&chat_session_id) {
+            agents.get_mut(&chat_session_id).is_some_and(|session| {
                 session.active_pid = Some(ps_pid);
                 session.remember_local_user_message_uuid(local_user_message_uuid.clone());
-            }
+                true
+            })
+        };
+        // The wake turn runs without a `chat-turn-started`; signal Running (FR-008).
+        if wake_started {
+            crate::commands::chat::activity::emit_activity_changed(
+                &app,
+                &workspace_id,
+                &chat_session_id,
+            );
         }
         // Catch any second task that completed while we were building this
         // prompt — before the injected turn subscribes its own receiver — so it
@@ -1109,12 +1118,22 @@ pub(super) fn schedule_background_task_wake(
                     error = %err,
                     "failed to deliver background task notification"
                 );
-                let mut agents = app_state.agents.write().await;
-                if let Some(session) = agents.get_mut(&chat_session_id) {
-                    session.background_wake_active = false;
-                    if session.active_pid == Some(ps_pid) {
-                        session.active_pid = None;
-                    }
+                let cleared = {
+                    let mut agents = app_state.agents.write().await;
+                    agents.get_mut(&chat_session_id).is_some_and(|session| {
+                        session.background_wake_active = false;
+                        if session.active_pid == Some(ps_pid) {
+                            session.active_pid = None;
+                        }
+                        true
+                    })
+                };
+                if cleared {
+                    crate::commands::chat::activity::emit_activity_changed(
+                        &app,
+                        &workspace_id,
+                        &chat_session_id,
+                    );
                 }
                 return;
             }
@@ -1236,18 +1255,26 @@ pub(super) fn schedule_background_task_wake(
             }
         }
 
-        let should_retry = {
+        let wake_end = {
             let mut agents = app_state.agents.write().await;
-            if let Some(session) = agents.get_mut(&chat_session_id) {
+            agents.get_mut(&chat_session_id).map(|session| {
                 session.background_wake_active = false;
                 if session.active_pid == Some(ps.pid()) {
                     session.active_pid = None;
                 }
                 !session.running_background_tasks.is_empty() && session.persistent_session.is_some()
-            } else {
-                false
-            }
+            })
         };
+        // The turn's `Result` was forwarded before `active_pid` was cleared
+        // above, so signal again now that the session is no longer Running.
+        if wake_end.is_some() {
+            crate::commands::chat::activity::emit_activity_changed(
+                &app,
+                &workspace_id,
+                &chat_session_id,
+            );
+        }
+        let should_retry = wake_end.unwrap_or(false);
         crate::tray::rebuild_tray(&app);
 
         // Skip the re-arm if the turn wedged: a duplicate wake stacked behind a
