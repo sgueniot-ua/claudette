@@ -1,4 +1,5 @@
 import type { ChatSession, DiffFileTab, DiffLayer } from "../../types";
+import type { SessionStatusKind } from "../shared/SessionStatusIcon";
 
 // A unified entry in the workspace tab strip. SessionTabs renders sessions,
 // diffs, and files as one ordered list; the user can drag any of them to
@@ -242,4 +243,14 @@ export function closeScopeForTabContext<
   return entries.filter(
     (entry) => entry.kind === "file" || includeInFileScope(entry),
   );
+}
+
+/** Status icon kind for a session tab. Attention outranks activity. */
+export function statusFor(session: ChatSession): SessionStatusKind {
+  if (session.needs_attention) {
+    return session.attention_kind === "Plan" ? { kind: "plan" } : { kind: "ask" };
+  }
+  if (session.agent_status === "Running") return { kind: "running" };
+  if (session.agent_status === "IdleWithBackground") return { kind: "background" };
+  return { kind: "idle" };
 }

@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useEffect, useState } from "react";
 import { GitBranch, Globe, ChevronDown, ChevronRight, Archive, RotateCcw } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { AgentStatus } from "../../types/workspace";
-import { isAgentBusy } from "../../utils/agentStatus";
+import { isAgentBusy, isBackgroundRunning } from "../../utils/agentStatus";
 import { RepoIcon } from "../shared/RepoIcon";
 import { PanelHeader } from "../shared/PanelHeader";
 import { PanelToggles } from "../shared/PanelToggles";
@@ -94,12 +94,14 @@ const WorkspaceCard = memo(function WorkspaceCard({
   // PR-state icon takes over once attention badges and running spinner
   // have been ruled out — keeps the Dashboard card in lock-step with the
   // Sidebar row so a merged PR shows GitMerge in both places.
-  const showPrIcon = !badge && !isRunning;
+  const isBackground = isBackgroundRunning(ws.agent_status);
+  const showPrIcon = !badge && !isRunning && !isBackground;
   const prIcon = showPrIcon ? resolveScmPrIcon(summary) : null;
 
   const statusKind: SessionStatusKind =
     badge === "ask"  ? { kind: "ask" } :
     badge === "plan" ? { kind: "plan" } :
+    isBackground     ? { kind: "background" } :
     badge === "done" ? { kind: "unread" } :
     isRunning        ? { kind: "running" } :
     isStopped        ? { kind: "stopped" } :
@@ -108,6 +110,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
   const statusIconTitle =
     badge === "ask"  ? "Question requires attention" :
     badge === "plan" ? "Plan approval needed" :
+    isBackground     ? "Background tasks running" :
     badge === "done" ? "Completed" :
     prIcon           ? prIcon.title :
                        statusTitle;

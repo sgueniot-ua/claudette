@@ -9,6 +9,7 @@ import {
   findActiveNavEntryKey,
   sessionNavKey,
   splitUnifiedTabOrder,
+  statusFor,
   type NavEntry,
   type UnifiedTabEntry,
 } from "./sessionTabsLogic";
@@ -273,5 +274,32 @@ describe("cycleNavEntries", () => {
   it("treats an unknown active key as 'no current tab'", () => {
     expect(cycleNavEntries(entries, "s:bogus", "next")?.key).toBe(sessionNavKey("s1"));
     expect(cycleNavEntries(entries, "f:bogus.ts", "prev")?.key).toBe(fileNavKey("x.ts"));
+  });
+});
+
+describe("statusFor", () => {
+  // FR-006
+  it("maps IdleWithBackground to background", () => {
+    expect(
+      statusFor({ ...session("a"), agent_status: "IdleWithBackground", needs_attention: false }),
+    ).toEqual({ kind: "background" });
+  });
+
+  // FR-011
+  it("attention wins over IdleWithBackground", () => {
+    expect(
+      statusFor({
+        ...session("a"),
+        agent_status: "IdleWithBackground",
+        needs_attention: true,
+        attention_kind: "Plan",
+      }),
+    ).toEqual({ kind: "plan" });
+  });
+
+  // FR-006
+  it("keeps running and idle", () => {
+    expect(statusFor({ ...session("a"), agent_status: "Running" })).toEqual({ kind: "running" });
+    expect(statusFor(session("a"))).toEqual({ kind: "idle" });
   });
 });

@@ -17,10 +17,11 @@ import {
   buildWorkspaceTabNavEntries,
   type NavEntry,
   splitUnifiedTabOrder,
+  statusFor,
 } from "./sessionTabsLogic";
 import { tooltipAttributes } from "../../hotkeys/display";
 import { isMacHotkeyPlatform } from "../../hotkeys/platform";
-import { SessionStatusIcon, type SessionStatusKind } from "../shared/SessionStatusIcon";
+import { SessionStatusIcon } from "../shared/SessionStatusIcon";
 import { DangerousFlagBadge } from "./DangerousFlagBadge";
 import { hasDangerousFlag } from "../../stores/slices/workspaceClaudeFlagsSlice";
 import { AttachmentContextMenu } from "./AttachmentContextMenu";
@@ -56,14 +57,6 @@ import styles from "./SessionTabs.module.css";
 
 interface Props {
   workspaceId: string;
-}
-
-function statusFor(session: ChatSession): SessionStatusKind {
-  if (session.needs_attention) {
-    return session.attention_kind === "Plan" ? { kind: "plan" } : { kind: "ask" };
-  }
-  if (session.agent_status === "Running") return { kind: "running" };
-  return { kind: "idle" };
 }
 
 // Stable empty array so the selector doesn't return a new `[]` each call when

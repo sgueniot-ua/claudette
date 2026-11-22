@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { writeText as clipboardWriteText } from "@tauri-apps/plugin-clipboard-manager";
 import { useAppStore } from "../../stores/useAppStore";
 import { isAgentBusy } from "../../utils/agentStatus";
+import { workspaceIndicator } from "./workspaceIndicator";
 import {
   archiveWorkspace,
   deleteAppSetting,
@@ -599,13 +600,17 @@ export const Sidebar = memo(function Sidebar() {
       workspaceDrag.dropTarget?.id === ws.id &&
       workspaceDrag.dropTarget.placement === "after";
     const wsSessions = sessionsByWorkspace[ws.id] ?? [];
-    const hasPlan = wsSessions.some((s) => s.needs_attention && s.attention_kind === "Plan");
-    const hasQuestion = wsSessions.some((s) => s.needs_attention && s.attention_kind !== "Plan");
-    const badge: "ask" | "plan" | "done" | null =
-      hasQuestion ? "ask" :
-      hasPlan ? "plan" :
-      unreadCompletions.has(ws.id) && !isAgentBusy(ws.agent_status) ? "done" :
-      null;
+    const envState = workspaceEnvironment[ws.id];
+    const indicator = workspaceIndicator({
+      sessions: wsSessions,
+      agentStatus: ws.agent_status,
+      unread: unreadCompletions.has(ws.id),
+      envPreparing: envState?.status === "preparing" && envState?.started_at != null,
+    });
+    const badge: "ask" | "plan" | "background" | "done" | null =
+      indicator === "ask" || indicator === "plan" || indicator === "background" || indicator === "done"
+        ? indicator
+        : null;
     return (
       <div
         key={ws.id}
@@ -638,6 +643,15 @@ export const Sidebar = memo(function Sidebar() {
           <span className={styles.badgeDone} title={t("status_badge_completed_title")} aria-label={t("status_badge_completed_aria")} role="img">
             <CircleCheck size={14} />
           </span>
+        ) : badge === "background" ? (
+          <span
+            className={styles.statusBackgroundSpinner}
+            title={t("status_background")}
+            aria-label={t("status_background")}
+            role="img"
+          >
+            <span className={styles.statusBackgroundRing} />
+          </span>
         ) : badge === "plan" ? (
           <span className={styles.badgePlan} title={t("status_badge_plan_title")} aria-label={t("status_badge_plan_aria")} role="img">
             <CircleAlert size={14} />
@@ -646,10 +660,7 @@ export const Sidebar = memo(function Sidebar() {
           <span className={styles.badgeAsk} title={t("status_badge_ask_title")} aria-label={t("status_badge_ask_aria")} role="img">
             <CircleQuestionMark size={14} />
           </span>
-        ) : workspaceEnvironment[ws.id]?.status === "preparing"
-            && workspaceEnvironment[ws.id]?.started_at != null
-            && ws.agent_status !== "Running"
-            && ws.agent_status !== "Compacting" ? (
+        ) : indicator === "env" ? (
           // Env-provider resolution priority: shown when this workspace
           // is currently in `preparing`, has a concrete `started_at`
           // (i.e. a `workspace_env_progress` event has actually fired

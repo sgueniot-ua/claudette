@@ -161,6 +161,8 @@ describe("RemoteSections", () => {
     store.discoveredServers = [];
     store.remoteConnections = [];
     store.reconnectingRemoteIds = [];
+    store.repositories = [];
+    store.workspaces = [];
     store.addToast.mockReset();
     lifecycle.stopReconnecting.mockReset();
     Object.values(connectionActions).forEach((mock) => mock.mockReset());
@@ -175,6 +177,40 @@ describe("RemoteSections", () => {
     for (const container of mountedContainers.splice(0)) {
       container.remove();
     }
+  });
+
+  // FR-006
+  it("shows the dimmed background ring for a remote IdleWithBackground workspace", async () => {
+    store.activeRemoteIds = ["c1"];
+    store.remoteConnections = [
+      {
+        id: "c1",
+        name: "Box",
+        host: "box.local",
+        port: 7683,
+        session_token: null,
+        cert_fingerprint: "ff",
+        auto_connect: true,
+        created_at: "",
+      },
+    ];
+    store.repositories = [{ id: "r1", name: "repo", icon: null, remote_connection_id: "c1" }];
+    store.workspaces = [
+      {
+        id: "w1",
+        repository_id: "r1",
+        remote_connection_id: "c1",
+        name: "ws",
+        branch_name: "b",
+        status: "Active",
+        agent_status: "IdleWithBackground",
+      },
+    ];
+
+    await renderRemoteSections();
+
+    expect(document.querySelector('[class*="statusBackgroundRing"]')).not.toBeNull();
+    expect(document.querySelector('[class*="statusSpinnerRing"]')).toBeNull();
   });
 
   it("hides Nearby when no unpaired servers are discovered", async () => {

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Archive, X } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
-import { isAgentBusy } from "../../utils/agentStatus";
+import { isAgentBusy, isBackgroundRunning } from "../../utils/agentStatus";
 import { generateWorkspaceName, sendRemoteCommand } from "../../services/tauri";
 import type { RemoteConnectionInfo } from "../../types/remote";
 import type { Workspace } from "../../types/workspace";
@@ -395,6 +395,10 @@ function RemoteConnectionGroup({
                     {isAgentBusy(ws.agent_status) ? (
                       <span className={styles.statusSpinner} aria-hidden="true">
                         <span className={styles.statusSpinnerRing} />
+                      </span>
+                    ) : isBackgroundRunning(ws.agent_status) ? (
+                      <span className={styles.statusBackgroundSpinner} aria-hidden="true">
+                        <span className={styles.statusBackgroundRing} />
                       </span>
                     ) : (
                       <span
