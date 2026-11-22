@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod agent;
 pub mod agent_backend;
 pub mod agent_files;
