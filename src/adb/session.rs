@@ -97,6 +97,7 @@ impl AdbSessions {
                     status_tx,
                     stream: None,
                     streaming_serial: None,
+                    kept_only: None,
                     selected: None,
                     waiting_for: None,
                     batcher: LineBatcher::default(),
@@ -147,7 +148,12 @@ impl AdbSessions {
         };
         handle.task.abort();
         let _ = handle.task.await;
-        self.sink.status(workspace_id, AdbSessionStatus::Stopped);
+        // Emitted under the lock, and skipped when the session was reopened meanwhile: a late
+        // `Stopped` would overwrite the status of the new session.
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if !state.sessions.contains_key(workspace_id) {
+            self.sink.status(workspace_id, AdbSessionStatus::Stopped);
+        }
     }
 
     pub async fn stop_all(&self) {
@@ -191,6 +197,10 @@ struct SessionTask {
     status_tx: watch::Sender<Option<AdbSessionStatus>>,
     stream: Option<Box<dyn LogcatStream>>,
     streaming_serial: Option<String>,
+    /// Serial resolved as the only ready device (FR-007e): kept while it stays ready, even when
+    /// its logcat ended or another ready device connected. Cleared when another source wins or
+    /// the device leaves the ready list.
+    kept_only: Option<String>,
     /// Device the session follows (streamed or waited for); decides resume vs reset.
     selected: Option<DeviceKey>,
     /// Device the current association waits for when it leaves the list; cleared when the
@@ -230,6 +240,7 @@ impl SessionTask {
                 Some(manual) = self.manual_rx.recv() => {
                     self.manual = manual;
                     self.waiting_for = None;
+                    self.kept_only = None;
                     self.resolve().await;
                 }
                 chunk = next_chunk(&mut self.stream) => match chunk {
@@ -247,20 +258,21 @@ impl SessionTask {
             Some(_) => None,
             None => self.runner.dedicated_avd(&self.worktree).await,
         };
-        // FR-007e: the device streamed as the only ready one stays while it is ready.
-        let current = match self.status_tx.borrow().as_ref() {
-            Some(AdbSessionStatus::Streaming {
-                device,
-                source: ResolutionSource::OnlyDevice,
-            }) if self.stream.is_some() => Some(device.serial.clone()),
-            _ => None,
-        };
-        match resolve_device(
+        let resolution = resolve_device(
             self.manual.as_ref(),
             dedicated.as_deref(),
-            current.as_deref(),
+            self.kept_only.as_deref(),
             &self.devices,
-        ) {
+        );
+        // FR-007e: only an `OnlyDevice` resolution is kept for the next ones.
+        self.kept_only = match &resolution {
+            Resolution::Device {
+                serial,
+                source: ResolutionSource::OnlyDevice,
+            } => Some(serial.clone()),
+            _ => None,
+        };
+        match resolution {
             Resolution::Device { serial, source } => {
                 let Some(device) = self.devices.iter().find(|d| d.serial == serial).cloned() else {
                     return;
@@ -284,7 +296,8 @@ impl SessionTask {
                 };
                 match self.runner.spawn_logcat(&serial, &tail) {
                     Ok(stream) => {
-                        self.batcher.start_stream();
+                        self.batcher
+                            .start_stream(matches!(tail, TailFrom::Since(_)));
                         self.stream = Some(stream);
                         self.streaming_serial = Some(serial);
                         self.waiting_for = Some(key);
@@ -972,6 +985,62 @@ mod tests {
             sink.statuses(),
             vec![streaming("R58M12345", None, ResolutionSource::OnlyDevice)]
         );
+    }
+
+    // FR-007e (logcat terminé sur l'appareil gardé alors qu'un second est prêt : reprise, sans choix)
+    #[tokio::test(start_paused = true)]
+    async fn logcat_end_on_kept_device_respawns_without_needs_choice() {
+        let (runner, sink, sessions) =
+            setup("List of devices attached\nR58M12345\tdevice model:sdk_gphone\n");
+        sessions.open(ctx(None)).await;
+        runner.set_devices(
+            "List of devices attached\nR58M12345\tdevice model:sdk_gphone\nemulator-5554\tdevice model:sdk_gphone\n",
+        );
+        let calls = runner.devices_calls.load(Ordering::SeqCst);
+        until(|| runner.devices_calls.load(Ordering::SeqCst) >= calls + 2).await;
+        runner.push(0, b"11-21 10:15:02.123  1  1 I T: b\n");
+        until(|| !sink.batches().is_empty()).await;
+
+        runner.end(0);
+        until(|| runner.spawns().len() == 2).await;
+        assert_eq!(runner.spawns()[1][1], "R58M12345");
+        assert_eq!(runner.spawns()[1][6], "11-21 10:15:02.123");
+        until(|| sink.statuses().len() == 3).await;
+        assert!(!sink.statuses().contains(&AdbSessionStatus::NeedsChoice));
+        assert_eq!(
+            sink.statuses()[2],
+            streaming("R58M12345", None, ResolutionSource::OnlyDevice)
+        );
+    }
+
+    // FR-009 (la reprise `-T` rejoue la dernière ligne : elle n'est pas émise deux fois)
+    #[tokio::test(start_paused = true)]
+    async fn resume_drops_replayed_last_line() {
+        let (runner, sink, sessions) = setup(ONE);
+        sessions.open(ctx(None)).await;
+        runner.push(0, b"11-21 10:15:02.123  1  1 I T: b\n");
+        until(|| sink.batches() == vec![(1, false)]).await;
+        runner.end(0);
+        until(|| runner.spawns().len() == 2).await;
+
+        runner.push(
+            1,
+            b"11-21 10:15:02.123  1  1 I T: b\n11-21 10:15:03.000  1  1 I T: c\n",
+        );
+        until(|| sink.batches().len() == 2).await;
+        assert_eq!(sink.batches(), vec![(1, false), (1, false)]);
+    }
+
+    // FR-007e (l'appareil gardé disparaît alors qu'il en reste plusieurs : choix demandé)
+    #[tokio::test(start_paused = true)]
+    async fn kept_device_leaving_with_two_others_needs_choice() {
+        let (runner, sink, sessions) =
+            setup("List of devices attached\nR58M12345\tdevice model:sdk_gphone\n");
+        sessions.open(ctx(None)).await;
+        runner.set_devices(
+            "List of devices attached\nR1\tdevice model:a\nR2\tdevice model:b\nR3\tdevice model:c\n",
+        );
+        until(|| sink.statuses().contains(&AdbSessionStatus::NeedsChoice)).await;
     }
 
     // FR-007d / FR-007 (émulateur dédié choisi parmi plusieurs appareils prêts)

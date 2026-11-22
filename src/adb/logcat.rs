@@ -93,6 +93,10 @@ pub struct LineBatcher {
     carry: Vec<u8>,
     pending: Vec<LogcatLine>,
     last_ts: Option<String>,
+    /// Lines received with the timestamp `last_ts` (`logcat -T` is inclusive, FR-009).
+    last_ts_lines: Vec<LogcatLine>,
+    /// Lines of the previous process still expected at the start of a resumed one.
+    replayed: Vec<LogcatLine>,
 }
 
 impl LineBatcher {
@@ -137,15 +141,32 @@ impl LineBatcher {
     }
 
     /// A new process for the same device: drop the partial line of the previous one, keep the
-    /// resume point.
-    pub fn start_stream(&mut self) {
+    /// resume point. When `resume` (started with `-T <ts>`), the lines it replays from the last
+    /// timestamp are dropped (FR-009).
+    pub fn start_stream(&mut self, resume: bool) {
         self.carry.clear();
+        self.replayed = if resume {
+            self.last_ts_lines.clone()
+        } else {
+            Vec::new()
+        };
     }
 
     fn push_line(&mut self, raw: &str) {
         let line = parse_threadtime_line(raw);
+        if !self.replayed.is_empty() {
+            if let Some(pos) = self.replayed.iter().position(|seen| *seen == line) {
+                self.replayed.remove(pos);
+                return;
+            }
+            self.replayed.clear();
+        }
         if let Some(ts) = &line.ts {
-            self.last_ts = Some(ts.clone());
+            if self.last_ts.as_ref() != Some(ts) {
+                self.last_ts = Some(ts.clone());
+                self.last_ts_lines.clear();
+            }
+            self.last_ts_lines.push(line.clone());
         }
         self.pending.push(line);
     }
@@ -305,6 +326,32 @@ mod tests {
         assert_eq!(rest.len(), 1);
         assert_eq!(rest[0].message, "par");
         assert_eq!(batcher.last_ts(), Some("11-21 10:15:03.000"));
+    }
+
+    // FR-009 (reprise `-T` inclusive : les lignes rejouées de la fin déjà reçue sont écartées)
+    #[test]
+    fn resumed_stream_drops_replayed_tail_lines() {
+        let mut batcher = LineBatcher::default();
+        batcher.push_chunk(b"11-21 10:15:02.123  1  1 I T: a\n11-21 10:15:02.123  1  1 I T: b\n");
+        batcher.take_pending();
+        batcher.start_stream(true);
+        batcher.push_chunk(
+            b"11-21 10:15:02.123  1  1 I T: a\n11-21 10:15:02.123  1  1 I T: b\n11-21 10:15:02.123  1  1 I T: new\n",
+        );
+        let lines = batcher.take_pending();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].message, "new");
+    }
+
+    // FR-009 (un nouveau processus sans reprise garde toutes ses lignes)
+    #[test]
+    fn fresh_stream_keeps_every_line() {
+        let mut batcher = LineBatcher::default();
+        batcher.push_chunk(b"11-21 10:15:02.123  1  1 I T: a\n");
+        batcher.take_pending();
+        batcher.start_stream(false);
+        batcher.push_chunk(b"11-21 10:15:02.123  1  1 I T: a\n");
+        assert_eq!(batcher.take_pending().len(), 1);
     }
 
     // FR-009 (horodatage passé en un seul argument, sans guillemets)
