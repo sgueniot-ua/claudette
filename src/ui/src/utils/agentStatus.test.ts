@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { AgentStatus } from "../types/workspace";
-import { isAgentBusy } from "./agentStatus";
+import { isAgentBusy, isBackgroundRunning } from "./agentStatus";
 
 describe("isAgentBusy", () => {
   it("returns true for Running", () => {
@@ -24,5 +24,17 @@ describe("isAgentBusy", () => {
   it("returns false for Error variant object", () => {
     // AgentStatus can be { Error: string } — should NOT count as busy
     expect(isAgentBusy({ Error: "boom" } as unknown as AgentStatus)).toBe(false);
+  });
+});
+
+describe("isBackgroundRunning", () => {
+  // FR-011
+  it("treats IdleWithBackground as not busy but background-running", () => {
+    expect(isAgentBusy("IdleWithBackground")).toBe(false);
+    expect(isBackgroundRunning("IdleWithBackground")).toBe(true);
+  });
+  // FR-011
+  it("returns false for Running", () => {
+    expect(isBackgroundRunning("Running")).toBe(false);
   });
 });

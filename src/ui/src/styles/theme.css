@@ -78,6 +78,7 @@
      of always rendering the default-dark gray. */
   --status-idle:         var(--text-dim);
   --status-stopped:      #e85050;
+  --status-background:   var(--text-dim);
 
   /* ---- Context meter (chat toolbar) — mapped to palette ---- */
   --context-meter-normal:    var(--accent-primary);

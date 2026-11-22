@@ -64,6 +64,7 @@
   "status_archived_title": "Archiviert",
   "status_stopped": "Gestoppt",
   "status_idle": "Wartet",
+  "status_background": "Hintergrundaufgaben laufen",
   "command_running": "Läuft",
   "command_running_commands": "Laufende Befehle",
   "command_running_placeholder": "(läuft)",

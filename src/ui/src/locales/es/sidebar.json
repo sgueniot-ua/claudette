@@ -62,6 +62,7 @@
   "status_archived_title": "Archivado",
   "status_stopped": "Detenido",
   "status_idle": "Inactivo",
+  "status_background": "Tareas en segundo plano en curso",
   "command_running": "En ejecución",
   "command_running_commands": "Comandos en ejecución",
   "command_running_placeholder": "(en ejecución)",

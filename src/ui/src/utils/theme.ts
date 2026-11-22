@@ -42,6 +42,7 @@ const THEMEABLE_VARS = [
   "status-running",
   "status-idle",
   "status-stopped",
+  "status-background",
   "badge-done",
   "badge-plan",
   "badge-ask",

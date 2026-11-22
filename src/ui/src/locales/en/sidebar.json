@@ -64,6 +64,7 @@
   "status_archived_title": "Archived",
   "status_stopped": "Stopped",
   "status_idle": "Idle",
+  "status_background": "Background tasks running",
   "command_running": "Running",
   "command_running_commands": "Running commands",
   "command_running_placeholder": "(running)",

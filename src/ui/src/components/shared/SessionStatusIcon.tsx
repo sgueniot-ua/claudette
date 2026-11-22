@@ -1,8 +1,11 @@
 import { CircleCheck, CircleDashed, CircleQuestionMark, CircleAlert, CircleStop } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { sessionStatusLabelKey } from "./sessionStatusLabel";
 import styles from "./SessionStatusIcon.module.css";
 
 export type SessionStatusKind =
   | { kind: "running" }
+  | { kind: "background" }
   | { kind: "ask" }
   | { kind: "plan" }
   | { kind: "unread" }
@@ -15,6 +18,19 @@ interface Props {
 }
 
 export function SessionStatusIcon({ status, size = 14 }: Props) {
+  const { t } = useTranslation("sidebar");
+  return (
+    <span
+      role="img"
+      aria-label={t(sessionStatusLabelKey(status))}
+      style={{ display: "inline-flex" }}
+    >
+      <StatusGlyph status={status} size={size} />
+    </span>
+  );
+}
+
+function StatusGlyph({ status, size }: { status: SessionStatusKind; size: number }) {
   switch (status.kind) {
     case "running":
       return (
@@ -23,6 +39,15 @@ export function SessionStatusIcon({ status, size = 14 }: Props) {
           style={{ width: size, height: size }}
         >
           <span className={styles.spinner} />
+        </span>
+      );
+    case "background":
+      return (
+        <span
+          className={styles.backgroundWrap}
+          style={{ width: size, height: size }}
+        >
+          <span className={styles.backgroundSpinner} />
         </span>
       );
     case "ask":

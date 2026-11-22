@@ -9,3 +9,12 @@ import type { AgentStatus } from "../types/workspace";
 export function isAgentBusy(status: AgentStatus | undefined | null): boolean {
   return status === "Running" || status === "Compacting";
 }
+
+/**
+ * Returns true when the main agent has finished its turn but background
+ * tasks are still running (`IdleWithBackground`). Not "busy": the chat
+ * input stays enabled.
+ */
+export function isBackgroundRunning(status: AgentStatus | undefined | null): boolean {
+  return status === "IdleWithBackground";
+}

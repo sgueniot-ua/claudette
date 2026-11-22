@@ -62,6 +62,7 @@
   "status_archived_title": "已归档",
   "status_stopped": "已停止",
   "status_idle": "空闲",
+  "status_background": "后台任务运行中",
   "command_running": "运行中",
   "command_running_commands": "运行中的命令",
   "command_running_placeholder": "（运行中）",

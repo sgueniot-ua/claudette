@@ -62,6 +62,7 @@
   "status_archived_title": "Arquivado",
   "status_stopped": "Parado",
   "status_idle": "Ocioso",
+  "status_background": "Tarefas em segundo plano em execução",
   "command_running": "Em execução",
   "command_running_commands": "Comandos em execução",
   "command_running_placeholder": "(em execução)",
