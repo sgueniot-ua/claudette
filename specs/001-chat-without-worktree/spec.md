@@ -13,7 +13,8 @@
 ### Session 2026-11-20
 
 - Q: Droits de l'agent dans un chat de projet ? → A: les mêmes que dans un workspace avec worktree.
-- Q: Où apparaissent les chats de projet ? → A: uniquement dans la vue du projet, pas dans la sidebar.
+- Q: Où apparaissent les chats de projet ? → A: ~~uniquement dans la vue du projet~~ remplacé le
+  2026-11-22 (voir Session 2026-11-22).
 - Q: Restauration d'un checkpoint dans un chat de projet ? → A: permise après confirmation explicite.
 - Q: « Effacer la conversation en restaurant les fichiers » et « forker depuis un checkpoint » dans un
   chat de projet ? → A: disponibles comme dans un workspace ; toute restauration de fichiers demande
@@ -27,6 +28,20 @@
   reste réservé aux workspaces avec worktree.
 - Q: La CLI liste-t-elle le workspace des chats de projet ? → A: oui, sous le nom du dépôt, avec le
   type « project ».
+
+### Session 2026-11-22
+
+- Q: Où apparaissent les chats de projet ? → A: une ligne fixe « Chats du projet » toujours en tête de
+  chaque projet local dans la sidebar, même avant le premier chat ; la section « Chats » de la vue du
+  projet est retirée.
+- Q: Comment s'affiche cette ligne ? → A: libellé « Chats du projet » avec une icône distincte,
+  sous-titre = branche extraite, statut de l'agent comme les autres lignes.
+- Q: Où d'autre apparaît-elle ? → A: raccourcis ⌘1–9, recherche rapide, mode groupé par statut, menu de
+  la barre système (sous le nom du dépôt).
+- Q: Où afficher l'avertissement « dossier partagé, sans isolation » ? → A: dans le chat de projet, sur
+  l'écran vide avant le premier message, et en info-bulle du badge « Projet » de l'en-tête.
+- Q: Où placer ces lignes en mode groupé par statut ? → A: dans une section dédiée « Chats du projet »
+  en tête, une ligne par projet local ; elles comptent dans ⌘1–9.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -95,9 +110,9 @@ projet, ses fichiers et ses branches sont inchangés.
 
 **Acceptance Scenarios**:
 
-1. **Given** des chats de projet, **When** l'utilisateur ouvre la vue du projet (clic sur l'en-tête
-   du projet dans la sidebar), **Then** ses chats de projet actifs y sont listés et ouvrables ; ils
-   n'apparaissent pas comme lignes dans la sidebar.
+1. **Given** un projet local, **When** l'utilisateur regarde la sidebar, **Then** une ligne
+   « Chats du projet » figure en tête du projet, même s'il n'a encore aucun chat ; l'ouvrir affiche
+   les chats de projet actifs sous forme d'onglets.
 2. **Given** un chat de projet, **When** l'utilisateur l'archive, **Then** le chat disparaît de la
    liste active, aucun fichier, branche ni worktree n'est supprimé, et le script d'archivage du projet
    n'est pas exécuté.
@@ -133,16 +148,17 @@ projet, ses fichiers et ses branches sont inchangés.
 
 ### Functional Requirements
 
-- **FR-001**: Les utilisateurs DOIVENT pouvoir lancer un chat sur un projet ajouté, depuis la vue du
-  projet, sans créer de worktree ni de branche.
+- **FR-001**: Les utilisateurs DOIVENT pouvoir lancer un chat sur un projet ajouté, depuis la ligne
+  « Chats du projet » de la sidebar, sans créer de worktree ni de branche.
 - **FR-002**: Le système DOIT exécuter l'agent d'un chat de projet avec le dossier du projet comme
   dossier de travail.
 - **FR-003**: Le système NE DOIT PAS exécuter le script de setup ni le script d'archivage du projet
   pour un chat de projet.
 - **FR-004**: Les utilisateurs DOIVENT pouvoir avoir plusieurs chats de projet actifs en même temps sur
   un même projet, chacun avec son historique et son statut propres.
-- **FR-005**: Le système DOIT indiquer à l'utilisateur, à la création d'un chat de projet, que ce chat
-  travaille dans le dossier du projet sans isolation vis-à-vis des autres chats de projet.
+- **FR-005**: Le système DOIT indiquer à l'utilisateur que les chats de projet travaillent dans le
+  dossier du projet sans isolation entre eux : sur l'écran vide d'un chat de projet (avant le premier
+  message) et en info-bulle du badge « Projet » de l'en-tête.
 - **FR-006**: Le système DOIT conserver les chats de projet et leur historique entre deux lancements de
   Claudette.
 - **FR-007**: Les utilisateurs DOIVENT pouvoir renommer et archiver un chat de projet sans effet sur
@@ -150,8 +166,14 @@ projet, ses fichiers et ses branches sont inchangés.
 - **FR-008**: Le système DOIT distinguer visuellement un chat de projet d'un workspace avec worktree.
 - **FR-009**: L'agent d'un chat de projet DOIT avoir les mêmes droits et règles de permission sur les
   fichiers que l'agent d'un workspace avec worktree.
-- **FR-013**: Les chats de projet DOIVENT être listés et lancés depuis la vue du projet ; ils NE
-  DOIVENT PAS apparaître comme lignes dans la sidebar.
+- **FR-013**: Chaque projet local DOIT avoir, en tête de son groupe dans la sidebar, une ligne
+  « Chats du projet » toujours présente (même sans chat existant), avec une icône distincte, la
+  branche extraite et le statut de l'agent. Ouvrir cette ligne ouvre les chats de projet (onglets) et
+  en crée un s'il n'en existe aucun. La ligne figure aussi dans les raccourcis ⌘1–9, la recherche
+  rapide, le mode groupé par statut (section dédiée « Chats du projet » en tête, comptée dans ⌘1–9)
+  et le menu de la barre système (sous le nom du dépôt). Elle ne
+  propose ni renommage, ni archivage, ni réordonnancement. La vue du projet n'a plus de section
+  « Chats ». Les projets distants n'ont pas cette ligne.
 - **FR-014**: La restauration d'un point de contrôle dans un chat de projet DOIT demander une
   confirmation explicite mentionnant que le dossier partagé du projet sera modifié ; un refus
   n'effectue aucune restauration.

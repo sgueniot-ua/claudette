@@ -143,10 +143,31 @@ tournent déjà en parallèle (`AppState.agents` indexé par `chat_session_id`).
 
 ## R8. Visibilité (FR-013) et contrats existants
 
-- **Decision**: le workspace `repository` est exclu de `filterSidebarWorkspaces`
-  (`utils/sidebarJumpTargets.ts`), et donc des raccourcis ⌘1–9, de la liste « Active Workspaces » du
-  Dashboard global, du FuzzyFinder et des groupes par statut. La vue du projet (`Dashboard.tsx`, branche
-  `scopedRepo`) liste ses sessions actives dans une section « Chats ».
+- **Decision (révisée le 2026-11-22, FR-013)**: une ligne « Chats du projet » épinglée en tête de
+  chaque projet local, toujours présente. La ligne est une **cible** et non un workspace : elle
+  désigne le dépôt et, s'il existe, son workspace `repository`.
+  - Le workspace `repository` reste exclu de `filterSidebarWorkspaces` (pas de tri, pas de
+    réordonnancement, pas de renommage/archivage par la liste normale).
+  - Composant dédié `components/sidebar/ProjectChatsRow.tsx` (icône `MessageSquare`, libellé i18n
+    `sidebar.project_chats_row`, sous-titre = branche extraite, statut d'agent et badges d'attention
+    repris du workspace `repository` quand il existe ; pas de glisser, pas de menu contextuel, pas de
+    boutons archiver/supprimer). `Sidebar.tsx` (god file) ne reçoit que l'insertion du composant.
+  - Hook partagé `hooks/useOpenProjectChat.ts` : si le workspace `repository` existe → le
+    sélectionner (sans créer de session) ; sinon → `openProjectChat(repoId)` (crée workspace +
+    première session), estampille `remote_connection_id: null`, ajoute au store, sélectionne. Utilisé
+    par la ligne, le FuzzyFinder, les raccourcis et l'événement de la barre système.
+  - Cibles de saut : `utils/sidebarJumpTargets.ts` gagne un type
+    `SidebarTarget = { kind: "workspace"; id } | { kind: "projectChats"; repoId }` et une fonction
+    pure qui, en mode statut, place une section « Chats du projet » (une cible par dépôt local filtré)
+    avant les groupes de statut ; ⌘1–9 compte ces cibles en premier. En mode projet, ⌘1–9 vise
+    toujours le n-ième projet (inchangé).
+  - FuzzyFinder : une entrée « Chats du projet — <dépôt> » par dépôt local, qui ouvre via le hook.
+  - Barre système : chaque dépôt local a toujours son en-tête, suivi d'un élément « Chats du projet »
+    (`projectchats:<repo_id>` → événement `tray-open-project-chats` géré dans `App.tsx` par le hook).
+  - La section « Chats » de la vue du projet (`ProjectChatsSection`) est supprimée ; l'avertissement
+    FR-005 passe dans l'écran vide du chat de projet et l'info-bulle du badge « Projet ».
+  - État vide de la sidebar : un dépôt local n'est plus jamais « vide » visuellement, mais le bouton
+    « Nouveau workspace » reste affiché quand il n'a aucun workspace `worktree`.
 - **CLI** (FR-019) : `claudette workspace list` affiche le workspace `repository` sous le nom du dépôt,
   avec le type « project » ; la sortie JSON garde le champ `kind`.
 - **Mobile / distant**: `Workspace` est sérialisé tel quel, et le champ `kind` s'ajoute. Le mobile
