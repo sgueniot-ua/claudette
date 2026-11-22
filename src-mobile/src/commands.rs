@@ -511,7 +511,6 @@ mod tests {
         );
     }
 
-    // FR-013: an aborted watch (replaced connection) must never report a stale close.
     // FR-013: a close that happens before `connected: true` is emitted is
     // reported only once the watch is armed, never before.
     #[tokio::test]
@@ -529,6 +528,7 @@ mod tests {
             .unwrap();
     }
 
+    // FR-013: an aborted watch (replaced connection) must never report a stale close.
     #[tokio::test]
     async fn aborted_watch_never_fires() {
         use std::sync::atomic::{AtomicBool, Ordering};
