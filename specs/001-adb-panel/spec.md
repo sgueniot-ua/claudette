@@ -37,6 +37,12 @@
 - Q: Appareil dont le débogage USB n'est pas autorisé ? → A: message « Autorise le débogage USB sur
   l'appareil », puis reprise automatique une fois autorisé.
 
+### Session 2026-11-22
+
+- Q: Le volet affiche le seul appareil branché et un deuxième appareil se connecte : que fait-il ?
+  → A: il garde l'appareil en cours tant qu'il reste prêt ; il ne demande de choisir que si cet
+  appareil disparaît et qu'il en reste plusieurs.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ouvrir le volet ADB du workspace affiché (Priority: P1)
@@ -139,6 +145,9 @@ que le nouvel appareil est montré.
    le workspace rouvert, **Then** le même appareil est associé.
 7. **Given** un choix manuel mémorisé, **When** l'utilisateur l'efface, **Then** l'association
    redevient automatique.
+8. **Given** le volet affiche le seul appareil prêt, sans choix manuel ni émulateur dédié,
+   **When** un deuxième appareil prêt se connecte, **Then** le volet continue sur l'appareil en
+   cours, sans interruption ni question.
 
 ---
 
@@ -198,6 +207,10 @@ que le nouvel appareil est montré.
 - **FR-007**: L'association workspace → appareil MUST suivre, dans l'ordre : choix manuel
   mémorisé du workspace ; sinon émulateur dédié à la branche, s'il est démarré ; sinon l'unique
   appareil prêt (connecté et autorisé) ; sinon demande à l'utilisateur.
+- **FR-007e**: Quand le volet affiche l'unique appareil prêt (étape 3 de FR-007) et qu'un autre
+  appareil prêt se connecte, le volet MUST garder l'appareil en cours tant qu'il reste prêt ; il ne
+  demande de choisir que si cet appareil disparaît et qu'il en reste plusieurs. Le choix manuel et
+  l'émulateur dédié gardent la priorité.
 - **FR-007d**: La branche qui identifie l'émulateur dédié MUST être celle extraite dans le
   worktree au moment de la résolution.
 - **FR-007a**: Le choix manuel MUST être mémorisé par workspace, survivre au redémarrage de
