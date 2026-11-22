@@ -12,6 +12,9 @@ import {
   type AgentStreamPayload,
   type PermissionPromptPayload,
 } from "../services/events";
+import { ActivityIndicator } from "../components/ActivityIndicator";
+import { sessionDisplay } from "../services/activity";
+import { useActivity } from "../services/useActivity";
 import { parseAgentEvent } from "../services/agentStream";
 import { AskQuestionSheet, type AskQuestionInput } from "../components/AskQuestionSheet";
 import { PlanApprovalCard, type PlanInput } from "../components/PlanApprovalCard";
@@ -53,6 +56,8 @@ export function ChatScreen({ connection, workspace, session, onBack }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agentActive, setAgentActive] = useState(false);
+  const { state: activity, refresh: refreshActivity } = useActivity();
+  useEffect(() => refreshActivity(), []); // eslint-disable-line react-hooks/exhaustive-deps
   // Queue of pending permission prompts. The active prompt is queue[0];
   // a second prompt arriving while the first is open is appended rather
   // than clobbering, so neither the UI nor the server's pending_permissions
@@ -299,7 +304,12 @@ export function ChatScreen({ connection, workspace, session, onBack }: Props) {
           ← Back
         </button>
         <div className="header-center">
-          <h1>{session.name ?? "Session"}</h1>
+          <h1>
+            <ActivityIndicator
+              display={sessionDisplay(activity, workspace.id, session.id)}
+            />
+            {session.name ?? "Session"}
+          </h1>
           <p className="subtitle">{workspace.name}</p>
         </div>
         {agentActive && (

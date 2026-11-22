@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { ActivityIndicator } from "../components/ActivityIndicator";
+import { workspaceDisplay } from "../services/activity";
 import { loadInitialData } from "../services/rpc";
+import { useActivity } from "../services/useActivity";
 import type { InitialData, SavedConnection, Workspace } from "../types";
 
 interface Props {
@@ -16,6 +19,7 @@ export function WorkspacesScreen({
   const [data, setData] = useState<InitialData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const { state: activity, refresh: refreshActivity } = useActivity();
 
   const refresh = async () => {
     setError(null);
@@ -34,6 +38,8 @@ export function WorkspacesScreen({
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connection.id]);
+
+  useEffect(() => refreshActivity(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const repoFor = (workspace: Workspace) =>
     data?.repositories.find((r) => r.id === workspace.repository_id);
@@ -69,7 +75,10 @@ export function WorkspacesScreen({
                   className="conn-row-main"
                   onClick={() => onOpenWorkspace(w)}
                 >
-                  <span className="conn-name">{w.name}</span>
+                  <span className="conn-name">
+                    <ActivityIndicator display={workspaceDisplay(activity, w.id)} />
+                    {w.name}
+                  </span>
                   <span className="conn-host">
                     {repo?.name ?? "—"} · {w.branch_name}
                   </span>

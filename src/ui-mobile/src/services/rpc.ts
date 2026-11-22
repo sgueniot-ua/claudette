@@ -6,6 +6,7 @@ import type {
   PairResult,
   SavedConnection,
   VersionInfo,
+  WorkspaceActivity,
 } from "../types";
 
 // Thin wrappers around the Tauri-side commands. Centralizing them here
@@ -135,4 +136,10 @@ export function submitPlanApproval(
     approved,
     reason,
   });
+}
+
+export function getWorkspacesActivity(
+  connectionId: string,
+): Promise<WorkspaceActivity[]> {
+  return sendRpc<WorkspaceActivity[]>(connectionId, "get_workspaces_activity");
 }

@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { ActivityIndicator } from "../components/ActivityIndicator";
+import { sessionDisplay } from "../services/activity";
+import { useActivity } from "../services/useActivity";
 import { createChatSession, listChatSessions } from "../services/rpc";
 import type { ChatSession, SavedConnection, Workspace } from "../types";
 
@@ -18,6 +21,7 @@ export function ChatListScreen({
   const [sessions, setSessions] = useState<ChatSession[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { state: activity, refresh: refreshActivity } = useActivity();
 
   const refresh = async () => {
     setError(null);
@@ -33,6 +37,8 @@ export function ChatListScreen({
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace.id]);
+
+  useEffect(() => refreshActivity(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNewSession = async () => {
     setBusy(true);
@@ -73,7 +79,12 @@ export function ChatListScreen({
                 className="conn-row-main"
                 onClick={() => onOpenSession(s)}
               >
-                <span className="conn-name">{s.name ?? "Session"}</span>
+                <span className="conn-name">
+                  <ActivityIndicator
+                    display={sessionDisplay(activity, workspace.id, s.id)}
+                  />
+                  {s.name ?? "Session"}
+                </span>
                 <span className="conn-host">
                   {new Date(s.created_at).toLocaleString()}
                 </span>

@@ -11,6 +11,11 @@
   --text-dim: #8a8a8a;
   --text-muted: #a0a0a0;
   --danger: #ff5b5b;
+  --status-running: var(--accent);
+  --status-background: var(--text-muted);
+  --status-ask: #f5a0b8;
+  --status-plan: #8cb8e0;
+  --status-unknown: var(--text-dim);
 }
 
 * {
@@ -519,4 +524,54 @@ button:disabled {
 
 .plan-actions button {
   flex: 1;
+}
+
+/* Activity indicator: a small dot next to workspace / chat names. */
+.activity {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+.activity--running {
+  background: var(--status-running);
+  animation: pulse-opacity 1.4s ease-in-out infinite;
+}
+
+.activity--background {
+  border: 2px solid var(--border);
+  border-top-color: var(--status-background);
+  animation: activity-ring 2.4s linear infinite;
+}
+
+.activity--ask {
+  background: var(--status-ask);
+}
+
+.activity--plan {
+  background: var(--status-plan);
+}
+
+.activity--idle {
+  border: 2px solid var(--text-dim);
+}
+
+.activity--unknown {
+  border: 2px dashed var(--status-unknown);
+}
+
+@keyframes activity-ring {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity--running,
+  .activity--background {
+    animation: none;
+  }
 }

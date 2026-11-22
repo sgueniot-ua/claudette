@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { ActivityProvider } from "./services/useActivity";
 import { ChatListScreen } from "./screens/ChatListScreen";
 import { ChatScreen } from "./screens/ChatScreen";
 import { ConnectScreen } from "./screens/ConnectScreen";
@@ -24,6 +25,14 @@ type View =
 // chat view (streaming, composer, AskUserQuestion sheet, plan approval
 // card) routes through `ChatScreen` below.
 
+function withActivity(connectionId: string, children: ReactNode) {
+  return (
+    <ActivityProvider key={connectionId} connectionId={connectionId}>
+      {children}
+    </ActivityProvider>
+  );
+}
+
 export function App() {
   const [view, setView] = useState<View>({ kind: "connect" });
 
@@ -37,7 +46,8 @@ export function App() {
         />
       );
     case "workspaces":
-      return (
+      return withActivity(
+        view.connection.id,
         <WorkspacesScreen
           connection={view.connection}
           onOpenWorkspace={(workspace) =>
@@ -51,7 +61,8 @@ export function App() {
         />
       );
     case "chat-list":
-      return (
+      return withActivity(
+        view.connection.id,
         <ChatListScreen
           connection={view.connection}
           workspace={view.workspace}
@@ -69,7 +80,8 @@ export function App() {
         />
       );
     case "chat":
-      return (
+      return withActivity(
+        view.connection.id,
         <ChatScreen
           connection={view.connection}
           workspace={view.workspace}

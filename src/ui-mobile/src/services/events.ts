@@ -1,4 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { ACTIVITY_EVENTS } from "./activity";
 
 // The Tauri events emitted by `src-mobile/src/commands.rs::spawn_event_forwarder`
 // each carry `{connection_id, payload}`. `payload` is the same shape the
@@ -44,6 +45,36 @@ export async function onPermissionPrompt(
     (event) => {
       if (event.payload.connection_id !== connectionId) return;
       handler(event.payload.payload);
+    },
+  );
+}
+
+export async function onActivitySignal(
+  connectionId: string,
+  handler: () => void,
+): Promise<UnlistenFn> {
+  const unlistens = await Promise.all(
+    ACTIVITY_EVENTS.map((name) =>
+      listen<ForwardedEvent<unknown>>(name, (event) => {
+        if (event.payload.connection_id !== connectionId) return;
+        handler();
+      }),
+    ),
+  );
+  return () => unlistens.forEach((unlisten) => unlisten());
+}
+
+// `remote-connection-state` is emitted by Rust directly, not wrapped in
+// `ForwardedEvent`.
+export async function onConnectionState(
+  connectionId: string,
+  handler: (connected: boolean) => void,
+): Promise<UnlistenFn> {
+  return listen<{ connection_id: string; connected: boolean }>(
+    "remote-connection-state",
+    (event) => {
+      if (event.payload.connection_id !== connectionId) return;
+      handler(event.payload.connected);
     },
   );
 }
