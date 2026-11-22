@@ -40,8 +40,11 @@
 ### Session 2026-11-22
 
 - Q: Le volet affiche le seul appareil branché et un deuxième appareil se connecte : que fait-il ?
-  → A: il garde l'appareil en cours tant qu'il reste prêt ; il ne demande de choisir que si cet
-  appareil disparaît et qu'il en reste plusieurs.
+  → A: il garde l'appareil en cours tant qu'il reste prêt.
+- Q: Un appareil choisi automatiquement (émulateur dédié ou unique appareil prêt) se déconnecte
+  alors qu'un ou plusieurs autres appareils restent prêts : attendre ou basculer ? → A: le volet
+  l'attend et reprend seul à son retour, sans basculer ; l'utilisateur peut choisir un autre
+  appareil à la main pendant l'attente ; l'attente ne dure que la session de l'app.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -148,6 +151,9 @@ que le nouvel appareil est montré.
 8. **Given** le volet affiche le seul appareil prêt, sans choix manuel ni émulateur dédié,
    **When** un deuxième appareil prêt se connecte, **Then** le volet continue sur l'appareil en
    cours, sans interruption ni question.
+9. **Given** le volet affiche un appareil choisi automatiquement et un autre appareil prêt est
+   branché, **When** l'appareil affiché se déconnecte, **Then** le volet indique qu'il attend cet
+   appareil, ne bascule pas sur l'autre, et reprend seul quand l'appareil revient.
 
 ---
 
@@ -156,7 +162,8 @@ que le nouvel appareil est montré.
 - Aucun appareil associé au workspace affiché : le volet l'indique clairement et dit comment en
   associer un, au lieu de montrer un autre appareil.
 - L'appareil associé est déconnecté ou éteint : le volet l'indique ; il reprend quand l'appareil
-  revient, sans action de l'utilisateur.
+  revient, sans action de l'utilisateur, même si un autre appareil prêt est branché (FR-007c,
+  FR-007f).
 - L'appareil est branché mais le débogage USB n'y est pas autorisé : le volet affiche « Autorise
   le débogage USB sur l'appareil » et reprend seul une fois l'autorisation donnée.
 - La branche du worktree est renommée ou changée : l'émulateur dédié est recherché sous le nouveau
@@ -208,9 +215,14 @@ que le nouvel appareil est montré.
   mémorisé du workspace ; sinon émulateur dédié à la branche, s'il est démarré ; sinon l'unique
   appareil prêt (connecté et autorisé) ; sinon demande à l'utilisateur.
 - **FR-007e**: Quand le volet affiche l'unique appareil prêt (étape 3 de FR-007) et qu'un autre
-  appareil prêt se connecte, le volet MUST garder l'appareil en cours tant qu'il reste prêt ; il ne
-  demande de choisir que si cet appareil disparaît et qu'il en reste plusieurs. Le choix manuel et
-  l'émulateur dédié gardent la priorité.
+  appareil prêt se connecte, le volet MUST garder l'appareil en cours tant qu'il reste prêt. Le
+  choix manuel et l'émulateur dédié gardent la priorité.
+- **FR-007f**: Un appareil choisi automatiquement (émulateur dédié ou unique appareil prêt, étapes
+  2 et 3 de FR-007) qui se déconnecte MUST être attendu, qu'il reste ou non d'autres appareils
+  prêts : le volet indique qu'il attend cet appareil, ne bascule pas seul sur un autre et reprend
+  à son retour (FR-009). Pendant l'attente, l'utilisateur peut choisir un autre appareil à la
+  main ; le choix manuel, puis un émulateur dédié qui démarre, gardent la priorité. Cette attente
+  n'est pas mémorisée : au redémarrage de l'application, l'association repart de FR-007.
 - **FR-007d**: La branche qui identifie l'émulateur dédié MUST être celle extraite dans le
   worktree au moment de la résolution.
 - **FR-007a**: Le choix manuel MUST être mémorisé par workspace, survivre au redémarrage de
