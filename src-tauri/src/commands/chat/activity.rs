@@ -1,10 +1,34 @@
 use std::collections::HashMap;
 
+use tauri::{AppHandle, Emitter};
+
 use claudette::activity::{session_status, workspace_activity};
 use claudette::db::Database;
 use claudette::model::{AttentionKind, SessionActivity, WorkspaceActivity, WorkspaceStatus};
 
 use crate::state::AgentSessionState;
+
+/// Emitted when a session's activity state changes without any stream event
+/// (attention cleared, answer submitted, stop, background task ended). Paired
+/// clients re-read `get_workspaces_activity` on receipt.
+pub(crate) const ACTIVITY_CHANGED_EVENT: &str = "agent-activity-changed";
+
+pub(crate) fn activity_changed_payload(
+    workspace_id: &str,
+    chat_session_id: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "workspace_id": workspace_id,
+        "chat_session_id": chat_session_id,
+    })
+}
+
+pub(crate) fn emit_activity_changed(app: &AppHandle, workspace_id: &str, chat_session_id: &str) {
+    let _ = app.emit(
+        ACTIVITY_CHANGED_EVENT,
+        activity_changed_payload(workspace_id, chat_session_id),
+    );
+}
 
 /// Activity of every active workspace, from the DB (workspaces and their
 /// non-archived sessions) overlaid with the live agent map. A session with no
@@ -60,6 +84,16 @@ fn session_activity(
 mod tests {
     use super::*;
     use claudette::model::{AgentStatus, Repository, Workspace};
+
+    // FR-008
+    #[test]
+    fn activity_changed_payload_shape() {
+        assert_eq!(
+            activity_changed_payload("ws", "s"),
+            serde_json::json!({"workspace_id": "ws", "chat_session_id": "s"})
+        );
+        assert_eq!(ACTIVITY_CHANGED_EVENT, "agent-activity-changed");
+    }
 
     fn make_repo(id: &str) -> Repository {
         Repository {

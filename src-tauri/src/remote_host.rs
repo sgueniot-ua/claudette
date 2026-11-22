@@ -38,6 +38,7 @@ const FORWARDED_EVENTS: &[&str] = &[
     "session-renamed",
     "workspace-renamed",
     "workspaces-changed",
+    "agent-activity-changed",
     "workspace_env_progress",
     "workflow-activity-status",
     "pty-output",
@@ -213,6 +214,7 @@ impl RpcHost for TauriRpcHost {
                         .get("reason")
                         .and_then(|v| v.as_str())
                         .map(String::from),
+                    app.clone(),
                     self.state(),
                 )
                 .await?;
@@ -326,6 +328,14 @@ impl TauriRpcHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // FR-008
+    #[test]
+    fn forwarded_events_include_activity_changed() {
+        assert!(
+            FORWARDED_EVENTS.contains(&crate::commands::chat::activity::ACTIVITY_CHANGED_EVENT)
+        );
+    }
 
     #[test]
     fn outbound_envelope_aliases_session_id_on_agent_stream() {

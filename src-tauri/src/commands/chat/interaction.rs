@@ -9,6 +9,8 @@ use claudette::agent::{
 
 use crate::state::{AgentSessionState, AppState, PendingPermission};
 
+use super::activity;
+
 #[tauri::command]
 #[tracing::instrument(
     target = "claudette::chat",
@@ -30,8 +32,10 @@ pub async fn clear_attention(
         // attention cycle on this session can fire its notification —
         // see AgentSessionState::reset_attention.
         session.reset_attention();
+        let workspace_id = session.workspace_id.clone();
         drop(agents);
         crate::tray::rebuild_tray(&app);
+        activity::emit_activity_changed(&app, &workspace_id, &chat_session_id);
     }
     Ok(())
 }
@@ -44,7 +48,7 @@ pub async fn clear_attention(
 #[tauri::command]
 #[tracing::instrument(
     target = "claudette::chat",
-    skip(answers, annotations, state),
+    skip(answers, annotations, app, state),
     fields(chat_session_id = %session_id, tool_use_id = %tool_use_id),
 )]
 pub async fn submit_agent_answer(
@@ -52,6 +56,7 @@ pub async fn submit_agent_answer(
     tool_use_id: String,
     answers: std::collections::HashMap<String, String>,
     annotations: Option<serde_json::Value>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // MCP-origin branch: when the question came from the `ask_user` MCP tool
@@ -62,6 +67,7 @@ pub async fn submit_agent_answer(
         // `ask_user` tool's documented contract. `annotations` is always null on
         // the MCP path (the card never sends it), so there's nothing to carry.
         return submit_mcp_answer(
+            &app,
             state.inner(),
             &session_id,
             &tool_use_id,
@@ -74,7 +80,7 @@ pub async fn submit_agent_answer(
     // Validate everything BEFORE removing the pending entry: if the session
     // has been torn down or the entry maps to the wrong tool, the entry must
     // stay so the user (or the correct submit_* command) can still see it.
-    let (pending, ps) = {
+    let (pending, ps, workspace_id) = {
         let mut agents = state.agents.write().await;
         let session = agents.get_mut(&session_id).ok_or("Session not found")?;
         // 1. Persistent session must be alive — otherwise nobody is reading
@@ -106,8 +112,9 @@ pub async fn submit_agent_answer(
             .remove(&tool_use_id)
             .expect("checked above");
         session.reset_attention();
-        (pending, ps)
+        (pending, ps, session.workspace_id.clone())
     };
+    activity::emit_activity_changed(&app, &workspace_id, &session_id);
 
     // Layer answers (and annotations, if any) onto the original input.
     let mut updated_input = pending.original_input.clone();
@@ -146,14 +153,16 @@ pub async fn submit_agent_answer(
 /// path, but there is no `persistent_session` to reply to — the agent is
 /// suspended inside its MCP tool call.
 async fn submit_mcp_answer(
+    app: &tauri::AppHandle,
     state: &AppState,
     session_id: &str,
     tool_use_id: &str,
     expected_tool: &str,
     answer: serde_json::Value,
 ) -> Result<(), String> {
-    {
+    let workspace_id = {
         let mut agents = state.agents.write().await;
+        let mut workspace_id = None;
         if let Some(session) = agents.get_mut(session_id) {
             if let Some(p) = session.pending_permissions.get(tool_use_id)
                 && p.tool_name != expected_tool
@@ -165,7 +174,12 @@ async fn submit_mcp_answer(
             }
             session.pending_permissions.remove(tool_use_id);
             session.reset_attention();
+            workspace_id = Some(session.workspace_id.clone());
         }
+        workspace_id
+    };
+    if let Some(workspace_id) = workspace_id {
+        activity::emit_activity_changed(app, &workspace_id, session_id);
     }
     let Some(pending) = state.take_mcp_reply(tool_use_id).await else {
         return Err(format!(
@@ -237,6 +251,7 @@ async fn submit_approval_response(
     tool_use_id: String,
     approved: bool,
     reason: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // MCP-origin branch: a `request_review` verdict routes to the awaiting
@@ -253,6 +268,7 @@ async fn submit_approval_response(
             (false, false) => "deny",
         };
         return submit_mcp_answer(
+            &app,
             state.inner(),
             &session_id,
             &tool_use_id,
@@ -264,7 +280,7 @@ async fn submit_approval_response(
 
     // Same validate-before-remove pattern as submit_agent_answer — see that
     // function for the rationale.
-    let (pending, ps) = {
+    let (pending, ps, workspace_id) = {
         let mut agents = state.agents.write().await;
         let session = agents.get_mut(&session_id).ok_or("Session not found")?;
         match session.pending_permissions.get(&tool_use_id) {
@@ -298,8 +314,9 @@ async fn submit_approval_response(
                     .ok_or("Agent session is not active")?,
             )
         };
-        (pending, ps)
+        (pending, ps, session.workspace_id.clone())
     };
+    activity::emit_activity_changed(&app, &workspace_id, &session_id);
 
     if is_synthetic_codex_plan_approval(&pending) {
         return Ok(());
@@ -314,7 +331,7 @@ async fn submit_approval_response(
 #[tauri::command]
 #[tracing::instrument(
     target = "claudette::chat",
-    skip(reason, state),
+    skip(reason, app, state),
     fields(chat_session_id = %session_id, tool_use_id = %tool_use_id, approved),
 )]
 pub async fn submit_plan_approval(
@@ -322,15 +339,16 @@ pub async fn submit_plan_approval(
     tool_use_id: String,
     approved: bool,
     reason: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    submit_approval_response(session_id, tool_use_id, approved, reason, state).await
+    submit_approval_response(session_id, tool_use_id, approved, reason, app, state).await
 }
 
 #[tauri::command]
 #[tracing::instrument(
     target = "claudette::chat",
-    skip(reason, state),
+    skip(reason, app, state),
     fields(chat_session_id = %session_id, tool_use_id = %tool_use_id, approved),
 )]
 pub async fn submit_agent_approval(
@@ -338,9 +356,10 @@ pub async fn submit_agent_approval(
     tool_use_id: String,
     approved: bool,
     reason: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    submit_approval_response(session_id, tool_use_id, approved, reason, state).await
+    submit_approval_response(session_id, tool_use_id, approved, reason, app, state).await
 }
 
 /// Synchronously drain any pending permission requests from `session` and

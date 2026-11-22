@@ -8,6 +8,7 @@ use claudette::model::{ChatMessage, ChatRole};
 
 use crate::state::{AgentSessionState, AppState, PendingPermission};
 
+use super::activity;
 use super::interaction::{deny_drained_permissions, drain_pending_permissions};
 use super::now_iso;
 
@@ -78,6 +79,9 @@ pub async fn stop_agent(
             None => (None, None, None, None),
         }
     };
+    if ended_sid.is_some() {
+        activity::emit_activity_changed(&app, &workspace_id, &chat_session_id);
+    }
 
     if let Some((ref ps, drained)) = to_deny_stop {
         deny_drained_permissions(drained, ps, "Session stopped by user.").await;

@@ -730,7 +730,7 @@ pub(super) async fn apply_task_notification_status(
         })
     };
     if is_terminal_task_status(status) {
-        {
+        let session_found = {
             let mut agents = app_state.agents.write().await;
             if let Some(session) = agents.get_mut(chat_session_id) {
                 session.running_background_tasks.remove(task_id);
@@ -739,7 +739,17 @@ pub(super) async fn apply_task_notification_status(
                     session.running_background_tasks.remove(tool_use_id);
                     session.background_task_output_paths.remove(tool_use_id);
                 }
+                true
+            } else {
+                false
             }
+        };
+        if session_found {
+            crate::commands::chat::activity::emit_activity_changed(
+                app,
+                workspace_id,
+                chat_session_id,
+            );
         }
         resolve_workflow_activity(
             app,
