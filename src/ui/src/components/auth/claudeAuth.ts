@@ -8,6 +8,7 @@ import {
   submitClaudeAuthCode,
   type ClaudeAuthStatus,
 } from "../../services/tauri";
+import i18n from "../../i18n";
 import { useAppStore } from "../../stores/useAppStore";
 
 export type ClaudeAuthLoginState =
@@ -99,7 +100,7 @@ export function cleanClaudeAuthError(error: string): string {
     return cliLoginHint[1].trim();
   }
   if (/^please run\s+\/login\.?$/i.test(cleaned)) {
-    return "Not signed in";
+    return i18n.t("modals:auth_not_signed_in");
   }
   const apiError = cleaned.match(
     /^(?:Failed to authenticate\.\s*)?API Error:\s*(\d+)\s*(.+)$/i,
@@ -165,7 +166,7 @@ export function useClaudeAuthRecovery() {
     applyAuthStatusRecovery(value, true);
     if (value.state !== "signed_in" || !value.verified) {
       throw new Error(
-        value.message ?? "Claude Code sign-in could not be verified.",
+        value.message ?? i18n.t("modals:auth_verify_failed"),
       );
     }
     return value;
@@ -220,7 +221,7 @@ export function useClaudeAuthLogin({
       if (!success) {
         setAuthState({
           status: "error",
-          error: error ?? "Sign-in failed.",
+          error: error ?? i18n.t("modals:auth_sign_in_failed"),
         });
         return;
       }
@@ -235,7 +236,7 @@ export function useClaudeAuthLogin({
             error:
               err instanceof Error
                 ? err.message
-                : String(err || "Sign-in could not be verified."),
+                : String(err || i18n.t("modals:auth_sign_in_unverified")),
           });
         });
     })
@@ -326,7 +327,7 @@ export function useCodexAuthLogin({
       if (!success) {
         setAuthState({
           status: "error",
-          error: error ?? "Codex sign-in failed.",
+          error: error ?? i18n.t("modals:auth_codex_sign_in_failed"),
         });
         return;
       }
@@ -341,7 +342,7 @@ export function useCodexAuthLogin({
             error:
               err instanceof Error
                 ? err.message
-                : String(err || "Codex sign-in could not be verified."),
+                : String(err || i18n.t("modals:auth_codex_sign_in_unverified")),
           });
         });
     })

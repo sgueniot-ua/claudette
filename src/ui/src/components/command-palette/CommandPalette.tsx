@@ -87,7 +87,7 @@ function dirnameMatches(result: FileSearchResult): number[] {
 }
 
 export function CommandPalette() {
-  const { t } = useTranslation("chat");
+  const { t } = useTranslation(["chat", "common"]);
   const toggleCommandPalette = useAppStore((s) => s.toggleCommandPalette);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const toggleTerminalPanel = useAppStore((s) => s.toggleTerminalPanel);
@@ -432,14 +432,14 @@ export function CommandPalette() {
         updateWorkspace: (id: string, updates: Record<string, unknown>) => updateWorkspace(id, updates),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [themes, selectedWorkspaceId, selectedSessionId, currentRepoId, thinkingEnabled, planMode, fastMode, effortLevel, selectedModel, selectedModelProvider, keybindings, enterThemeMode, enterFileMode, applyThemeById, handleCreateWorkspace, clearAgentApproval],
+    [themes, selectedWorkspaceId, selectedSessionId, currentRepoId, thinkingEnabled, planMode, fastMode, effortLevel, selectedModel, selectedModelProvider, keybindings, enterThemeMode, enterFileMode, applyThemeById, handleCreateWorkspace, clearAgentApproval, t],
   );
 
   // Build sub-menu command lists
   const themeCommands = useMemo(
     () => buildThemeCommands(themes, applyThemeById, close),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [themes, applyThemeById],
+    [themes, applyThemeById, t],
   );
 
   // Single source for visibility — `useModelRegistry` applies the
@@ -459,7 +459,7 @@ export function CommandPalette() {
       selectedModelProvider,
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedModel, selectedModelProvider, selectedSessionId, modelRegistry],
+    [selectedModel, selectedModelProvider, selectedSessionId, modelRegistry, t],
   );
 
   const effortCommands = useMemo(
@@ -521,7 +521,7 @@ export function CommandPalette() {
   const grouped = useMemo<GroupedCommands[]>(() => {
     if (mode === "theme") {
       return filteredCommands.length > 0
-        ? [{ category: "theme", label: "Select a Theme", commands: filteredCommands }]
+        ? [{ category: "theme", label: t("common:palette_select_theme"), commands: filteredCommands }]
         : [];
     }
     if (mode === "file") {
@@ -531,11 +531,11 @@ export function CommandPalette() {
     // so the relevance sort isn't overridden by category order.
     if (query.trim()) {
       return filteredCommands.length > 0
-        ? [{ category: "general", label: "Results", commands: filteredCommands }]
+        ? [{ category: "general", label: t("common:palette_results"), commands: filteredCommands }]
         : [];
     }
     return groupCommandsByCategory(filteredCommands);
-  }, [filteredCommands, mode]);
+  }, [filteredCommands, mode, t]);
 
   // Rendered (visual) order — what arrow keys must index into so the
   // highlighted row and the command executed on Enter always agree.
@@ -712,7 +712,7 @@ export function CommandPalette() {
             <button
               className={styles.backBtn}
               onClick={exitSubMenu}
-              title="Back to commands"
+              title={t("common:palette_back")}
               type="button"
             >
               <ChevronLeft size={16} />
@@ -730,11 +730,11 @@ export function CommandPalette() {
             }}
             onKeyDown={handleKeyDown}
             placeholder={
-              mode === "theme" ? "Search themes..."
-              : mode === "model" ? "Select model..."
-              : mode === "effort" ? "Select effort level..."
-              : mode === "file" ? "Search files..."
-              : "Type a command..."
+              mode === "theme" ? t("common:palette_placeholder_theme")
+              : mode === "model" ? t("common:palette_placeholder_model")
+              : mode === "effort" ? t("common:palette_placeholder_effort")
+              : mode === "file" ? t("common:palette_placeholder_file")
+              : t("common:palette_placeholder_main")
             }
             autoFocus
             autoComplete="off"
@@ -744,10 +744,10 @@ export function CommandPalette() {
           />
           {mode !== "main" && (
             <span className={styles.modeBadge}>
-              {mode === "theme" ? "Theme"
-                : mode === "model" ? "Model"
-                : mode === "effort" ? "Effort"
-                : "Files"}
+              {mode === "theme" ? t("common:palette_badge_theme")
+                : mode === "model" ? t("common:palette_badge_model")
+                : mode === "effort" ? t("common:palette_badge_effort")
+                : t("common:palette_badge_files")}
             </span>
           )}
         </div>
@@ -763,11 +763,11 @@ export function CommandPalette() {
         >
           {resultCount === 0 ? (
             <div className={styles.empty}>
-              {mode === "theme" ? "No matching themes"
-                : mode === "model" ? "No matching models"
-                : mode === "effort" ? "No matching levels"
-                : mode === "file" ? (filesLoading ? "Loading files..." : filesLoadError ? `Failed to load files: ${filesLoadError}` : "No matching files")
-                : "No matching commands"}
+              {mode === "theme" ? t("common:palette_empty_themes")
+                : mode === "model" ? t("common:palette_empty_models")
+                : mode === "effort" ? t("common:palette_empty_levels")
+                : mode === "file" ? (filesLoading ? t("common:palette_loading_files") : filesLoadError ? t("common:palette_files_load_failed", { error: filesLoadError }) : t("common:palette_empty_files"))
+                : t("common:palette_empty_commands")}
             </div>
           ) : mode === "file" ? (
             <div
@@ -845,7 +845,7 @@ export function CommandPalette() {
                       <div className={styles.resultName}>
                         {cmd.name}
                         {isActive && (
-                          <span className={styles.activeBadge}>current</span>
+                          <span className={styles.activeBadge}>{t("common:palette_current")}</span>
                         )}
                       </div>
                       {cmd.description && (
@@ -881,14 +881,14 @@ export function CommandPalette() {
 
         <div className={styles.footer}>
           <span className={styles.footerHint}>
-            <span className={styles.kbd}>↑↓</span> navigate
+            <span className={styles.kbd}>↑↓</span> {t("common:palette_hint_navigate")}
           </span>
           <span className={styles.footerHint}>
-            <span className={styles.kbd}>↵</span> select
+            <span className={styles.kbd}>↵</span> {t("common:palette_hint_select")}
           </span>
           <span className={styles.footerHint}>
             <span className={styles.kbd}>esc</span>
-            {mode !== "main" ? " back" : " close"}
+            {mode !== "main" ? ` ${t("common:palette_hint_back")}` : ` ${t("common:palette_hint_close")}`}
           </span>
         </div>
       </div>

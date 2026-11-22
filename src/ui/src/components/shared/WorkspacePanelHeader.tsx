@@ -13,7 +13,7 @@ import styles from "./WorkspacePanelHeader.module.css";
  *  workspace-specific breadcrumb (repo/branch/base) and action group live
  *  here. */
 export function WorkspacePanelHeader() {
-  const { t } = useTranslation("chat");
+  const { t } = useTranslation(["chat", "common"]);
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
   const repositories = useAppStore((s) => s.repositories);
@@ -36,7 +36,14 @@ export function WorkspacePanelHeader() {
       <button
         type="button"
         className={styles.scmLink}
-        title={`${scmLink.kind === "pr" ? "PR" : "Issue"} #${scmLink.number}: ${scmLink.title} — open in browser`}
+        title={t("common:workspace_header_scm_link_title", {
+          kind:
+            scmLink.kind === "pr"
+              ? t("common:workspace_header_kind_pr")
+              : t("common:workspace_header_kind_issue"),
+          number: scmLink.number,
+          title: scmLink.title,
+        })}
         onClick={() => void openUrl(scmLink.url)}
       >
         <CircleDot size={11} className={styles.scmLinkIcon} aria-hidden />

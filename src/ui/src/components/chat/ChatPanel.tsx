@@ -190,7 +190,7 @@ export function ChatPanel() {
         });
       } catch (err) {
         cancelPendingFork(placeholderId, previousSelection);
-        setError(`Failed to fork workspace: ${err}`);
+        setError(t("fork_workspace_failed", { error: String(err) }));
       }
     },
     [
@@ -200,6 +200,7 @@ export function ChatPanel() {
       beginPendingFork,
       commitPendingFork,
       cancelPendingFork,
+      t,
     ],
   );
   // Stable identity for the memoized transcript (`MessagesWithTurns`); an
@@ -338,7 +339,7 @@ export function ChatPanel() {
     const queuedMessage = queuedMessages.find((message) => message.id === queuedMessageId);
     if (!queuedMessage) return;
     if (ws?.remote_connection_id) {
-      setError("Mid-turn steering is not yet supported for remote workspaces");
+      setError(t("steer_remote_unsupported"));
       return;
     }
 
@@ -372,7 +373,7 @@ export function ChatPanel() {
   const handleRunShellCommand = async (command: string) => {
     if (!selectedWorkspaceId) return;
     if (ws?.remote_connection_id) {
-      setError("Shell commands are not yet supported for remote workspaces");
+      setError(t("shell_remote_unsupported"));
       return;
     }
     setError(null);
@@ -518,7 +519,7 @@ export function ChatPanel() {
           <LoaderCircle size={20} className={styles.preparingForkSpinner} />
           <div className={styles.preparingForkText}>
             {t("preparing_workspace_in", "Preparing workspace in {{repo}}…", {
-              repo: pendingCreateRepoName ?? "this repository",
+              repo: pendingCreateRepoName ?? t("preparing_workspace_in_fallback_repo"),
             })}
             <div className={styles.preparingForkSub}>
               {pendingCreateWorkspaceName}

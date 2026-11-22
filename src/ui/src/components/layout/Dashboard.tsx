@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { GitBranch, Globe, ChevronDown, ChevronRight, Archive, RotateCcw } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import type { AgentStatus } from "../../types/workspace";
@@ -58,6 +59,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
   onClick: (id: string | null) => void;
   index: number;
 }) {
+  const { t } = useTranslation();
   // Subscribe per-card so a PR/CI poll for one workspace doesn't
   // re-render every other card. Sidebar reads the whole map because it
   // also uses it for grouping; here we only need this row's slice.
@@ -84,10 +86,10 @@ const WorkspaceCard = memo(function WorkspaceCard({
     .join(" ");
 
   const statusTitle = isRunning
-    ? "Running"
+    ? t("dashboard_status_running")
     : typeof ws.agent_status === "string"
       ? ws.agent_status
-      : "Error";
+      : t("dashboard_status_error");
 
   const isStopped =
     ws.agent_status === "Stopped" || typeof ws.agent_status !== "string";
@@ -107,9 +109,9 @@ const WorkspaceCard = memo(function WorkspaceCard({
                        { kind: "idle" };
 
   const statusIconTitle =
-    badge === "ask"  ? "Question requires attention" :
-    badge === "plan" ? "Plan approval needed" :
-    badge === "done" ? "Completed" :
+    badge === "ask"  ? t("dashboard_status_question") :
+    badge === "plan" ? t("dashboard_status_plan") :
+    badge === "done" ? t("dashboard_status_completed") :
     prIcon           ? prIcon.title :
                        statusTitle;
 
@@ -125,7 +127,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
           {repo?.icon && (
             <RepoIcon icon={repo.icon} size={14} className={styles.repoIcon} />
           )}
-          {repo?.name ?? "Unknown"}
+          {repo?.name ?? t("dashboard_unknown_repo")}
           {remoteName && (
             <span className={styles.remoteBadge}>
               <Globe size={10} />
@@ -162,10 +164,10 @@ const WorkspaceCard = memo(function WorkspaceCard({
         <div className={styles.lastMessage}>
           <span className={styles.msgRole}>
             {lastMsg.role === "User"
-              ? "You"
+              ? t("dashboard_role_user")
               : lastMsg.role === "Assistant"
-                ? "Claude"
-                : "System"}
+                ? t("dashboard_role_assistant")
+                : t("dashboard_role_system")}
             :
           </span>{" "}
           <span className={styles.msgContent}>
@@ -174,7 +176,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
           </span>
         </div>
       ) : (
-        <div className={styles.noMessages}>No messages yet</div>
+        <div className={styles.noMessages}>{t("dashboard_no_messages")}</div>
       )}
       <MicroStats workspaceId={ws.id} />
     </button>
@@ -182,6 +184,7 @@ const WorkspaceCard = memo(function WorkspaceCard({
 });
 
 export function Dashboard() {
+  const { t } = useTranslation();
   const repositories = useAppStore((s) => s.repositories);
   const workspaces = useAppStore((s) => s.workspaces);
   const lastMessages = useAppStore((s) => s.lastMessages);
@@ -299,10 +302,10 @@ export function Dashboard() {
       try {
         await createWorkspaceForRepo(repoId);
       } catch (e) {
-        addToast(`Failed to create workspace: ${e instanceof Error ? e.message : String(e)}`);
+        addToast(t("dashboard_create_failed", { error: e instanceof Error ? e.message : String(e) }));
       }
     },
-    [createWorkspaceForRepo, addToast],
+    [createWorkspaceForRepo, addToast, t],
   );
 
   const handleAddRepository = useCallback(() => {
@@ -348,12 +351,12 @@ export function Dashboard() {
         const path = await restoreWorkspace(wsId);
         updateWorkspace(wsId, { status: "Active", worktree_path: path });
       } catch (e) {
-        addToast(`Failed to restore: ${e instanceof Error ? e.message : String(e)}`);
+        addToast(t("dashboard_restore_failed", { error: e instanceof Error ? e.message : String(e) }));
       } finally {
         setRestoringWsId(null);
       }
     },
-    [updateWorkspace, addToast, restoringWsId],
+    [updateWorkspace, addToast, restoringWsId, t],
   );
 
   if (scopedRepo) {
@@ -381,11 +384,11 @@ export function Dashboard() {
             onCreateWorkspace={handleCreateForRepo}
             onAddRepository={handleAddRepository}
             creating={creating}
-            title={`Start a workspace in ${scopedRepo.name}.`}
+            title={t("dashboard_scoped_title", { name: scopedRepo.name })}
             subtitle={
               scopedWorkspaceRows.length > 0
-                ? "Or jump back into one of the workspaces below."
-                : "This project doesn't have any active workspaces yet."
+                ? t("dashboard_scoped_subtitle_jump")
+                : t("dashboard_scoped_subtitle_empty")
             }
           />
           <ProjectViewScmLists repoId={scopedRepo.id} />
@@ -399,10 +402,10 @@ export function Dashboard() {
                 aria-expanded={workspacesOpen}
               >
                 {workspacesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                <span className={styles.workspacesTitle}>Workspaces</span>
+                <span className={styles.workspacesTitle}>{t("dashboard_workspaces")}</span>
                 {scopedRunning > 0 && (
                   <span className={styles.headerCount}>
-                    {scopedRunning} running
+                    {t("dashboard_running_count", { count: scopedRunning })}
                   </span>
                 )}
               </button>
@@ -436,7 +439,7 @@ export function Dashboard() {
                 >
                   {archivedOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   <Archive size={12} className={styles.archivedIcon} aria-hidden="true" />
-                  <span className={styles.workspacesTitle}>Archived</span>
+                  <span className={styles.workspacesTitle}>{t("dashboard_archived")}</span>
                   <span className={styles.headerCount}>
                     {scopedArchivedWorkspaces.length}
                   </span>
@@ -449,7 +452,7 @@ export function Dashboard() {
                       openModal("bulkCleanupArchived", { repoId: scopedRepo.id })
                     }
                   >
-                    Clean up…
+                    {t("dashboard_clean_up")}
                   </button>
                 )}
               </div>
@@ -469,11 +472,11 @@ export function Dashboard() {
                         className={styles.archivedRestore}
                         onClick={() => handleRestoreWorkspace(ws.id)}
                         disabled={restoringWsId !== null}
-                        title={`Restore ${ws.name}`}
-                        aria-label={`Restore ${ws.name}`}
+                        title={t("dashboard_restore_named", { name: ws.name })}
+                        aria-label={t("dashboard_restore_named", { name: ws.name })}
                       >
                         <RotateCcw size={12} />
-                        Restore
+                        {t("dashboard_restore")}
                       </button>
                     </li>
                   ))}
@@ -490,7 +493,7 @@ export function Dashboard() {
     return (
       <div className={styles.dashboard}>
         <PanelHeader
-          left={<span className={styles.dashboardTitle}>Dashboard</span>}
+          left={<span className={styles.dashboardTitle}>{t("dashboard_title")}</span>}
           right={<PanelToggles />}
         />
         <BoundedScrollPane className={styles.scrollBody}>
@@ -515,7 +518,7 @@ export function Dashboard() {
   return (
     <div className={styles.dashboard}>
       <PanelHeader
-        left={<span className={styles.dashboardTitle}>Dashboard</span>}
+        left={<span className={styles.dashboardTitle}>{t("dashboard_title")}</span>}
         right={<PanelToggles />}
       />
       <BoundedScrollPane className={styles.scrollBody}>
@@ -529,10 +532,10 @@ export function Dashboard() {
             aria-expanded={workspacesOpen}
           >
             {workspacesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <span className={styles.workspacesTitle}>Active Workspaces</span>
+            <span className={styles.workspacesTitle}>{t("dashboard_active_workspaces")}</span>
             {runningCount > 0 && (
               <span className={styles.headerCount}>
-                {runningCount} running
+                {t("dashboard_running_count", { count: runningCount })}
               </span>
             )}
           </button>
