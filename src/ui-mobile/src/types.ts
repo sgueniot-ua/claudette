@@ -75,3 +75,35 @@ export interface ChatMessage {
   input_tokens?: number | null;
   output_tokens?: number | null;
 }
+
+export type MobileAgentStatus =
+  | "Running"
+  | "IdleWithBackground"
+  | "Idle"
+  | "Stopped"
+  | "Compacting"
+  | { Error: string };
+
+export type AttentionKind = "Ask" | "Plan";
+
+export interface SessionActivity {
+  session_id: string;
+  agent_status: MobileAgentStatus;
+  needs_attention: boolean;
+  attention_kind: AttentionKind | null;
+}
+
+export interface WorkspaceActivity {
+  workspace_id: string;
+  agent_status: MobileAgentStatus;
+  attention_kind: AttentionKind | null;
+  sessions: SessionActivity[];
+}
+
+export type ActivityDisplay =
+  | "running"
+  | "background"
+  | "idle"
+  | "ask"
+  | "plan"
+  | "unknown";
