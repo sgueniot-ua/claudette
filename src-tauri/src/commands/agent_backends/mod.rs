@@ -378,7 +378,7 @@ pub async fn launch_codex_login(
             return;
         }
         let state = app.state::<AppState>();
-        let stale_pids: Vec<(String, u32)> = {
+        let stale_pids: Vec<(String, String, u32)> = {
             let mut agents = state.agents.write().await;
             let mut collected = Vec::new();
             for (chat_session_id, session_state) in agents.iter_mut() {
@@ -395,13 +395,22 @@ pub async fn launch_codex_login(
                     );
                     session_state.persistent_session = None;
                     session_state.active_pid = None;
-                    collected.push((chat_session_id.clone(), pid));
+                    collected.push((
+                        chat_session_id.clone(),
+                        session_state.workspace_id.clone(),
+                        pid,
+                    ));
                 }
             }
             collected
         };
         // Lock released — now kill the orphaned subprocesses.
-        for (chat_session_id, pid) in stale_pids {
+        for (chat_session_id, workspace_id, pid) in stale_pids {
+            crate::commands::chat::activity::emit_activity_changed(
+                &app,
+                &workspace_id,
+                &chat_session_id,
+            );
             if let Err(err) = claudette::agent::stop_agent_graceful(pid).await {
                 tracing::warn!(
                     target: "claudette::agent",

@@ -8,7 +8,7 @@ use crate::snapshot::attention_kind_from_pending;
 use crate::ws::{self, ServerState};
 
 /// Emitted when a session's activity changes without any stream event
-/// (answer submitted, approval, stop). Paired clients re-read
+/// (turn start, answer submitted, approval, stop, reset, archive). Paired clients re-read
 /// `get_workspaces_activity` on receipt.
 const ACTIVITY_CHANGED_EVENT: &str = "agent-activity-changed";
 

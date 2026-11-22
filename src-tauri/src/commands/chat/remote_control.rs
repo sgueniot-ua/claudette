@@ -1119,14 +1119,21 @@ async fn ensure_remote_control_monitor(
             emit_agent_stream(&app, &workspace_id, &chat_session_id, event);
 
             if is_done {
-                {
+                let cleared = {
                     let app_state = app.state::<AppState>();
                     let mut agents = app_state.agents.write().await;
                     if let Some(session) = agents.get_mut(&chat_session_id)
                         && session.active_pid == Some(pid)
                     {
                         session.active_pid = None;
+                        true
+                    } else {
+                        false
                     }
+                };
+                // The `Result` was forwarded before the clear; signal again (FR-008).
+                if cleared {
+                    super::activity::emit_activity_changed(&app, &workspace_id, &chat_session_id);
                 }
                 crate::tray::rebuild_tray(&app);
                 remote_turn_active = false;

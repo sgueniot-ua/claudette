@@ -356,7 +356,7 @@ async fn reset_persistent_session_after_auth_failure(
     spawned_pid: u32,
 ) {
     let app_state = app.state::<AppState>();
-    let (pid_to_stop, ended_sid) = {
+    let (pid_to_stop, ended_sid, workspace_id) = {
         let mut agents = app_state.agents.write().await;
         let Some(session) = agents.get_mut(chat_session_id) else {
             return;
@@ -391,8 +391,9 @@ async fn reset_persistent_session_after_auth_failure(
         session.running_background_tasks.clear();
         session.background_task_output_paths.clear();
         session.background_wake_active = false;
-        (pid, ended_sid)
+        (pid, ended_sid, session.workspace_id.clone())
     };
+    crate::commands::chat::activity::emit_activity_changed(app, &workspace_id, chat_session_id);
 
     if let Ok(db) = Database::open(db_path) {
         if let Some(sid) = ended_sid.as_deref() {
