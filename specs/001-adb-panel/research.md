@@ -73,14 +73,18 @@ le 2026-11-21 (rendu en liste virtualisée, volets côte à côte, mode Android 
 
 ## R7 — Règle d'association
 
-- **Decision**: fonction pure `resolve_device(manual, dedicated_avd, devices) -> Resolution` dans
+- **Decision**: fonction pure `resolve_device(manual, dedicated_avd, kept, devices) -> Resolution` dans
   le cœur : choix manuel présent → cet appareil (connecté ou non : `Offline` s'il manque, on ne
   retombe pas sur un autre, FR-008) ; sinon émulateur dédié démarré ; sinon l'unique appareil
   `device` (prêt : un appareil `unauthorized` ou `offline` ne compte pas) ; sinon `NeedsChoice`
   (≥ 2) ou `NoDevice` (0). Appareil retenu `unauthorized` → `Waiting` avec raison `Unauthorized`
   (FR-005). Le choix manuel identifie un émulateur par
   son nom d'AVD (son numéro de série change d'un démarrage à l'autre) et un appareil physique par
-  sa série.
+  sa série. `kept` (FR-007e, FR-007f) : l'appareil choisi automatiquement (émulateur dédié ou
+  unique appareil prêt) est retenu dans l'état de la tâche de session (clé AVD ou série, jamais
+  persistée) ; il passe avant « l'unique appareil prêt » : gardé s'il reste prêt quand un autre
+  appareil se connecte ou que son logcat s'arrête, attendu (`Unavailable`) quand il disparaît.
+  Seuls le choix manuel et un émulateur dédié prêt le devancent.
 
 ## R8 — Persistance
 

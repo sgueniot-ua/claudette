@@ -30,18 +30,19 @@ ignorée (traitée comme absente).
 
 ## Resolution
 
-Résultat de `resolve_device(manual: Option<&DeviceKey>, dedicated_avd: &str, devices: &[AdbDevice])`.
+Résultat de `resolve_device(manual: Option<&DeviceKey>, dedicated_avd: Option<&str>, kept: Option<&DeviceKey>, devices: &[AdbDevice])`. `kept` est l'appareil choisi automatiquement plus tôt par la session (émulateur dédié ou unique appareil prêt), tenu dans l'état de la tâche de session, jamais persisté.
 
 | Variante | Quand | Volet (FR-008) |
 |---|---|---|
 | `Device { serial, source }` | appareil retenu, `state == Device` | logs |
 | `Unavailable { key, source }` | appareil retenu mais absent ou pas prêt | « appareil déconnecté », attente |
-| `NeedsChoice` | aucun choix manuel, pas d'émulateur dédié, ≥ 2 appareils prêts | liste à choisir |
+| `NeedsChoice` | aucun choix manuel, pas d'émulateur dédié, pas d'appareil `kept`, ≥ 2 appareils prêts | liste à choisir |
 | `NoDevice` | aucun choix manuel, aucun appareil prêt | message + comment en associer un |
 
 `source` : `Manual` | `DedicatedEmulator` | `OnlyDevice` (affiché dans l'en-tête du volet).
 
-Ordre (FR-007) : `Manual` → `DedicatedEmulator` (seulement si démarré et prêt) → `OnlyDevice`.
+Ordre (FR-007) : `Manual` → `DedicatedEmulator` (seulement si démarré et prêt) → appareil `kept` → `OnlyDevice`.
+L'appareil `kept` est gardé tant qu'il est prêt, même si un autre appareil prêt se connecte (FR-007e), et attendu (`Unavailable`) quand il disparaît, quels que soient les autres appareils (FR-007f). Seuls le choix manuel et un émulateur dédié prêt le devancent.
 Un choix manuel ne retombe jamais sur un autre appareil (FR-007c) : absent → `Unavailable`.
 
 ## LogcatLine

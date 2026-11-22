@@ -26,6 +26,8 @@ Claudette picks the device in this order:
 3. **The only ready device**, when exactly one is connected.
 4. Otherwise, you choose from the picker.
 
+Once Claudette has chosen a device for you (step 2 or 3), it keeps it: another ready device connecting does not change what the panel shows. If that device disconnects, Claudette waits for it to come back, even when other devices are still connected, and resumes logging when it returns. During the wait you can pick another device yourself, and a dedicated emulator that starts takes over. This wait is not remembered across restarts.
+
 If a manually chosen device disconnects, Claudette waits for it to come back instead of falling back to another device.
 
 ## States and Messages
@@ -34,8 +36,8 @@ If a manually chosen device disconnects, Claudette waits for it to come back ins
 |-------|---------------|
 | adb not found | `adb` was not located. Claudette searches `sdk.dir` in `local.properties`, your `PATH`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, and the default SDK location. |
 | No device | No device or emulator is connected. |
-| Several devices | More than one device is ready and none is chosen; pick one. |
-| Disconnected | The chosen device went away. Logging resumes automatically after it reconnects. |
+| Several devices | More than one device is ready, none is chosen and none was chosen for you earlier; pick one. |
+| Disconnected | The chosen device (by you or by Claudette) went away. Logging resumes automatically after it reconnects. |
 | Allow USB debugging on the device | The device is connected but has not authorized this computer. |
 
 ## Searching

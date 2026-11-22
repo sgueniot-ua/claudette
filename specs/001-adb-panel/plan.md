@@ -147,6 +147,7 @@ CLAUDE.md                        # domaine `adb` dans la liste des commandes Tau
 | FR-007 / FR-007a | cargo : `resolve_device` (4 étapes), (dé)sérialisation `DeviceKey`, clé effacée sur `Deleted` et gardée sur `Archived` |
 | FR-007c | cargo : choix manuel absent → `Unavailable`, jamais un autre appareil |
 | FR-007d | cargo : la résolution lit la branche extraite (`git rev-parse --abbrev-ref HEAD` du worktree) à chaque appel ; test avec un dépôt `tempfile` dont on change la branche |
+| FR-007e / FR-007f | cargo : `resolve_device` avec `kept` (gardé, attendu, priorités), session : reprise après fin de logcat, attente sans bascule, reprise au retour |
 | FR-007b | quickstart 15 + vérification en revue : aucun appel au module `adb` dans les chemins de création de workspace |
 | FR-008 | cargo : `locate` sans adb → `AdbMissing` ; vitest : messages par état |
 | FR-009 | cargo : transitions `Streaming → Waiting → Streaming`, reprise `-T <ts>` |
