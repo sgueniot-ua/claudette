@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod attachments;
 pub mod checkpoint;
 pub mod conclusions;

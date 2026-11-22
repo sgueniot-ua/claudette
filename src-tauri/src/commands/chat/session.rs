@@ -15,13 +15,10 @@ fn hydrate_session(
     agents: &std::collections::HashMap<String, AgentSessionState>,
 ) -> ChatSession {
     if let Some(agent) = agents.get(&session.id) {
-        session.agent_status = if agent.active_pid.is_some() {
-            claudette::model::AgentStatus::Running
-        } else if !agent.running_background_tasks.is_empty() {
-            claudette::model::AgentStatus::IdleWithBackground
-        } else {
-            claudette::model::AgentStatus::Idle
-        };
+        session.agent_status = claudette::activity::session_status(
+            agent.active_pid.is_some(),
+            !agent.running_background_tasks.is_empty(),
+        );
         session.needs_attention = agent.needs_attention;
         session.attention_kind = agent.attention_kind.map(|k| match k {
             crate::state::AttentionKind::Ask => claudette::model::AttentionKind::Ask,

@@ -26,8 +26,7 @@ use std::sync::Arc;
 use claudette::base64_encode;
 use claudette::db::Database;
 use claudette::model::{
-    AgentStatus, Attachment, AttachmentOrigin, ChatMessage, ChatRole, ChatSession,
-    CompletedTurnData,
+    Attachment, AttachmentOrigin, ChatMessage, ChatRole, ChatSession, CompletedTurnData,
 };
 use claudette::plugin_runtime::host_api::WorkspaceInfo;
 use claudette::rpc::{Capabilities, RpcRequest, RpcResponse};
@@ -77,6 +76,7 @@ const METHODS: &[&str] = &[
     "delete_workspaces_bulk",
     "send_chat_message",
     "steer_queued_chat_message",
+    "get_workspaces_activity",
     "stop_agent",
     "reset_agent_session",
     "clear_attention",
@@ -434,6 +434,7 @@ pub(crate) async fn dispatch_method(
         "delete_workspaces_bulk" => handle_delete_workspaces_bulk(app, params).await,
         "send_chat_message" => handle_send_chat_message(app, params).await,
         "steer_queued_chat_message" => handle_steer_queued_chat_message(app, params).await,
+        "get_workspaces_activity" => handle_get_workspaces_activity(app).await,
         "stop_agent" => handle_stop_agent(app, params).await,
         "reset_agent_session" => handle_reset_agent_session(app, params).await,
         "clear_attention" => handle_clear_attention(app, params).await,
@@ -548,13 +549,10 @@ fn hydrate_session(
     agents: &std::collections::HashMap<String, crate::state::AgentSessionState>,
 ) -> ChatSession {
     if let Some(agent) = agents.get(&session.id) {
-        session.agent_status = if agent.active_pid.is_some() {
-            AgentStatus::Running
-        } else if !agent.running_background_tasks.is_empty() {
-            AgentStatus::IdleWithBackground
-        } else {
-            AgentStatus::Idle
-        };
+        session.agent_status = claudette::activity::session_status(
+            agent.active_pid.is_some(),
+            !agent.running_background_tasks.is_empty(),
+        );
         session.needs_attention = agent.needs_attention;
         session.attention_kind = agent.attention_kind.map(|k| match k {
             crate::state::AttentionKind::Ask => claudette::model::AttentionKind::Ask,
@@ -752,6 +750,16 @@ async fn handle_list_chat_sessions(
         .map(|s| hydrate_session(s, &agents))
         .collect();
     serde_json::to_value(hydrated).map_err(|e| e.to_string())
+}
+
+/// `get_workspaces_activity` IPC method — per-workspace and per-session
+/// activity for every active workspace, from the DB and live agent state.
+async fn handle_get_workspaces_activity(app: &AppHandle) -> Result<serde_json::Value, String> {
+    let state = app_state(app)?;
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    let agents = state.agents.read().await;
+    let activity = crate::commands::chat::activity::build_workspaces_activity(&db, &agents)?;
+    serde_json::to_value(activity).map_err(|e| e.to_string())
 }
 
 async fn handle_get_chat_session(
@@ -1531,7 +1539,7 @@ fn build_workspace_info(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use claudette::model::{Repository, Workspace, WorkspaceStatus};
+    use claudette::model::{AgentStatus, Repository, Workspace, WorkspaceStatus};
     use serde_json::json;
     use std::collections::HashMap;
 
@@ -1669,6 +1677,7 @@ mod tests {
             "submit_agent_approval",
             "submit_plan_approval",
             "steer_queued_chat_message",
+            "get_workspaces_activity",
         ] {
             assert!(METHODS.contains(&method), "{method} missing from METHODS");
         }
