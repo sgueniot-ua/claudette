@@ -9,7 +9,16 @@ A **project chat** is a chat with a Claude Code agent that works directly in you
 
 In the sidebar (grouped by project), click the pinned **Project chats** row, always the first row under each local project. It shows the branch currently checked out in the project folder, plus the agent status and attention indicators of its chats. Remote projects have no such row.
 
-The first click creates the project's chat workspace and its first chat; later clicks simply reopen it (use the new-tab button or `⌘/Ctrl + T` for more chats). The row is not draggable and cannot be renamed, archived or deleted.
+The row is always there, even before the first chat. Opening it selects the repository's existing project chats, or creates the first one if there are none; use the new-tab button or `⌘/Ctrl + T` for more chats. The row is not draggable and has no context menu: it cannot be renamed, archived or deleted.
+
+The same entry point is available from:
+
+- **Group by status**: a dedicated **Project chats** section at the top of the sidebar, with one row per local project. Each row's sub-label reads `<repo> · <branch>`.
+- **Jump shortcuts**: in group-by-status mode, `⌘/Ctrl + 1` – `⌘/Ctrl + 9` count the Project chats rows first, then the workspaces. In group-by-repo mode they still jump to the Nth project.
+- **Quick search** (`⌘/Ctrl + K`): lists **Project chats — `<repo>`** for each local project.
+- **System tray**: each local project is listed with a **Project chats** item first.
+
+The project-scoped view no longer has a separate Chats section.
 
 The chat header shows a **Project** badge whose tooltip, like the empty chat screen, reminds you that all project chats of the repository work in the project folder with **no isolation**.
 
