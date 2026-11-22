@@ -72,6 +72,22 @@ Each agent session has a lifecycle:
 
 Press **Escape** to stop a running agent at any time.
 
+## Status Indicators
+
+Chat tabs, sidebar workspace rows, and the Dashboard show the activity of each agent with one of these labels:
+
+- **Running** — the agent is processing a prompt (spinner).
+- **Background tasks running** — the main agent has finished, but background tasks it started are still running. Background tasks are subagents, Workflows, and shell commands started in the background, such as a dev server. This state shows a slower, dimmed ring.
+- **Idle** — no agent work is in progress.
+
+Attention badges take precedence over these states: **Question requires attention** (the agent asked a question) and **Plan approval needed** (an `ExitPlanMode` plan is waiting for you).
+
+In the sidebar, **Background tasks running** takes precedence over the **Completed** (unread) badge. The **Completed** badge comes back when the last background task ends. The desktop chat screen itself does not change.
+
+The [headless `claudette-server`](/claudette/features/mobile-app/) reports only **Running**, **Idle**, and the attention states. It never reports **Background tasks running**, because it cannot observe background tasks.
+
+The same states are shown on the [mobile app](/claudette/features/mobile-app/#activity-indicators).
+
 When an agent mentions a workspace file such as `README.md` or `src/main.rs` in the chat transcript, click it to open that file in Claudette's editor tab. Absolute paths in inline code, such as `/tmp/report.csv`, can also be clicked; Claudette opens them with your system's default app when they are outside the current workspace. Web links in the transcript still open in your default browser.
 
 ## Workspace Context Menu

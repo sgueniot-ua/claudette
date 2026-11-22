@@ -37,6 +37,23 @@ If you're running `claudette-server` on a Linux VM or Mac mini without a GUI, th
 
 See [Remote Workspaces — Headless Server](/claudette/features/remote-workspaces/#headless-server-standalone) for the full headless install + run flow.
 
+## Activity indicators
+
+The workspace list, the chat list, and the chat screen header show the activity of each agent, using the same labels as the desktop:
+
+- **Running** — the agent is processing a prompt.
+- **Background tasks running** — the main agent has finished, but background tasks are still running. Background tasks are subagents, Workflows, and shell commands started in the background, such as a dev server.
+- **Idle** — no agent work is in progress.
+- **Question requires attention** — the agent is waiting for an answer to an `AskUserQuestion` prompt.
+- **Plan approval needed** — an `ExitPlanMode` plan is waiting for your approval.
+- **Status unknown — disconnected** — the link to the desktop or server is lost. This replaces every other state until the connection comes back.
+
+The indicators update live. The app re-reads them when an event arrives, when a screen opens, and after a reconnect.
+
+A paired desktop or server running an older version does not provide this state, so no indicator is shown for it.
+
+Headless `claudette-server` reports **Running**, **Idle**, and the attention states only. It never reports **Background tasks running**. See [Parallel Agents — Status Indicators](/claudette/features/parallel-agents/#status-indicators).
+
 ## Security model
 
 - TLS 1.2+ with a self-signed certificate; the iOS app pins the certificate fingerprint on first pair (TOFU — Trust On First Use). If the fingerprint changes on a later connection (server reinstalled, MITM, IP reuse), the app refuses to connect and displays the mismatch.
