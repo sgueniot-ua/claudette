@@ -47,6 +47,8 @@ cd src/ui && bun run test                        # Run frontend tests (vitest)
 cd src/ui && bun run test:watch                  # Run tests in watch mode
 cd src/ui && bun run lint                        # ESLint check
 cd src/ui && bun run lint:css                    # CSS design-token enforcement (also runs in CI)
+cd src/ui-mobile && bun install && bunx tsc -b     # Mobile webview: install deps + type check (CI)
+cd src/ui-mobile && bun run test                 # Mobile webview tests (vitest, CI)
 
 # Full app
 cargo tauri dev                                  # Dev mode with hot-reload
@@ -259,7 +261,7 @@ Do not trigger CoreAudio or Speech.framework permission prompts at app launch �
 
 ## CI/CD pipeline
 
-- **PR CI** (`.github/workflows/ci.yml`): Rust fmt + clippy + tests (coverage → Codecov), desktop Tauri compile check, TypeScript type-check + `lint:css` + build + vitest. (ESLint via `bun run lint` is available locally but not run in CI.)
+- **PR CI** (`.github/workflows/ci.yml`): Rust fmt + clippy + tests (coverage → Codecov), desktop Tauri compile check, TypeScript type-check + `lint:css` + build + vitest; mobile webview (`src/ui-mobile`) type-check + vitest. (ESLint via `bun run lint` is available locally but not run in CI.)
 - **Nightly** (`.github/workflows/nightly.yml`): Every push to `main` (excluding docs/README). Computes version as `<next-minor>-dev.<commit-count>.g<short-sha>`, stamps all five Cargo.toml files (workspace root + `src-tauri` + `src-server` + `src-cli` + `src-mobile`), builds macOS (arm64 + x86_64), Linux (x86_64 + aarch64), Windows (x86_64 + arm64), promotes atomically from `nightly-staging` to `nightly` tag.
 - **Release** (`.github/workflows/release-please.yml`): Triggered by Conventional Commits via release-please. Auto-generates CHANGELOG, bumps workspace `Cargo.toml` (source of truth) and the workspace-member crates (`src-tauri`, `src-server`, `src-cli`, `src-mobile`), builds all platforms, uploads assets, posts to Discord (`DISCORD_WEBHOOK_URL` secret).
 - Windows builds in CI skip app bundling (bare `.exe`, zipped). macOS builds produce `.dmg`; Linux produces `.AppImage` + `.deb`.
