@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workspaceIndicator } from "./workspaceIndicator";
+import { isWorkspaceRowEmphasized, workspaceIndicator } from "./workspaceIndicator";
 import type { ChatSession } from "../../types";
 
 const session = (over: Partial<ChatSession> = {}): ChatSession => ({
@@ -76,5 +76,34 @@ describe("workspaceIndicator", () => {
 
   it("idle_falls_through", () => {
     expect(workspaceIndicator(base)).toBe("other");
+  });
+});
+
+describe("isWorkspaceRowEmphasized", () => {
+  // FR-011
+  it("background only is not bold", () => {
+    expect(isWorkspaceRowEmphasized({ ...base, agentStatus: "IdleWithBackground" })).toBe(false);
+  });
+
+  // FR-011
+  it("background plus unread stays bold", () => {
+    expect(
+      isWorkspaceRowEmphasized({ ...base, agentStatus: "IdleWithBackground", unread: true }),
+    ).toBe(true);
+  });
+
+  // FR-011
+  it("ask or plan attention is bold", () => {
+    expect(
+      isWorkspaceRowEmphasized({
+        ...base,
+        sessions: [session({ needs_attention: true, attention_kind: "Ask" })],
+      }),
+    ).toBe(true);
+  });
+
+  // FR-011
+  it("unread while running is not bold", () => {
+    expect(isWorkspaceRowEmphasized({ ...base, agentStatus: "Running", unread: true })).toBe(false);
   });
 });

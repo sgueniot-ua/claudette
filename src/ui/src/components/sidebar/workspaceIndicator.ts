@@ -1,6 +1,6 @@
 import type { ChatSession } from "../../types";
 import type { AgentStatus } from "../../types/workspace";
-import { isBackgroundRunning } from "../../utils/agentStatus";
+import { isAgentBusy, isBackgroundRunning } from "../../utils/agentStatus";
 
 export type WorkspaceIndicator =
   | "ask"
@@ -34,4 +34,21 @@ export function workspaceIndicator(input: {
   if (agentStatus === "Running") return "running";
   if (agentStatus === "Compacting") return "compacting";
   return "other";
+}
+
+/**
+ * Whether the row's name is bold (`wsUnread`). Unchanged from before the
+ * background state existed: attention, or an unread completion while the
+ * agent is not busy. Background tasks alone do not emphasize the row.
+ */
+export function isWorkspaceRowEmphasized(input: {
+  sessions: readonly ChatSession[];
+  agentStatus: AgentStatus;
+  unread: boolean;
+}): boolean {
+  const { sessions, agentStatus, unread } = input;
+  return (
+    sessions.some((s) => s.needs_attention) ||
+    (unread && !isAgentBusy(agentStatus))
+  );
 }

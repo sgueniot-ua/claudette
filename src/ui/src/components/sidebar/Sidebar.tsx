@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { writeText as clipboardWriteText } from "@tauri-apps/plugin-clipboard-manager";
 import { useAppStore } from "../../stores/useAppStore";
 import { isAgentBusy } from "../../utils/agentStatus";
-import { workspaceIndicator } from "./workspaceIndicator";
+import { isWorkspaceRowEmphasized, workspaceIndicator } from "./workspaceIndicator";
 import {
   archiveWorkspace,
   deleteAppSetting,
@@ -607,6 +607,11 @@ export const Sidebar = memo(function Sidebar() {
       unread: unreadCompletions.has(ws.id),
       envPreparing: envState?.status === "preparing" && envState?.started_at != null,
     });
+    const emphasized = isWorkspaceRowEmphasized({
+      sessions: wsSessions,
+      agentStatus: ws.agent_status,
+      unread: unreadCompletions.has(ws.id),
+    });
     const badge: "ask" | "plan" | "background" | "done" | null =
       indicator === "ask" || indicator === "plan" || indicator === "background" || indicator === "done"
         ? indicator
@@ -619,7 +624,7 @@ export const Sidebar = memo(function Sidebar() {
         data-drop-after={dropAfter || undefined}
         data-tooltip={jumpTooltip}
         data-tooltip-placement="bottom"
-        className={`${styles.wsItem} ${selectedWorkspaceId === ws.id ? styles.wsSelected : ""} ${badge ? styles.wsUnread : ""} ${isDragging ? styles.wsDragging : ""}`}
+        className={`${styles.wsItem} ${selectedWorkspaceId === ws.id ? styles.wsSelected : ""} ${emphasized ? styles.wsUnread : ""} ${isDragging ? styles.wsDragging : ""}`}
         onClick={() => {
           if (dragEnabled && workspaceDrag.justEnded()) return;
           selectWorkspace(ws.id);
