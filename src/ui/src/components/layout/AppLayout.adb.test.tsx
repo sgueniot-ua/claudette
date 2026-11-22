@@ -61,6 +61,7 @@ vi.mock("../../hooks/useQueuedMessageAutoDispatch", () => ({
 }));
 
 import { useAppStore } from "../../stores/useAppStore";
+import { adbLogBuffer } from "../adb/adbLogBuffer";
 import type { Workspace } from "../../types/workspace";
 import { AppLayout } from "./AppLayout";
 
@@ -267,5 +268,46 @@ describe("AppLayout ADB panel", () => {
     await setState({ selectedWorkspaceId: "ws-a" });
     await setState({ selectedWorkspaceId: "ws-b" });
     expect(adb.adbOpenSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("reopens a stopped session when the panel is displayed again and drops its old lines", async () => {
+    // FR-004a
+    await render();
+    await setState({ adbPanelVisible: true });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(1);
+    adbLogBuffer.append("ws-a", [
+      { ts: null, pid: 1, tid: 1, level: "i", tag: "T", message: "old" },
+    ]);
+    await setState({ adbPanelVisible: false });
+    await setState({ adbSessions: { "ws-a": { kind: "stopped" } } });
+    await setState({ adbPanelVisible: true });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(2);
+    expect(adbLogBuffer.size("ws-a")).toBe(0);
+  });
+
+  it("reopens a session whose adb was missing when the panel is displayed again", async () => {
+    // FR-004a
+    await render();
+    await setState({ adbPanelVisible: true });
+    await setState({ adbSessions: { "ws-a": { kind: "adb_missing" } } });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(1);
+    await setState({ adbPanelVisible: false });
+    await setState({ adbPanelVisible: true });
+    expect(adb.adbOpenSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not overwrite a status event received before the open result", async () => {
+    // FR-004a
+    let resolveOpen: (status: { kind: "no_device" }) => void = () => {};
+    adb.adbOpenSession.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOpen = resolve;
+      }),
+    );
+    await render();
+    await setState({ adbPanelVisible: true });
+    await setState({ adbSessions: { "ws-a": { kind: "needs_choice" } } });
+    await act(async () => resolveOpen({ kind: "no_device" }));
+    expect(useAppStore.getState().adbSessions["ws-a"]).toEqual({ kind: "needs_choice" });
   });
 });

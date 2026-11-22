@@ -89,6 +89,20 @@ describe("useAdbEvents", () => {
     expect(useAppStore.getState().adbDevices).toHaveLength(1);
   });
 
+  it("releases the log buffer of an archived or deleted workspace", async () => {
+    // FR-011
+    const ws = (id: string, status: "Active" | "Archived") => ({ id, status }) as never;
+    adbLogBuffer.append("w1", [line("a")]);
+    adbLogBuffer.append("w2", [line("b")]);
+    act(() => useAppStore.setState({ workspaces: [ws("w1", "Active"), ws("w2", "Active")] }));
+    act(() => useAppStore.setState({ workspaces: [ws("w1", "Archived"), ws("w2", "Active")] }));
+    expect(adbLogBuffer.size("w1")).toBe(0);
+    expect(adbLogBuffer.size("w2")).toBe(1);
+    act(() => useAppStore.setState({ workspaces: [ws("w1", "Archived")] }));
+    expect(adbLogBuffer.size("w2")).toBe(0);
+    act(() => useAppStore.setState({ workspaces: [] }));
+  });
+
   it("unlistens on unmount", async () => {
     // FR-008
     await act(async () => root.unmount());

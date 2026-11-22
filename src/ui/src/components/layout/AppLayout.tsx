@@ -12,6 +12,7 @@ import { AdbPanel } from "../adb/AdbPanel";
 import { useAdbEvents } from "../adb/useAdbEvents";
 import { isAdbAvailable } from "../adb/adbVisibility";
 import { adbOpenSession } from "../../services/adb";
+import { adbLogBuffer } from "../adb/adbLogBuffer";
 import { RightSidebar } from "../right-sidebar/RightSidebar";
 import { FuzzyFinder } from "../fuzzy-finder/FuzzyFinder";
 import { CommandPalette } from "../command-palette/CommandPalette";
@@ -49,6 +50,7 @@ export function AppLayout() {
   const adbPanelWidth = useAppStore((s) => s.adbPanelWidth);
   const setAdbPanelWidth = useAppStore((s) => s.setAdbPanelWidth);
   const setAdbSessionStatus = useAppStore((s) => s.setAdbSessionStatus);
+  const bumpAdbLogVersion = useAppStore((s) => s.bumpAdbLogVersion);
   const loadAndroidMode = useAppStore((s) => s.loadAndroidMode);
   const selectedWorkspace = useAppStore((s) =>
     s.workspaces.find((w) => w.id === s.selectedWorkspaceId),
@@ -135,19 +137,34 @@ export function AppLayout() {
   // until the workspace is archived or deleted, so closing never ends it.
   const [adbMounted, setAdbMounted] = useState(false);
   const adbOpenedRef = useRef(new Set<string>());
+  // A session that is stopped (mode switched off, workspace archived) or whose
+  // adb was missing is not open: displaying the panel again reopens it.
   useEffect(() => {
     if (!adbShown || !selectedWorkspaceId) return;
     setAdbMounted(true);
-    if (adbOpenedRef.current.has(selectedWorkspaceId)) return;
     const workspaceId = selectedWorkspaceId;
+    const before = useAppStore.getState().adbSessions[workspaceId];
+    const dead = before?.kind === "stopped" || before?.kind === "adb_missing";
+    if (adbOpenedRef.current.has(workspaceId) && !dead) return;
     adbOpenedRef.current.add(workspaceId);
+    if (dead) {
+      // The new session starts with a fresh tail: drop the lines of the old one.
+      adbLogBuffer.clear(workspaceId);
+      bumpAdbLogVersion(workspaceId);
+    }
     adbOpenSession(workspaceId)
-      .then((status) => setAdbSessionStatus(workspaceId, status))
+      .then((status) => {
+        // The result is only used when no status event arrived meanwhile
+        // (joining a running session sends none); a newer event wins.
+        if (useAppStore.getState().adbSessions[workspaceId] === before) {
+          setAdbSessionStatus(workspaceId, status);
+        }
+      })
       .catch((e) => {
         adbOpenedRef.current.delete(workspaceId);
         console.error("Failed to open the ADB session:", e);
       });
-  }, [adbShown, selectedWorkspaceId, setAdbSessionStatus]);
+  }, [adbShown, selectedWorkspaceId, setAdbSessionStatus, bumpAdbLogVersion]);
 
   // Lazy-mount SettingsPage: defer initial mount until the user first opens
   // settings, then keep it mounted so subsequent toggles are instant.

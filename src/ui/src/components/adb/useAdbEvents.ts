@@ -54,8 +54,22 @@ export function useAdbEvents(): void {
       ),
     );
 
+    // Release the log buffer of a workspace that is archived or deleted.
+    const unsubscribeWorkspaces = useAppStore.subscribe((state, prev) => {
+      if (state.workspaces === prev.workspaces) return;
+      const active = new Set(
+        state.workspaces.filter((w) => w.status === "Active").map((w) => w.id),
+      );
+      for (const ws of prev.workspaces) {
+        if (ws.status === "Active" && !active.has(ws.id)) {
+          adbLogBuffer.clear(ws.id);
+        }
+      }
+    });
+
     return () => {
       disposed = true;
+      unsubscribeWorkspaces();
       unlisteners.forEach((unlisten) => unlisten());
       pending.forEach((frame) => cancelAnimationFrame(frame));
     };

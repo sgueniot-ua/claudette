@@ -37,7 +37,6 @@ export function AdbPanel() {
   const devices = useAppStore((s) => s.adbDevices);
   const version = useAppStore((s) => (workspaceId ? (s.adbLogVersion[workspaceId] ?? 0) : 0));
   const keybindings = useAppStore((s) => s.keybindings);
-  const setAdbSessionStatus = useAppStore((s) => s.setAdbSessionStatus);
 
   const [manualKey, setManualKey] = useState<DeviceKey | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -98,12 +97,12 @@ export function AdbPanel() {
     const previous = manualKey;
     choiceMadeRef.current = true;
     setManualKey(key);
-    adbSetWorkspaceDevice(workspaceId, key)
-      .then((next) => setAdbSessionStatus(workspaceId, next))
-      .catch((e) => {
-        console.error("Failed to set the ADB device:", e);
-        setManualKey(previous);
-      });
+    // The returned status predates the change: the resulting status arrives
+    // through the adb-session-status event.
+    adbSetWorkspaceDevice(workspaceId, key).catch((e) => {
+      console.error("Failed to set the ADB device:", e);
+      setManualKey(previous);
+    });
   };
 
   const openSearch = () => {
