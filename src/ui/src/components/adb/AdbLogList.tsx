@@ -96,6 +96,27 @@ export function AdbLogList({ workspaceId, version, highlight, reveal = null, buf
     }
   }, [version, workspaceId, generation, first, count, scrollToOffset]);
 
+  // The viewport changes without any new line (panel resized, shown again after
+  // being hidden): measure it again, and stay at the bottom while following.
+  const countRef = useRef(count);
+  countRef.current = count;
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setViewport(el.clientHeight);
+      if (followingRef.current) {
+        scrollToOffset(el, countRef.current * ADB_ROW_HEIGHT);
+      } else {
+        setScrollTop(el.scrollTop);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollToOffset]);
+
   // Only a change of the target match scrolls; buffer updates must not.
   const revealRef = useRef({ first, count });
   revealRef.current = { first, count };

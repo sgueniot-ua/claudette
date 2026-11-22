@@ -76,6 +76,32 @@ afterEach(() => {
 
 describe("AdbLogList", () => {
   // FR-006
+  it("measures the viewport again when its size changes", async () => {
+    let notify: () => void = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          notify = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const buffer = createAdbLogBuffer(1000);
+    buffer.append("w", lines(0, 100));
+    await show(buffer, 1);
+    await scrollTo(0);
+    const before = rowCount();
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(VIEWPORT * 3);
+    await act(async () => {
+      notify();
+    });
+    expect(rowCount()).toBeGreaterThan(before);
+    vi.unstubAllGlobals();
+  });
+
+  // FR-006
   it("renders only a window of a 50 000-line buffer", async () => {
     const buffer = createAdbLogBuffer(60_000);
     buffer.append("w", lines(0, 50_000));
