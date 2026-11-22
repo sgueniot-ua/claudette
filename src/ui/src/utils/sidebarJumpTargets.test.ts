@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ScmSummary } from "../types/plugin";
+import type { Repository } from "../types/repository";
 import type { Workspace } from "../types/workspace";
 import {
   bucketForWorkspace,
+  computeStatusJumpTargets,
   computeStatusVisibleWorkspaces,
   filterSidebarWorkspaces,
   hasNoSidebarWorkspaces,
@@ -173,5 +175,31 @@ describe("hasNoSidebarWorkspaces", () => {
     expect(
       hasNoSidebarWorkspaces([workspace("r", { remote_connection_id: "conn-1" })]),
     ).toBe(true);
+  });
+});
+
+describe("computeStatusJumpTargets", () => {
+  const repo = (id: string, remote: string | null = null) =>
+    ({ id, remote_connection_id: remote }) as unknown as Repository;
+
+  it("project chat targets come first in status mode", () => { // FR-013
+    const out = computeStatusJumpTargets(
+      [repo("r1"), repo("remote", "conn"), repo("r2")],
+      [workspace("w1")],
+    );
+    expect(out).toEqual([
+      { kind: "projectChats", repoId: "r1" },
+      { kind: "projectChats", repoId: "r2" },
+      { kind: "workspace", id: "w1" },
+    ]);
+  });
+
+  it("workspace jump numbers are shifted by project targets", () => { // FR-013
+    const out = computeStatusJumpTargets(
+      [repo("r1"), repo("r2")],
+      [workspace("w1"), workspace("w2")],
+    );
+    expect(out.findIndex((t) => t.kind === "workspace" && t.id === "w1")).toBe(2);
+    expect(out.findIndex((t) => t.kind === "workspace" && t.id === "w2")).toBe(3);
   });
 });

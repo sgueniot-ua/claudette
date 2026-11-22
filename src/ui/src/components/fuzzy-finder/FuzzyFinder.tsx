@@ -1,5 +1,8 @@
 import { useState, useMemo } from "react";
 import { useAppStore } from "../../stores/useAppStore";
+import { useTranslation } from "react-i18next";
+import { openProjectChatTarget } from "../../hooks/useOpenProjectChat";
+import type { Repository } from "../../types/repository";
 import type { Workspace } from "../../types/workspace";
 import styles from "./FuzzyFinder.module.css";
 
@@ -16,7 +19,26 @@ export function filterFuzzyWorkspaces(
   );
 }
 
+/** One "Project chats" entry per local repo, matched on label + repo name. */
+export function filterFuzzyProjectChats(
+  repositories: readonly Repository[],
+  query: string,
+  label = "Project chats",
+): Repository[] {
+  const q = query.toLowerCase();
+  return repositories.filter(
+    (r) =>
+      !r.remote_connection_id &&
+      (label.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)),
+  );
+}
+
+type FuzzyResult =
+  | { key: string; kind: "workspace"; ws: Workspace }
+  | { key: string; kind: "project"; repo: Repository };
+
 export function FuzzyFinder() {
+  const { t } = useTranslation("sidebar");
   const workspaces = useAppStore((s) => s.workspaces);
   const repositories = useAppStore((s) => s.repositories);
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
@@ -24,13 +46,25 @@ export function FuzzyFinder() {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const results = useMemo(
-    () => filterFuzzyWorkspaces(workspaces, query),
-    [workspaces, query],
+  const projectLabel = t("project_chats_row");
+  const results = useMemo<FuzzyResult[]>(
+    () => [
+      ...filterFuzzyProjectChats(repositories, query, projectLabel).map(
+        (repo): FuzzyResult => ({ key: `project:${repo.id}`, kind: "project", repo }),
+      ),
+      ...filterFuzzyWorkspaces(workspaces, query).map(
+        (ws): FuzzyResult => ({ key: ws.id, kind: "workspace", ws }),
+      ),
+    ],
+    [workspaces, repositories, query, projectLabel],
   );
 
-  const handleSelect = (wsId: string) => {
-    selectWorkspace(wsId);
+  const handleSelect = (r: FuzzyResult) => {
+    if (r.kind === "project") {
+      void openProjectChatTarget(r.repo.id);
+    } else {
+      selectWorkspace(r.ws.id);
+    }
     toggleFuzzyFinder();
   };
 
@@ -42,7 +76,7 @@ export function FuzzyFinder() {
       e.preventDefault();
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && results[selectedIndex]) {
-      handleSelect(results[selectedIndex].id);
+      handleSelect(results[selectedIndex]);
     } else if (e.key === "Escape") {
       // Stop the native event so the global dismiss-or-stop handler in
       // useKeyboardShortcuts doesn't also fire with a stale `fuzzyFinderOpen`
@@ -71,20 +105,23 @@ export function FuzzyFinder() {
           {results.length === 0 ? (
             <div className={styles.empty}>No matching workspaces</div>
           ) : (
-            results.map((ws, i) => {
-              const repo = repositories.find(
-                (r) => r.id === ws.repository_id
-              );
+            results.map((r, i) => {
+              const repo =
+                r.kind === "project"
+                  ? r.repo
+                  : repositories.find((x) => x.id === r.ws.repository_id);
               return (
                 <div
-                  key={ws.id}
+                  key={r.key}
                   className={`${styles.result} ${i === selectedIndex ? styles.resultSelected : ""}`}
-                  onClick={() => handleSelect(ws.id)}
+                  onClick={() => handleSelect(r)}
                   onMouseEnter={() => setSelectedIndex(i)}
                 >
-                  <div className={styles.resultName}>{ws.name}</div>
+                  <div className={styles.resultName}>
+                    {r.kind === "project" ? `${projectLabel} — ${r.repo.name}` : r.ws.name}
+                  </div>
                   <div className={styles.resultMeta}>
-                    {repo?.name} · {ws.branch_name}
+                    {r.kind === "project" ? r.repo.name : `${repo?.name} · ${r.ws.branch_name}`}
                   </div>
                 </div>
               );

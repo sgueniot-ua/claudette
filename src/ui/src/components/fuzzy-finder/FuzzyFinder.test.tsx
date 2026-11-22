@@ -11,7 +11,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FuzzyFinder, filterFuzzyWorkspaces } from "./FuzzyFinder";
+import { FuzzyFinder, filterFuzzyWorkspaces, filterFuzzyProjectChats } from "./FuzzyFinder";
+import type { Repository } from "../../types/repository";
 import { useAppStore } from "../../stores/useAppStore";
 import type { Workspace } from "../../types/workspace";
 
@@ -112,5 +113,17 @@ describe("filterFuzzyWorkspaces", () => {
       "BET",
     );
     expect(out.map((w) => w.id)).toEqual(["beta"]);
+  });
+});
+
+describe("filterFuzzyProjectChats", () => {
+  const repo = (id: string, name: string, remote: string | null = null) =>
+    ({ id, name, remote_connection_id: remote }) as unknown as Repository;
+
+  it("fuzzy finder lists one project chats entry per local repo", () => { // FR-013
+    const repos = [repo("r1", "alpha"), repo("r2", "beta"), repo("r3", "gamma", "conn")];
+    expect(filterFuzzyProjectChats(repos, "").map((r) => r.id)).toEqual(["r1", "r2"]);
+    expect(filterFuzzyProjectChats(repos, "BET").map((r) => r.id)).toEqual(["r2"]);
+    expect(filterFuzzyProjectChats(repos, "chats").map((r) => r.id)).toEqual(["r1", "r2"]);
   });
 });

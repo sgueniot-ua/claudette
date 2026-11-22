@@ -1,4 +1,5 @@
 import type { ScmSummary } from "../types/plugin";
+import type { Repository } from "../types/repository";
 import type { Workspace } from "../types/workspace";
 
 export interface SidebarWorkspaceFilter {
@@ -110,4 +111,25 @@ export function computeStatusVisibleWorkspaces(
     out.push(...ws);
   }
   return out;
+}
+
+export type SidebarTarget =
+  | { kind: "workspace"; id: string }
+  | { kind: "projectChats"; repoId: string };
+
+/**
+ * Status-mode `Cmd+N` targets, top to bottom: one project chats row per local
+ * repo (callers pre-apply the repo filter), then the visible workspaces. The
+ * sidebar badges and the keyboard handler both read this list.
+ */
+export function computeStatusJumpTargets(
+  repos: readonly Repository[],
+  visibleWorkspaces: readonly Workspace[],
+): SidebarTarget[] {
+  return [
+    ...repos
+      .filter((r) => !r.remote_connection_id)
+      .map((r): SidebarTarget => ({ kind: "projectChats", repoId: r.id })),
+    ...visibleWorkspaces.map((w): SidebarTarget => ({ kind: "workspace", id: w.id })),
+  ];
 }

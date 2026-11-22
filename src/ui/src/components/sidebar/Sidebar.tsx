@@ -24,6 +24,7 @@ import { resolveScmPrIcon } from "../shared/workspaceStatusIcon";
 import { RepoIcon } from "../shared/RepoIcon";
 import { WorkspaceEnvSpinner } from "./WorkspaceEnvSpinner";
 import { ProjectChatsRow } from "./ProjectChatsRow";
+import { ProjectChatsSection } from "./ProjectChatsSection";
 import { WorkspaceScmLinkIcon } from "./WorkspaceScmLinkIcon";
 import { HelpMenu } from "./HelpMenu";
 import { UpdateBanner } from "../layout/UpdateBanner";
@@ -40,6 +41,7 @@ import {
 } from "../../utils/workspaceOrdering";
 import {
   buildStatusBuckets,
+  computeStatusJumpTargets,
   computeStatusVisibleWorkspaces,
   filterSidebarWorkspaces,
   hasNoSidebarWorkspaces,
@@ -309,16 +311,31 @@ export const Sidebar = memo(function Sidebar() {
     [filteredWorkspaces, scmSummary, statusGroupCollapsed],
   );
 
-  // Index from workspace id → 1-based visible position (1..9 only). A row
+  // Status-mode project chats rows (local repos, repo filter applied), then
+  // the visible workspaces: the same targets the Cmd+N handler resolves.
+  const statusProjectRepos = useMemo(
+    () =>
+      repositories.filter(
+        (r) =>
+          !r.remote_connection_id &&
+          (sidebarRepoFilter === "all" || r.id === sidebarRepoFilter),
+      ),
+    [repositories, sidebarRepoFilter],
+  );
+
+  // Index from workspace / repo id → 1-based position (1..9 only). A row
   // outside the first 9 gets `undefined` and no badge.
-  const statusJumpNumberById = useMemo(() => {
-    const map = new Map<string, number>();
-    const cap = Math.min(9, statusVisibleWorkspaces.length);
-    for (let i = 0; i < cap; i++) {
-      map.set(statusVisibleWorkspaces[i].id, i + 1);
-    }
-    return map;
-  }, [statusVisibleWorkspaces]);
+  const { statusJumpNumberById, statusProjectJumpNumberByRepoId } = useMemo(() => {
+    const ws = new Map<string, number>();
+    const projects = new Map<string, number>();
+    computeStatusJumpTargets(statusProjectRepos, statusVisibleWorkspaces)
+      .slice(0, 9)
+      .forEach((target, i) => {
+        if (target.kind === "projectChats") projects.set(target.repoId, i + 1);
+        else ws.set(target.id, i + 1);
+      });
+    return { statusJumpNumberById: ws, statusProjectJumpNumberByRepoId: projects };
+  }, [statusProjectRepos, statusVisibleWorkspaces]);
 
   const handleArchive = useCallback(async (wsId: string) => {
     if (archivingRef.current.has(wsId)) return;
@@ -953,6 +970,12 @@ export const Sidebar = memo(function Sidebar() {
       </div>
 
       <div className={styles.list}>
+        {sidebarGroupBy === "status" && (
+          <ProjectChatsSection
+            repos={statusProjectRepos}
+            jumpNumberByRepoId={statusProjectJumpNumberByRepoId}
+          />
+        )}
         {sidebarGroupBy === "status" && STATUS_BUCKET_ORDER.map((key) => {
           const bucketWorkspaces = statusBuckets.get(key) ?? [];
           if (bucketWorkspaces.length === 0) return null;

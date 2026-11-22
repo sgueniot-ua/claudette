@@ -9,13 +9,20 @@ import { useAppStore } from "../../stores/useAppStore";
 import { isAgentBusy } from "../../utils/agentStatus";
 import { useOpenProjectChat } from "../../hooks/useOpenProjectChat";
 import type { Repository } from "../../types/repository";
+import { JumpShortcutBadge } from "./JumpShortcutBadge";
 import styles from "./Sidebar.module.css";
 import rowStyles from "./ProjectChatsRow.module.css";
 
 /** Pinned "Project chats" row, always first under a local repository. It
  *  represents the repository's single `repository` workspace (shared folder,
  *  no worktree): not draggable, renamable, archivable or deletable. */
-export function ProjectChatsRow({ repo }: { repo: Repository }) {
+export function ProjectChatsRow({
+  repo,
+  jumpNumber,
+}: {
+  repo: Repository;
+  jumpNumber?: number;
+}) {
   const { t } = useTranslation("sidebar");
   const { open } = useOpenProjectChat();
   const ws = useAppStore((s) =>
@@ -84,6 +91,7 @@ export function ProjectChatsRow({ repo }: { repo: Repository }) {
         <span className={styles.wsName}>{label}</span>
         {ws && <span className={styles.wsBranch}>{ws.branch_name}</span>}
       </div>
+      {jumpNumber && <JumpShortcutBadge number={jumpNumber} />}
     </div>
   );
 }

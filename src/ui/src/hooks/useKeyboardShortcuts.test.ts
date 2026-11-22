@@ -7,10 +7,15 @@ import {
   shouldDeferSettingsEscapeForElement,
   useKeyboardShortcuts,
 } from "./useKeyboardShortcuts";
+import { openProjectChatTarget } from "./useOpenProjectChat";
 import { useAppStore } from "../stores/useAppStore";
 import type { ScmSummary } from "../types/plugin";
 import type { Workspace } from "../types/workspace";
 import type { Repository } from "../types";
+
+vi.mock("./useOpenProjectChat", () => ({
+  openProjectChatTarget: vi.fn(async () => {}),
+}));
 
 function Harness() {
   useKeyboardShortcuts();
@@ -284,7 +289,7 @@ describe("useKeyboardShortcuts jump-to-project / workspace", () => {
     expect(selectWorkspaceSpy).not.toHaveBeenCalled();
   });
 
-  it("status mode: Cmd+N jumps to the Nth visible workspace, not the Nth project", async () => {
+  it("status mode: Cmd+N jumps to the Nth visible workspace after the project chats targets", async () => {
     // Buckets render top-to-bottom in STATUS_BUCKET_ORDER: merged, in-review,
     // draft, in-progress, closed, archived. We give the third project's
     // workspace the merged status so it lands at position 1 — confirming
@@ -305,16 +310,45 @@ describe("useKeyboardShortcuts jump-to-project / workspace", () => {
     });
     await renderHarness();
 
-    await pressJumpKey(1);
+    // 3 project chats targets take slots 1-3 (FR-013).
+    await pressJumpKey(4);
     expect(selectWorkspaceSpy).toHaveBeenCalledWith("ws-c");
 
     selectWorkspaceSpy.mockClear();
-    await pressJumpKey(2);
+    await pressJumpKey(5);
     expect(selectWorkspaceSpy).toHaveBeenCalledWith("ws-a");
 
     selectWorkspaceSpy.mockClear();
-    await pressJumpKey(3);
+    await pressJumpKey(6);
     expect(selectWorkspaceSpy).toHaveBeenCalledWith("ws-b");
+  });
+
+  it("status mode: Cmd+N on a project chats target opens the project chat", async () => { // FR-013
+    useAppStore.setState({
+      sidebarGroupBy: "status",
+      repositories: [makeRepo("repo-a"), makeRepo("repo-b")],
+      workspaces: [],
+    });
+    await renderHarness();
+
+    await pressJumpKey(2);
+    expect(openProjectChatTarget).toHaveBeenCalledWith("repo-b");
+    expect(selectWorkspaceSpy).not.toHaveBeenCalled();
+  });
+
+  it("repo mode jump ignores the repository workspace", async () => { // FR-013
+    useAppStore.setState({
+      sidebarGroupBy: "repo",
+      repositories: [makeRepo("repo-a")],
+      workspaces: [
+        makeWorkspace("ws-project", { repository_id: "repo-a", kind: "repository" }),
+        makeWorkspace("ws-a", { repository_id: "repo-a" }),
+      ],
+    });
+    await renderHarness();
+
+    await pressJumpKey(1);
+    expect(selectWorkspaceSpy).toHaveBeenCalledWith("ws-a");
   });
 
   it("status mode: skips workspaces in collapsed buckets", async () => {
@@ -335,7 +369,7 @@ describe("useKeyboardShortcuts jump-to-project / workspace", () => {
     });
     await renderHarness();
 
-    await pressJumpKey(1);
+    await pressJumpKey(2);
     expect(selectWorkspaceSpy).toHaveBeenCalledWith("ws-in-progress");
   });
 

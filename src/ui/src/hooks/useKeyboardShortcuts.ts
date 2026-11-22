@@ -17,9 +17,11 @@ import {
 } from "../hotkeys/contextActions";
 import type { HotkeyActionId } from "../hotkeys/actions";
 import {
+  computeStatusJumpTargets,
   computeStatusVisibleWorkspaces,
   filterSidebarWorkspaces,
 } from "../utils/sidebarJumpTargets";
+import { openProjectChatTarget } from "./useOpenProjectChat";
 
 export function useKeyboardShortcuts() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
@@ -153,11 +155,11 @@ export function useKeyboardShortcuts() {
         const idx = parseInt(jumpMatch[1], 10) - 1;
 
         if (currentState.sidebarGroupBy === "status") {
-          // Status mode: Cmd+N jumps to the Nth visible workspace —
-          // computed from exactly the same ordered/filtered list the
-          // sidebar paints (see filterSidebarWorkspaces +
-          // computeStatusVisibleWorkspaces) so the badge number on screen
-          // and the jump target can never disagree.
+          // Status mode: Cmd+N jumps to the Nth row — the project chats
+          // rows first, then the visible workspaces — computed from exactly
+          // the same ordered/filtered list the sidebar paints (see
+          // computeStatusJumpTargets) so the badge number on screen and the
+          // jump target can never disagree.
           const filtered = filterSidebarWorkspaces(currentState.workspaces, {
             showArchived: currentState.sidebarShowArchived,
             repoFilter: currentState.sidebarRepoFilter,
@@ -167,8 +169,19 @@ export function useKeyboardShortcuts() {
             currentState.scmSummary,
             currentState.statusGroupCollapsed,
           );
-          const target = visible[idx];
-          if (target) currentState.selectWorkspace(target.id);
+          const target = computeStatusJumpTargets(
+            currentState.repositories.filter(
+              (r) =>
+                currentState.sidebarRepoFilter === "all" ||
+                r.id === currentState.sidebarRepoFilter,
+            ),
+            visible,
+          )[idx];
+          if (target?.kind === "projectChats") {
+            void openProjectChatTarget(target.repoId);
+          } else if (target) {
+            currentState.selectWorkspace(target.id);
+          }
           return;
         }
 
@@ -176,7 +189,10 @@ export function useKeyboardShortcuts() {
         if (idx < localRepos.length) {
           const repo = localRepos[idx];
           const ws = currentState.workspaces.find(
-            (w) => w.repository_id === repo.id && w.status === "Active",
+            (w) =>
+              w.repository_id === repo.id &&
+              w.kind !== "repository" &&
+              w.status === "Active",
           );
           if (ws) {
             // Backwards-compat path: when the project has at least one
