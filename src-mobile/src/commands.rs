@@ -78,6 +78,18 @@ pub(crate) async fn wait_for_close(mut closed: tokio::sync::watch::Receiver<bool
     let _ = closed.wait_for(|is_closed| *is_closed).await;
 }
 
+/// Resolve once `connected: true` has been emitted (`armed` fires or its
+/// sender is dropped) AND the transport reports closed. Gating on `armed`
+/// guarantees the webview never sees `false` followed by a stale `true`
+/// when the link dies right after connecting (FR-013).
+pub(crate) async fn wait_for_close_after_armed(
+    armed: tokio::sync::oneshot::Receiver<()>,
+    closed: tokio::sync::watch::Receiver<bool>,
+) {
+    let _ = armed.await;
+    wait_for_close(closed).await;
+}
+
 fn emit_connected(app: &tauri::AppHandle, connection_id: &str) {
     if let Err(e) = app.emit(
         CONNECTION_STATE_EVENT,
@@ -98,9 +110,10 @@ fn spawn_connection_watch(
     app: tauri::AppHandle,
     connection_id: String,
     transport: Arc<dyn Transport>,
+    armed: tokio::sync::oneshot::Receiver<()>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        wait_for_close(transport.closed()).await;
+        wait_for_close_after_armed(armed, transport.closed()).await;
         if let Err(e) = app.emit(
             CONNECTION_STATE_EVENT,
             connection_state_payload(&connection_id, false),
@@ -230,7 +243,13 @@ pub async fn pair_with_connection_string(
     let transport_arc: Arc<dyn Transport> = Arc::from(transport);
     let forwarder =
         spawn_event_forwarder(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
-    let watch = spawn_connection_watch(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
+    let (arm_watch, armed) = tokio::sync::oneshot::channel();
+    let watch = spawn_connection_watch(
+        app.clone(),
+        saved.id.clone(),
+        Arc::clone(&transport_arc),
+        armed,
+    );
 
     manager
         .insert(Connection {
@@ -246,6 +265,8 @@ pub async fn pair_with_connection_string(
         .await;
 
     emit_connected(&app, &saved.id);
+    // Only now may the watch report a close, so `true` always precedes `false`.
+    let _ = arm_watch.send(());
 
     Ok(PairResult { connection: saved })
 }
@@ -311,7 +332,13 @@ pub async fn connect_saved(
     let transport_arc: Arc<dyn Transport> = Arc::from(transport);
     let forwarder =
         spawn_event_forwarder(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
-    let watch = spawn_connection_watch(app.clone(), saved.id.clone(), Arc::clone(&transport_arc));
+    let (arm_watch, armed) = tokio::sync::oneshot::channel();
+    let watch = spawn_connection_watch(
+        app.clone(),
+        saved.id.clone(),
+        Arc::clone(&transport_arc),
+        armed,
+    );
 
     manager
         .insert(Connection {
@@ -327,6 +354,8 @@ pub async fn connect_saved(
         .await;
 
     emit_connected(&app, &saved.id);
+    // Only now may the watch report a close, so `true` always precedes `false`.
+    let _ = arm_watch.send(());
 
     Ok(saved)
 }
@@ -483,6 +512,23 @@ mod tests {
     }
 
     // FR-013: an aborted watch (replaced connection) must never report a stale close.
+    // FR-013: a close that happens before `connected: true` is emitted is
+    // reported only once the watch is armed, never before.
+    #[tokio::test]
+    async fn close_before_arm_waits_for_arm() {
+        let (closed_tx, closed_rx) = tokio::sync::watch::channel(false);
+        let (arm_tx, arm_rx) = tokio::sync::oneshot::channel();
+        let wait = tokio::spawn(wait_for_close_after_armed(arm_rx, closed_rx));
+        let _ = closed_tx.send(true);
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(!wait.is_finished(), "must not report close before armed");
+        arm_tx.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_millis(100), wait)
+            .await
+            .expect("reports close once armed")
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn aborted_watch_never_fires() {
         use std::sync::atomic::{AtomicBool, Ordering};
