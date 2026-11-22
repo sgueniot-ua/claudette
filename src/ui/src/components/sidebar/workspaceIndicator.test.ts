@@ -103,6 +103,16 @@ describe("isWorkspaceRowEmphasized", () => {
   });
 
   // FR-011
+  it("plan attention is bold", () => {
+    expect(
+      isWorkspaceRowEmphasized({
+        ...base,
+        sessions: [session({ needs_attention: true, attention_kind: "Plan" })],
+      }),
+    ).toBe(true);
+  });
+
+  // FR-011
   it("unread while running is not bold", () => {
     expect(isWorkspaceRowEmphasized({ ...base, agentStatus: "Running", unread: true })).toBe(false);
   });
