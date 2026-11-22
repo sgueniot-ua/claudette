@@ -190,7 +190,7 @@ fn hydrate_session_runtime(
 
 /// `ExitPlanMode` outranks `AskUserQuestion` because plan approval blocks
 /// the whole turn until the user decides — clients should surface it first.
-fn attention_kind_from_pending(
+pub(crate) fn attention_kind_from_pending(
     pending: &std::collections::HashMap<String, crate::ws::PendingPermission>,
 ) -> Option<AttentionKind> {
     let mut has_ask = false;

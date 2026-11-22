@@ -50,6 +50,12 @@ pub async fn dispatch(
 ) -> Result<serde_json::Value, String> {
     match method {
         "load_initial_data" => handle_load_initial_data(state).await,
+        "get_workspaces_activity" => {
+            let db = open_db(state)?;
+            let agents = state.agents.read().await;
+            crate::activity::build_workspaces_activity(&db, &agents)
+                .and_then(|v| serde_json::to_value(v).map_err(|e| e.to_string()))
+        }
         "load_chat_history" => {
             let chat_session_id = param_chat_session_id(&params);
             handle_load_chat_history(state, &chat_session_id).await
@@ -1234,7 +1240,7 @@ pub fn spawn_turn_event_bridge(
     });
 }
 
-async fn handle_stop_agent(
+pub(crate) async fn handle_stop_agent(
     state: &ServerState,
     chat_session_id: &str,
 ) -> Result<serde_json::Value, String> {
@@ -1250,19 +1256,22 @@ async fn handle_stop_agent(
     // run the async kill outside it. Dropping `persistent_session` here
     // ensures the next `send_chat_message` starts a fresh CLI instead of
     // trying to write to a stdin attached to a process we just killed.
-    let pid_to_stop = {
+    let (session_existed, pid_to_stop) = {
         let mut agents = state.agents.write().await;
         if let Some(session) = agents.get_mut(&chat_session_id) {
             session.persistent_session = None;
             session.pending_permissions.clear();
             session.pending_message_queue.clear();
-            session.active_pid.take()
+            (true, session.active_pid.take())
         } else {
-            None
+            (false, None)
         }
     };
     if let Some(pid) = pid_to_stop {
         agent::stop_agent(pid).await?;
+    }
+    if session_existed {
+        crate::activity::emit_activity_changed(state, &workspace_id, &chat_session_id);
     }
 
     let msg = ChatMessage {
@@ -1298,7 +1307,7 @@ pub async fn handle_submit_agent_answer(
     answers: std::collections::HashMap<String, String>,
     annotations: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
-    let (pending, ps) = {
+    let (pending, ps, workspace_id) = {
         let mut agents = state.agents.write().await;
         let session = agents.get_mut(chat_session_id).ok_or("Session not found")?;
         let ps = session
@@ -1325,7 +1334,7 @@ pub async fn handle_submit_agent_answer(
             .pending_permissions
             .remove(tool_use_id)
             .expect("checked above");
-        (pending, ps)
+        (pending, ps, session.workspace_id.clone())
     };
 
     let mut updated_input = pending.original_input.clone();
@@ -1347,6 +1356,7 @@ pub async fn handle_submit_agent_answer(
     });
     ps.send_control_response(&pending.request_id, response)
         .await?;
+    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
     Ok(json!(null))
 }
 
@@ -1400,7 +1410,7 @@ pub async fn handle_submit_approval(
     reason: Option<String>,
     kind: ApprovalKind,
 ) -> Result<serde_json::Value, String> {
-    let (pending, ps) = {
+    let (pending, ps, workspace_id) = {
         let mut agents = state.agents.write().await;
         let session = agents.get_mut(chat_session_id).ok_or("Session not found")?;
         let ps = session
@@ -1427,7 +1437,7 @@ pub async fn handle_submit_approval(
             .pending_permissions
             .remove(tool_use_id)
             .expect("checked above");
-        (pending, ps)
+        (pending, ps, session.workspace_id.clone())
     };
 
     let response = if approved {
@@ -1447,6 +1457,7 @@ pub async fn handle_submit_approval(
     };
     ps.send_control_response(&pending.request_id, response)
         .await?;
+    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
     Ok(json!(null))
 }
 
