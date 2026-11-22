@@ -936,6 +936,8 @@ async fn handle_send_chat_message(
     session.active_pid = Some(ps_arc.pid());
     session.session_resolved_env = resolved_env.vars.clone();
     drop(agents);
+    // The standalone server emits no `chat-turn-started`; signal Running (FR-008).
+    crate::activity::emit_activity_changed(state, &workspace_id, &chat_session_id);
 
     // Same cleanup discipline for `send_turn`: if the CLI rejects the
     // user message (e.g. the persistent process died between turns),
@@ -944,8 +946,8 @@ async fn handle_send_chat_message(
     let turn_handle = match ps_arc.send_turn(&prompt, &[]).await {
         Ok(handle) => handle,
         Err(e) => {
-            let mut agents = state.agents.write().await;
-            agents.remove(&chat_session_id);
+            state.agents.write().await.remove(&chat_session_id);
+            crate::activity::emit_activity_changed(state, &workspace_id, &chat_session_id);
             return Err(e);
         }
     };
@@ -1597,12 +1599,16 @@ async fn dispatch_queued_message(
     .await;
     let turn_handle = ps_arc.send_turn(&prompt, &[]).await?;
 
-    {
+    let started = {
         let mut agents = state.agents.write().await;
-        if let Some(session) = agents.get_mut(&chat_session_id) {
+        agents.get_mut(&chat_session_id).is_some_and(|session| {
             session.active_pid = Some(ps_arc.pid());
             session.turn_count += 1;
-        }
+            true
+        })
+    };
+    if started {
+        crate::activity::emit_activity_changed(&state, &workspace_id, &chat_session_id);
     }
 
     spawn_turn_event_bridge(

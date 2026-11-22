@@ -3,6 +3,7 @@ import {
   ACTIVITY_EVENTS,
   ACTIVITY_LABELS,
   RefetchThrottle,
+  isActivityStreamEvent,
   nextStateOnFetch,
   sessionDisplay,
   workspaceDisplay,
@@ -105,6 +106,38 @@ describe("labels and events", () => {
         "agent-activity-changed",
       ].sort(),
     );
+  });
+});
+
+describe("isActivityStreamEvent", () => {
+  // FR-008: only stream events that can change activity trigger a refetch.
+  it("keeps turn start, background tasks, permission requests, turn end and exit", () => {
+    for (const event of [
+      { Stream: { type: "system", subtype: "init" } },
+      { Stream: { type: "system", subtype: "task_started" } },
+      { Stream: { type: "system", subtype: "task_notification" } },
+      { Stream: { type: "control_request", request_id: "r", request: {} } },
+      { Stream: { type: "result", subtype: "success" } },
+      { ProcessExited: 0 },
+      { ProcessExited: null },
+    ]) {
+      expect(isActivityStreamEvent(event)).toBe(true);
+    }
+  });
+
+  it("skips streaming deltas, assistant chunks and other noise", () => {
+    for (const event of [
+      { Stream: { type: "stream_event", event: { type: "content_block_delta" } } },
+      { Stream: { type: "assistant", message: {} } },
+      { Stream: { type: "user", message: {} } },
+      { Stream: { type: "system", subtype: "task_progress" } },
+      { Stream: { type: "system", subtype: "status" } },
+      { Stderr: "warning" },
+      null,
+      "text",
+    ]) {
+      expect(isActivityStreamEvent(event)).toBe(false);
+    }
   });
 });
 

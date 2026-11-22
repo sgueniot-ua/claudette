@@ -30,6 +30,23 @@ export const ACTIVITY_EVENTS: readonly string[] = [
   "agent-activity-changed",
 ];
 
+const ACTIVITY_SYSTEM_SUBTYPES = new Set(["init", "task_started", "task_notification"]);
+
+/**
+ * Whether an `agent-stream` event can change activity: turn start (`init`),
+ * background task start or end, permission request, turn end, process exit.
+ * Deltas and assistant chunks are skipped so streaming does not refetch.
+ */
+export function isActivityStreamEvent(event: unknown): boolean {
+  if (!event || typeof event !== "object") return false;
+  if ("ProcessExited" in event) return true;
+  const stream = (event as { Stream?: unknown }).Stream;
+  if (!stream || typeof stream !== "object") return false;
+  const { type, subtype } = stream as { type?: unknown; subtype?: unknown };
+  if (type === "result" || type === "control_request") return true;
+  return type === "system" && typeof subtype === "string" && ACTIVITY_SYSTEM_SUBTYPES.has(subtype);
+}
+
 function fromStatus(
   status: MobileAgentStatus,
   attention: AttentionKind | null,

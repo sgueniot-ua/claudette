@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { ACTIVITY_EVENTS } from "./activity";
+import { ACTIVITY_EVENTS, isActivityStreamEvent } from "./activity";
 
 // The Tauri events emitted by `src-mobile/src/commands.rs::spawn_event_forwarder`
 // each carry `{connection_id, payload}`. `payload` is the same shape the
@@ -49,6 +49,10 @@ export async function onPermissionPrompt(
   );
 }
 
+function isAgentStreamActivity(payload: unknown): boolean {
+  return isActivityStreamEvent((payload as Partial<AgentStreamPayload> | null)?.event);
+}
+
 export async function onActivitySignal(
   connectionId: string,
   handler: () => void,
@@ -57,6 +61,7 @@ export async function onActivitySignal(
     ACTIVITY_EVENTS.map((name) =>
       listen<ForwardedEvent<unknown>>(name, (event) => {
         if (event.payload.connection_id !== connectionId) return;
+        if (name === "agent-stream" && !isAgentStreamActivity(event.payload.payload)) return;
         handler();
       }),
     ),
