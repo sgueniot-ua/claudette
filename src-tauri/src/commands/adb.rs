@@ -111,15 +111,28 @@ pub(crate) async fn teardown_workspace(
     if let Some(sessions) = sessions {
         sessions.stop(workspace_id).await;
     }
-    if kind == WorkspaceChangeKind::Deleted
-        && let Ok(db) = Database::open(db_path)
-    {
-        let _ = settings::delete_workspace_device(&db, workspace_id);
+    if kind == WorkspaceChangeKind::Deleted {
+        match Database::open(db_path) {
+            Ok(db) => {
+                if let Err(e) = settings::delete_workspace_device(&db, workspace_id) {
+                    tracing::warn!(target: "claudette::adb", workspace_id, error = %e, "failed to delete workspace device choice");
+                }
+            }
+            Err(e) => {
+                tracing::warn!(target: "claudette::adb", workspace_id, error = %e, "failed to open database to delete workspace device choice");
+            }
+        }
     }
 }
 
 /// Fire-and-forget teardown for the (synchronous) workspace hooks.
 pub(crate) fn spawn_teardown(app: &AppHandle, ids: Vec<String>, kind: WorkspaceChangeKind) {
+    if !matches!(
+        kind,
+        WorkspaceChangeKind::Archived | WorkspaceChangeKind::Deleted
+    ) {
+        return;
+    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let Some(state) = app.try_state::<AppState>() else {
@@ -137,15 +150,17 @@ pub(crate) async fn stop_repo_sessions(state: &AppState, repo_id: &str) {
     let Some(sessions) = state.adb_sessions.read().await.clone() else {
         return;
     };
-    let ids: Vec<String> = Database::open(&state.db_path)
-        .and_then(|db| db.list_workspaces())
-        .map(|all| {
-            all.into_iter()
-                .filter(|w| w.repository_id == repo_id)
-                .map(|w| w.id)
-                .collect()
-        })
-        .unwrap_or_default();
+    let all = match Database::open(&state.db_path).and_then(|db| db.list_workspaces()) {
+        Ok(all) => all,
+        Err(e) => {
+            tracing::warn!(target: "claudette::adb", repo_id, error = %e, "failed to list workspaces to stop ADB sessions");
+            return;
+        }
+    };
+    let ids = all
+        .into_iter()
+        .filter(|w| w.repository_id == repo_id)
+        .map(|w| w.id);
     for id in ids {
         sessions.stop(&id).await;
     }
@@ -185,8 +200,10 @@ pub async fn adb_set_android_mode(
     enabled: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    settings::set_android_mode(&db, &repo_id, enabled).map_err(|e| e.to_string())?;
+    {
+        let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+        settings::set_android_mode(&db, &repo_id, enabled).map_err(|e| e.to_string())?;
+    }
     if !enabled {
         stop_repo_sessions(&state, &repo_id).await;
     }
@@ -229,27 +246,27 @@ pub async fn adb_list_devices(state: State<'_, AppState>) -> Result<Vec<AdbDevic
     })
 }
 
-/// Persists the manual choice (`None` clears it) and re-resolves the running session. The
-/// returned status is the session's status at call time: `AdbSessions` exposes no status getter
-/// and re-resolution is asynchronous, so the new status arrives through `adb-session-status`.
-/// Without sessions (nothing opened yet) the answer is `Stopped`.
+/// Persists the manual choice (`None` clears it) and re-resolves the running session, if any;
+/// it never starts one. The returned status is the session's status at call time (re-resolution
+/// is asynchronous, the new status arrives through `adb-session-status`). It is `Stopped` when the
+/// workspace has no session or its first resolution is not done yet.
 #[tauri::command]
 pub async fn adb_set_workspace_device(
     workspace_id: String,
     key: Option<DeviceKey>,
     state: State<'_, AppState>,
 ) -> Result<AdbSessionStatus, String> {
-    let ctx = {
+    {
         let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
         settings::set_workspace_device(&db, &workspace_id, key.as_ref())
             .map_err(|e| e.to_string())?;
-        open_context(&db, &workspace_id)?
-    };
+    }
     let Some(sessions) = state.adb_sessions.read().await.clone() else {
         return Ok(AdbSessionStatus::Stopped);
     };
+    let status = sessions.status(&workspace_id);
     sessions.re_resolve(&workspace_id, key).await;
-    Ok(sessions.open(ctx).await)
+    Ok(status.unwrap_or(AdbSessionStatus::Stopped))
 }
 
 #[tauri::command]
@@ -402,5 +419,31 @@ mod tests {
             teardown_workspace(Some(&sessions), &path, "w1", kind).await;
             assert_eq!(sink.stopped.lock().unwrap().len(), stops);
         }
+    }
+
+    // Contract: event payload field names consumed by the frontend.
+    #[test]
+    fn event_payload_field_names() {
+        let lines = serde_json::to_value(LogcatLinesPayload {
+            workspace_id: "w1".into(),
+            lines: vec![],
+            reset: true,
+        })
+        .unwrap();
+        assert_eq!(
+            lines,
+            serde_json::json!({"workspace_id": "w1", "lines": [], "reset": true})
+        );
+        let status = serde_json::to_value(SessionStatusPayload {
+            workspace_id: "w1".into(),
+            status: AdbSessionStatus::Stopped,
+        })
+        .unwrap();
+        let obj = status.as_object().unwrap();
+        assert_eq!(obj["workspace_id"], "w1");
+        assert!(obj.contains_key("status"));
+        assert_eq!(obj.len(), 2);
+        let devices = serde_json::to_value(DevicesChangedPayload { devices: vec![] }).unwrap();
+        assert_eq!(devices, serde_json::json!({"devices": []}));
     }
 }

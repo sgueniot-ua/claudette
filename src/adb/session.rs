@@ -159,6 +159,14 @@ impl AdbSessions {
         }
     }
 
+    /// Current status of a workspace session; `None` when it has no session or its first
+    /// resolution is not done yet.
+    pub fn status(&self, workspace_id: &str) -> Option<AdbSessionStatus> {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let handle = state.sessions.get(workspace_id)?;
+        handle.status_rx.borrow().clone()
+    }
+
     /// Last polled device list.
     pub fn devices(&self) -> Vec<AdbDevice> {
         self.devices_tx
@@ -720,6 +728,16 @@ mod tests {
         assert_eq!(runner.spawns().len(), 2);
         sessions.stop_all().await;
         assert!(runner.dropped(1));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn status_is_none_without_session() {
+        let (_runner, _sink, sessions) = setup(ONE);
+        assert_eq!(sessions.status("ws-1"), None);
+        let opened = sessions.open(ctx(None)).await;
+        assert_eq!(sessions.status("ws-1"), Some(opened));
+        sessions.stop("ws-1").await;
+        assert_eq!(sessions.status("ws-1"), None);
     }
 
     // Review Focus 3 / R4
