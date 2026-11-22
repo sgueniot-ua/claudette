@@ -211,6 +211,10 @@ describe("RemoteSections", () => {
 
     expect(document.querySelector('[class*="statusBackgroundRing"]')).not.toBeNull();
     expect(document.querySelector('[class*="statusSpinnerRing"]')).toBeNull();
+    // FR-010: the ring is announced, not colour and motion only.
+    const ring = document.querySelector('[role="img"][aria-label="status_background"]');
+    expect(ring).not.toBeNull();
+    expect(ring?.getAttribute("aria-hidden")).toBeNull();
   });
 
   it("hides Nearby when no unpaired servers are discovered", async () => {

@@ -397,7 +397,12 @@ function RemoteConnectionGroup({
                         <span className={styles.statusSpinnerRing} />
                       </span>
                     ) : isBackgroundRunning(ws.agent_status) ? (
-                      <span className={styles.statusBackgroundSpinner} aria-hidden="true">
+                      <span
+                        className={styles.statusBackgroundSpinner}
+                        title={t("status_background")}
+                        aria-label={t("status_background")}
+                        role="img"
+                      >
                         <span className={styles.statusBackgroundRing} />
                       </span>
                     ) : (
