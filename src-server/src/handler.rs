@@ -1267,11 +1267,12 @@ pub(crate) async fn handle_stop_agent(
             (false, None)
         }
     };
-    if let Some(pid) = pid_to_stop {
-        agent::stop_agent(pid).await?;
-    }
+    // Signal before the fallible kill: the state is already cleared.
     if session_existed {
         crate::activity::emit_activity_changed(state, &workspace_id, &chat_session_id);
+    }
+    if let Some(pid) = pid_to_stop {
+        agent::stop_agent(pid).await?;
     }
 
     let msg = ChatMessage {
@@ -1336,6 +1337,8 @@ pub async fn handle_submit_agent_answer(
             .expect("checked above");
         (pending, ps, session.workspace_id.clone())
     };
+    // Signal before the fallible send: the pending entry is already removed.
+    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
 
     let mut updated_input = pending.original_input.clone();
     if !updated_input.is_object() {
@@ -1356,7 +1359,6 @@ pub async fn handle_submit_agent_answer(
     });
     ps.send_control_response(&pending.request_id, response)
         .await?;
-    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
     Ok(json!(null))
 }
 
@@ -1439,6 +1441,8 @@ pub async fn handle_submit_approval(
             .expect("checked above");
         (pending, ps, session.workspace_id.clone())
     };
+    // Signal before the fallible send: the pending entry is already removed.
+    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
 
     let response = if approved {
         json!({
@@ -1457,7 +1461,6 @@ pub async fn handle_submit_approval(
     };
     ps.send_control_response(&pending.request_id, response)
         .await?;
-    crate::activity::emit_activity_changed(state, &workspace_id, chat_session_id);
     Ok(json!(null))
 }
 

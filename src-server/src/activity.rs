@@ -235,4 +235,22 @@ mod tests {
             })
         );
     }
+
+    // FR-008: the signal goes out even when the kill fails afterwards.
+    #[tokio::test]
+    async fn stop_emits_even_when_kill_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let (state, sid) = state_with_workspace(&dir);
+        // A pid that cannot exist, so `kill -9` fails.
+        state
+            .agents
+            .write()
+            .await
+            .insert(sid.clone(), agent("w1", &sid, Some(2_000_000_000)));
+        let mut rx = state.events.subscribe();
+
+        assert!(handle_stop_agent(&state, &sid).await.is_err());
+
+        assert_eq!(rx.try_recv().unwrap()["event"], "agent-activity-changed");
+    }
 }
