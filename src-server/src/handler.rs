@@ -294,6 +294,13 @@ pub async fn dispatch(
             let file_path = param_str(&params, "file_path");
             handle_load_commit_file_diff(&worktree_path, &commit_hash, &file_path).await
         }
+        "load_git_graph" => handle_load_git_graph(state, &params).await,
+        "load_git_graph_fingerprint" => handle_load_git_graph_fingerprint(state, &params).await,
+        "load_worktree_states" => handle_load_worktree_states(state, &params).await,
+        "load_commit_detail" => handle_load_commit_detail(state, &params).await,
+        "load_commit_file_diff_first_parent" => {
+            handle_load_commit_file_diff_first_parent(state, &params).await
+        }
         "spawn_pty" => {
             let workspace_id = param_str(&params, "workspace_id");
             let cwd = param_str(&params, "cwd");
@@ -1816,6 +1823,102 @@ async fn handle_load_commit_file_diff(
     Ok(serde_json::to_value(parsed).unwrap_or_default())
 }
 
+fn param_bool(params: &serde_json::Value, key: &str) -> bool {
+    params.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+async fn git_graph_context(
+    state: &ServerState,
+    params: &serde_json::Value,
+) -> Result<claudette::git_graph::context::RepoContext, String> {
+    claudette::git_graph::context::resolve_repo_context(
+        &state.db_path,
+        &param_str(params, "workspace_id"),
+    )
+    .await
+}
+
+async fn handle_load_git_graph(
+    state: &ServerState,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let ctx = git_graph_context(state, params).await?;
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(200);
+    let until_hash = params.get("until_hash").and_then(|v| v.as_str());
+    let graph = claudette::git_graph::load_git_graph(
+        &ctx,
+        param_bool(params, "include_remotes"),
+        limit,
+        until_hash,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    serde_json::to_value(graph).map_err(|e| e.to_string())
+}
+
+async fn handle_load_git_graph_fingerprint(
+    state: &ServerState,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let ctx = git_graph_context(state, params).await?;
+    let fingerprint = claudette::git_graph::fingerprint::fingerprint(
+        &ctx.repo_path,
+        ctx.base_ref.as_deref(),
+        param_bool(params, "include_remotes"),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    serde_json::to_value(claudette::model::git_graph::GraphFingerprint { fingerprint })
+        .map_err(|e| e.to_string())
+}
+
+async fn handle_load_worktree_states(
+    state: &ServerState,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let ctx = git_graph_context(state, params).await?;
+    let states = claudette::git_graph::worktrees::worktree_states(&ctx.repo_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    serde_json::to_value(states).map_err(|e| e.to_string())
+}
+
+async fn handle_load_commit_detail(
+    state: &ServerState,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let ctx = git_graph_context(state, params).await?;
+    let detail = claudette::git_graph::detail::commit_detail(
+        &ctx,
+        &param_str(params, "commit_hash"),
+        param_bool(params, "include_remotes"),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    serde_json::to_value(detail).map_err(|e| e.to_string())
+}
+
+async fn handle_load_commit_file_diff_first_parent(
+    state: &ServerState,
+    params: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let ctx = git_graph_context(state, params).await?;
+    let file_path = param_str(params, "file_path");
+    let raw = claudette::git_graph::detail::commit_file_diff_first_parent(
+        &ctx.repo_path,
+        &param_str(params, "commit_hash"),
+        &file_path,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let parsed = claudette::diff::parse_unified_diff(&raw, &file_path);
+    serde_json::to_value(parsed).map_err(|e| e.to_string())
+}
+
 async fn handle_spawn_pty(
     state: &Arc<ServerState>,
     workspace_id: &str,
@@ -2154,5 +2257,126 @@ mod tests {
         assert_eq!(payload["chat_session_id"], "chat-1");
         assert_eq!(payload["session_id"], "chat-1");
         assert_eq!(payload["event"]["ProcessExited"], 0);
+    }
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let out = claudette::process::std_command("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git command failed to spawn");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // FR-015
+    #[tokio::test]
+    async fn handler_serves_git_graph_methods() {
+        use claudette::model::{AgentStatus, Repository, Workspace, WorkspaceStatus};
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo_dir = tmp.path().join("repo");
+        std::fs::create_dir(&repo_dir).unwrap();
+        git(&repo_dir, &["init", "-b", "main"]);
+        git(&repo_dir, &["config", "user.email", "test@test.com"]);
+        git(&repo_dir, &["config", "user.name", "Test"]);
+        git(&repo_dir, &["config", "core.autocrlf", "false"]);
+        std::fs::write(repo_dir.join("a.txt"), "initial\n").unwrap();
+        git(&repo_dir, &["add", "."]);
+        git(&repo_dir, &["commit", "-m", "initial"]);
+        let repo_path = repo_dir.to_str().unwrap().to_string();
+
+        let db_path = tmp.path().join("test.sqlite");
+        let db = Database::open(&db_path).expect("open test db");
+        db.insert_repository(&Repository {
+            id: "r1".into(),
+            path: repo_path.clone(),
+            name: "test-repo".into(),
+            path_slug: "test-repo".into(),
+            icon: None,
+            created_at: String::new(),
+            setup_script: None,
+            custom_instructions: None,
+            sort_order: 0,
+            branch_rename_preferences: None,
+            setup_script_auto_run: false,
+            archive_script: None,
+            archive_script_auto_run: false,
+            base_branch: Some("main".into()),
+            default_remote: None,
+            required_inputs: None,
+            path_valid: true,
+        })
+        .expect("insert repo");
+        db.insert_workspace(&Workspace {
+            id: "w1".into(),
+            repository_id: "r1".into(),
+            name: "ws-w1".into(),
+            branch_name: "main".into(),
+            worktree_path: Some(repo_path),
+            status: WorkspaceStatus::Active,
+            agent_status: AgentStatus::Idle,
+            status_line: String::new(),
+            created_at: String::new(),
+            sort_order: 0,
+            input_values: None,
+        })
+        .expect("insert workspace");
+        drop(db);
+
+        let state = Arc::new(ServerState::new(db_path, tmp.path().to_path_buf()));
+
+        let graph = dispatch(&state, "load_git_graph", json!({"workspace_id": "w1"}))
+            .await
+            .expect("load_git_graph");
+        let refs = graph["refs"].as_array().expect("refs array");
+        assert!(refs.iter().any(|r| r["name"] == "main"), "refs: {refs:?}");
+        let head = graph["commits"][0]["hash"]
+            .as_str()
+            .expect("first commit hash")
+            .to_string();
+
+        let fp = dispatch(
+            &state,
+            "load_git_graph_fingerprint",
+            json!({"workspace_id": "w1"}),
+        )
+        .await
+        .expect("fingerprint");
+        assert_eq!(fp["fingerprint"], graph["fingerprint"]);
+
+        let states = dispatch(
+            &state,
+            "load_worktree_states",
+            json!({"workspace_id": "w1"}),
+        )
+        .await
+        .expect("worktree states");
+        assert!(!states.as_array().expect("states array").is_empty());
+
+        let detail = dispatch(
+            &state,
+            "load_commit_detail",
+            json!({"workspace_id": "w1", "commit_hash": head}),
+        )
+        .await
+        .expect("commit detail");
+        let files = detail["files"].as_array().expect("files array");
+        assert!(
+            files.iter().any(|f| f["path"] == "a.txt"),
+            "files: {files:?}"
+        );
+
+        let diff = dispatch(
+            &state,
+            "load_commit_file_diff_first_parent",
+            json!({"workspace_id": "w1", "commit_hash": head, "file_path": "a.txt"}),
+        )
+        .await
+        .expect("first-parent diff");
+        assert_eq!(diff["path"], "a.txt");
     }
 }
