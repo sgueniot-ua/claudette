@@ -28,20 +28,21 @@ export function isTeamAgentActivity(activity: ToolActivity): boolean {
   );
 }
 
-function isSubAgent(activity: ToolActivity): boolean {
-  return activity.toolName === "Agent" && !isTeamAgentActivity(activity);
+function isSubAgent(activity: ToolActivity, excludeTeamAgents: boolean): boolean {
+  return activity.toolName === "Agent" && !(excludeTeamAgents && isTeamAgentActivity(activity));
 }
 
 function toSessionAgent(activity: ToolActivity, live: boolean): SessionAgent {
   const state = agentTaskState(activity, live);
+  const subagentType = agentSubagentType(activity);
   return {
     toolUseId: activity.toolUseId,
     activity,
     live,
     state,
     running: isAgentRunningState(state),
-    subagentType: agentSubagentType(activity),
-    label: activitySummaryText(activity),
+    subagentType,
+    label: activitySummaryText(activity).trim() || subagentType || "",
   };
 }
 
@@ -49,19 +50,22 @@ function toSessionAgent(activity: ToolActivity, live: boolean): SessionAgent {
  * Top-level sub-agents of a session in launch order: completed turns
  * oldest-first, then the live lane. A backgrounded agent can sit on a turn
  * boundary in both lanes; the live copy replaces the completed one in place.
+ * Team agents are left out only while they open as their own chat tabs
+ * (`excludeTeamAgents`, the `team_agent_session_tabs_enabled` setting).
  */
 export function collectSessionAgents(
   liveActivities: ToolActivity[],
   completedTurns: CompletedTurn[],
+  excludeTeamAgents = true,
 ): SessionAgent[] {
   const byId = new Map<string, SessionAgent>();
   for (const turn of completedTurns) {
     for (const activity of turn.activities) {
-      if (isSubAgent(activity)) byId.set(activity.toolUseId, toSessionAgent(activity, false));
+      if (isSubAgent(activity, excludeTeamAgents)) byId.set(activity.toolUseId, toSessionAgent(activity, false));
     }
   }
   for (const activity of liveActivities) {
-    if (isSubAgent(activity)) byId.set(activity.toolUseId, toSessionAgent(activity, true));
+    if (isSubAgent(activity, excludeTeamAgents)) byId.set(activity.toolUseId, toSessionAgent(activity, true));
   }
   return [...byId.values()];
 }

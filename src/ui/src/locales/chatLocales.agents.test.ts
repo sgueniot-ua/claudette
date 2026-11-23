@@ -10,6 +10,9 @@ const KEYS = [
   "running_agents_bar_label",
   "running_agents_more",
   "running_agent_open",
+  "running_agent_open_untyped",
+  "running_agents_more_label",
+  "running_agent_default_label",
   "agents_tab",
   "agents_panel_empty",
   "agents_panel_running",
@@ -20,6 +23,8 @@ const KEYS = [
 const PLACEHOLDERS: Record<string, string[]> = {
   running_agents_more: ["count"],
   running_agent_open: ["type", "description", "state"],
+  running_agent_open_untyped: ["description", "state"],
+  running_agents_more_label: ["count"],
 };
 
 const locales = { de, en, es, ja, "pt-BR": ptBR, "zh-CN": zhCN } as Record<

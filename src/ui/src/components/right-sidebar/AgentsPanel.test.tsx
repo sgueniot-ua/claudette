@@ -181,4 +181,27 @@ describe("AgentsPanel", () => {
     });
     expect(useAppStore.getState().selectedAgentBySession.s1).toBe("scout");
   });
+
+  it("untyped agent name has no double space or leading hyphen", async () => {
+    // FR-015
+    useAppStore.setState({
+      toolActivities: {
+        s1: [agent("u", { summary: "Attendre 9", inputJson: JSON.stringify({ description: "Attendre 9" }) })],
+      },
+    });
+    const c = await render();
+    const name = items(c)[0].getAttribute("aria-label")!;
+    expect(name).toBe("Open agent: Attendre 9 (Running)");
+    expect(name).not.toMatch(/\s{2}|^-/);
+  });
+
+  it("empty label falls back to the localized Agent label", async () => {
+    // FR-003
+    useAppStore.setState({
+      toolActivities: { s1: [agent("e", { summary: "", inputJson: "{}" })] },
+    });
+    const c = await render();
+    expect(items(c)[0].getAttribute("aria-label")).toBe("Open agent: Agent (Running)");
+    expect(items(c)[0].textContent).toContain("Agent");
+  });
 });

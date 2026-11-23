@@ -102,6 +102,26 @@ describe("sessionAgents", () => {
     expect(ids(collectSessionAgents([team, teamOnly], []))).toEqual(["u"]);
   });
 
+  it("lists team agents when they do not open as session tabs", () => {
+    // FR-013
+    const team = agent("t", {
+      inputJson: JSON.stringify({ description: "d", team_name: "T", name: "n" }),
+    });
+    expect(ids(collectSessionAgents([team], [], false))).toEqual(["t"]);
+    expect(ids(collectSessionAgents([team], [], true))).toEqual([]);
+  });
+
+  it("falls back to the subagent type when the label is empty", () => {
+    // FR-003
+    const a = agent("e", {
+      summary: "",
+      inputJson: JSON.stringify({ subagent_type: "Explore" }),
+    });
+    expect(collectSessionAgents([a], [])[0].label).toBe("Explore");
+    const b = agent("f", { summary: "", inputJson: "{}" });
+    expect(collectSessionAgents([b], [])[0].label).toBe("");
+  });
+
   it("ignores nested agents", () => {
     // FR-013
     const nested: AgentToolCall = {

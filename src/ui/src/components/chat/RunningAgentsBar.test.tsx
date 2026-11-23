@@ -154,6 +154,38 @@ describe("RunningAgentsBar", () => {
   });
 });
 
+describe("RunningAgentsBar accessible names", () => {
+  it("untyped agent name has no double space or leading hyphen", async () => {
+    // FR-015
+    setActivities([agent("a", { inputJson: JSON.stringify({ description: "Attendre a" }) })]);
+    const container = await render();
+    const label = container.querySelector("nav button")!.getAttribute("aria-label")!;
+    expect(label).toBe("Open agent: Attendre a (Running)");
+    expect(label).not.toMatch(/\s{2}|^-/);
+  });
+
+  it("empty label falls back to the type, else a localized Agent label", async () => {
+    // FR-003
+    setActivities([
+      agent("a", { summary: "", inputJson: JSON.stringify({ subagent_type: "scout" }) }),
+      agent("b", { summary: "", inputJson: "{}" }),
+    ]);
+    const container = await render();
+    const [a, b] = [...container.querySelectorAll("nav button")];
+    expect(a.getAttribute("aria-label")).toBe("Open scout agent: scout (Running)");
+    expect(b.getAttribute("aria-label")).toBe("Open agent: Agent (Running)");
+    expect(b.textContent).toContain("Agent");
+  });
+
+  it("+N more has an explicit accessible name", async () => {
+    // FR-015
+    setActivities(["a", "b", "c", "d", "e"].map((id) => agent(id)));
+    const container = await render();
+    const more = [...container.querySelectorAll("nav button")][3];
+    expect(more.getAttribute("aria-label")).toBe("Show all 2 more running agents");
+  });
+});
+
 describe("RunningAgentsBar placement", () => {
   it("is mounted outside the messages scroller", () => {
     // FR-005: rendering ChatPanelSessionView needs its whole chat harness, so

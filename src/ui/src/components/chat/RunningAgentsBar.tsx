@@ -36,24 +36,34 @@ export function RunningAgentsBar({
           key={agent.toolUseId}
           type="button"
           className={styles.row}
-          aria-label={t("running_agent_open", {
-            type: agent.subagentType ?? "",
-            description: agent.label,
-            state: t("agents_panel_running"),
-          })}
+          aria-label={
+            agent.subagentType
+              ? t("running_agent_open", {
+                  type: agent.subagentType,
+                  description: agent.label || t("running_agent_default_label"),
+                  state: t("agents_panel_running"),
+                })
+              : t("running_agent_open_untyped", {
+                  description: agent.label || t("running_agent_default_label"),
+                  state: t("agents_panel_running"),
+                })
+          }
           onClick={() => openAgentInSidebar(workspaceId, sessionId, agent.toolUseId)}
         >
           <span className={styles.icon}>
             <TaskStateIcon state="progress" label={t("agents_panel_running")} />
           </span>
           {agent.subagentType && <span className={styles.type}>{agent.subagentType}</span>}
-          <span className={styles.description}>{agent.label}</span>
+          <span className={styles.description}>
+            {agent.label || t("running_agent_default_label")}
+          </span>
         </button>
       ))}
       {hidden > 0 && (
         <button
           type="button"
           className={styles.more}
+          aria-label={t("running_agents_more_label", { count: hidden })}
           onClick={() => openAgentInSidebar(workspaceId, sessionId, null)}
         >
           {t("running_agents_more", { count: hidden })}
