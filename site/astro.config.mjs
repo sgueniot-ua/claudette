@@ -81,6 +81,7 @@ export default defineConfig({
             { slug: 'features/file-editor' },
             { slug: 'features/integrated-terminal' },
             { slug: 'features/task-history' },
+            { slug: 'features/running-agents' },
             { slug: 'features/notifications' },
             { slug: 'features/voice-input' },
             { slug: 'features/keyboard-shortcuts' },

@@ -25,6 +25,8 @@ When the main agent spawns subagents (via Claude Code's `TaskCreate` / agent-tea
 
 Subagent labels are derived from the agent's `description` field and capped at one line / 80 characters so long spawn prompts don't blow up the layout. Hover the label to see the full single-line collapse of the original description.
 
+To follow what the subagents are doing rather than their checklists, see [Running Agents](/features/running-agents/).
+
 ## Sibling Sessions
 
 TeamCreate teammates run as **sibling chat sessions** in the same workspace. While a teammate's agent is still running, that session's live tasks (and its own subagents) appear as a dedicated lane in the Tasks panel — distinguished from **Current** by the session name and a pulsing live dot. Only after the teammate goes idle do its leftover tasks graduate into **History** under the session's name.

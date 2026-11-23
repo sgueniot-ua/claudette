@@ -1,0 +1,39 @@
+---
+title: Running Agents
+description: See the sub-agents a chat is running, and open their details in the Agents tab.
+---
+
+When Claude Code launches sub-agents (the `Agent` tool, in the foreground or in the background), you can follow them without leaving the chat. Claudette shows them in a **Running agents** bar and in the right sidebar's **Agents** tab. This page is for the desktop app; the mobile remote app does not show them.
+
+## The Running Agents Bar
+
+The bar sits just above the chat input of the selected chat. It appears whenever at least one sub-agent of that chat is running, and it stays visible however far you scroll the transcript.
+
+Each row is one agent. It shows an animated state icon, the agent type (for example `scout`), and the agent's description. The bar lists at most three rows. When more agents are running, a **+N more** button appears below them.
+
+Clicking a row opens the right sidebar on the **Agents** tab with that agent selected. Clicking **+N more** opens the tab without a selection. The chat's scroll position does not move in either case.
+
+## The Agents Tab
+
+The **Agents** tab sits next to **Files**, **Changes**, and **Tasks** in the right sidebar. It lists the sub-agents of the selected chat:
+
+- running agents come first, then finished ones (completed, failed, or stopped);
+- selecting an agent shows the same live content as its agent card in the chat: the prompt, the tool calls, the token count, the duration, and the final result;
+- **All agents** returns to the list;
+- if the chat has not launched any sub-agent, the tab shows an empty-state message.
+
+The tab follows the selected chat, so switching chats switches the list.
+
+Finished agents stay in the list, so you can re-read a result later. After an app reload, the tab shows what the chat transcript still shows.
+
+## What Is Not Listed
+
+- Team agents, when they open as their own chat tabs (the **Team agents as session tabs** setting), are not listed. They are sessions in their own right.
+- Sub-agents launched by a sub-agent are not listed.
+
+## Running Agents Versus Tasks
+
+The **Tasks** tab and the **Agents** tab answer different questions:
+
+- **Tasks** shows the checklists (todos) that agents write as they work. See [Task History](/features/task-history/).
+- **Agents** shows what the sub-agents are doing: which ones are running, what they were asked, and what they returned.
