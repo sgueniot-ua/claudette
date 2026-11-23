@@ -35,6 +35,9 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
   const limitRef = useRef(limit);
   limitRef.current = limit;
   const unsupportedRef = useRef(false);
+  // Count of user-initiated fetches (loadMore / goToCommit) still in flight;
+  // the fingerprint poll must not supersede them.
+  const userFetchesRef = useRef(0);
 
   const applyGraph = useCallback((g: GitGraph) => {
     setGraph(g);
@@ -83,9 +86,15 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
   }, [workspaceId, includeRemotes, reloadToken, applyGraph, fail]);
 
   const fetchGraph = useCallback(
-    (nextLimit: number, untilHash?: string, onLoaded?: (g: GitGraph) => void) => {
+    (
+      nextLimit: number,
+      untilHash?: string,
+      onLoaded?: (g: GitGraph) => void,
+      userInitiated = false,
+    ) => {
       if (!workspaceId) return;
       const version = ++versionRef.current;
+      if (userInitiated) userFetchesRef.current++;
       loadGitGraph(workspaceId, includeRemotes, nextLimit, untilHash)
         .then((g) => {
           if (version !== versionRef.current) return;
@@ -95,6 +104,9 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
         .catch((e) => {
           if (version !== versionRef.current) return;
           fail(e);
+        })
+        .finally(() => {
+          if (userInitiated) userFetchesRef.current--;
         });
     },
     [workspaceId, includeRemotes, applyGraph, fail],
@@ -105,7 +117,12 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
 
   const loadMore = useCallback(() => {
     if (!canLoadMore) return;
-    fetchGraph(Math.min(limitRef.current + PAGE_SIZE, MAX_COMMITS));
+    fetchGraph(
+      Math.min(limitRef.current + PAGE_SIZE, MAX_COMMITS),
+      undefined,
+      undefined,
+      true,
+    );
   }, [canLoadMore, fetchGraph]);
 
   const goToCommit = useCallback(
@@ -115,14 +132,19 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
         setSelectedCommit(hash);
         return;
       }
-      fetchGraph(limitRef.current, hash, (g) => {
-        if (g.target_beyond_cap) {
-          setTooOldTarget(hash);
-          setSelectedCommit(null);
-        } else {
-          setSelectedCommit(hash);
-        }
-      });
+      fetchGraph(
+        limitRef.current,
+        hash,
+        (g) => {
+          if (g.target_beyond_cap) {
+            setTooOldTarget(hash);
+            setSelectedCommit(null);
+          } else {
+            setSelectedCommit(hash);
+          }
+        },
+        true,
+      );
     },
     [fetchGraph],
   );
@@ -137,10 +159,12 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
     if (!active || !workspaceId || !hasGraph || unsupportedRef.current) return;
     const id = setInterval(() => {
       if (!workspaceRefreshPollingAllowed()) return;
+      if (userFetchesRef.current > 0) return;
       const requestVersion = versionRef.current;
       loadGitGraphFingerprint(workspaceId, includeRemotes)
         .then(({ fingerprint }) => {
           if (requestVersion !== versionRef.current) return;
+          if (userFetchesRef.current > 0) return;
           if (fingerprint !== graphRef.current?.fingerprint) {
             fetchGraph(limitRef.current);
           }

@@ -165,6 +165,45 @@ describe("useGitGraph", () => {
     expect(loadGitGraph).toHaveBeenCalledTimes(2);
   });
 
+  // FR-011 FR-012
+  it("keeps a pending loadMore or goToCommit when the fingerprint changes", async () => {
+    const { result } = renderHook(() => useGitGraph("w1", true));
+    await flush();
+    loadFingerprint.mockResolvedValue({ fingerprint: "fp2" });
+
+    let resolveMore: (g: GitGraph) => void = () => {};
+    loadGitGraph.mockImplementationOnce(
+      () => new Promise<GitGraph>((r) => (resolveMore = r)),
+    );
+    act(() => result.current.loadMore());
+    await act(async () => {
+      vi.advanceTimersByTime(3_000);
+    });
+    await flush();
+    expect(loadGitGraph).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      resolveMore(makeGraph({ limit: 400, fingerprint: "fp1" }));
+    });
+    await flush();
+    expect(result.current.graph?.limit).toBe(400);
+
+    let resolveGo: (g: GitGraph) => void = () => {};
+    loadGitGraph.mockImplementationOnce(
+      () => new Promise<GitGraph>((r) => (resolveGo = r)),
+    );
+    act(() => result.current.goToCommit("zzz"));
+    await act(async () => {
+      vi.advanceTimersByTime(3_000);
+    });
+    await flush();
+    expect(loadGitGraph).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      resolveGo(makeGraph({ limit: 400, target_beyond_cap: true }));
+    });
+    await flush();
+    expect(result.current.tooOldTarget).toBe("zzz");
+  });
+
   // FR-009 SC-006
   it("reads worktree states on mount then every 10 s", async () => {
     loadStates.mockResolvedValue([{ path: "/a", state: "dirty" }]);
