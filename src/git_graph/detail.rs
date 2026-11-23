@@ -100,16 +100,23 @@ pub async fn commit_detail(
         "for-each-ref",
         "--contains",
         full_hash.as_str(),
-        "--format=%(refname:short)",
+        "--format=%(refname)",
         "refs/heads",
     ];
     if include_remotes {
         ref_args.push("refs/remotes");
     }
+    // Full names, shortened here: `%(refname:short)` turns `refs/remotes/origin/HEAD` into
+    // a bare `origin`, which is not a branch.
     let mut containing_refs: Vec<String> = run_git(repo, &ref_args)
         .await?
         .lines()
-        .filter(|l| !l.is_empty())
+        .filter_map(|full| {
+            full.strip_prefix("refs/heads/").or_else(|| {
+                full.strip_prefix("refs/remotes/")
+                    .filter(|name| !name.ends_with("/HEAD"))
+            })
+        })
         .map(str::to_string)
         .collect();
     if let Some(base) = &ctx.base_ref
@@ -151,7 +158,8 @@ pub async fn commit_detail(
     })
 }
 
-/// Raw diff of `file` in commit `hash` against its first parent.
+/// Raw diff of `file` in commit `hash` against its first parent. A renamed file is diffed
+/// against its old path, so only the real changes show instead of a full addition.
 pub async fn commit_file_diff_first_parent(
     repo: &str,
     hash: &str,
@@ -159,20 +167,42 @@ pub async fn commit_file_diff_first_parent(
 ) -> Result<String, GitError> {
     validate_hash(hash)?;
     crate::diff::validate_file_path(file).map_err(|e| GitError::CommandFailed(e.to_string()))?;
-    run_git(
+    // Rename detection needs both paths in the pathspec: look up the old one first.
+    let names = run_git(
         repo,
         &[
+            "-c",
+            "core.quotepath=off",
             "show",
             "-m",
             "--first-parent",
             "--format=",
             "--no-color",
+            "--name-status",
+            "-M",
             hash,
-            "--",
-            file,
         ],
     )
-    .await
+    .await?;
+    let old_path = parse_files(&names)
+        .into_iter()
+        .find(|f| f.path == file && f.status == CommitFileStatus::Renamed)
+        .and_then(|f| f.old_path);
+    let mut args = vec![
+        "show",
+        "-m",
+        "--first-parent",
+        "--format=",
+        "--no-color",
+        "-M",
+        hash,
+        "--",
+    ];
+    if let Some(old) = old_path.as_deref() {
+        args.push(old);
+    }
+    args.push(file);
+    run_git(repo, &args).await
 }
 
 #[cfg(test)]
@@ -314,6 +344,50 @@ mod tests {
             .await
             .unwrap();
         assert!(diff.contains("+x"), "{diff}");
+    }
+
+    // FR-016
+    #[tokio::test]
+    async fn first_parent_diff_of_renamed_file_is_a_rename() {
+        let dir = repo().await;
+        let p = dir.path();
+        let body: String = (0..20).map(|i| format!("line {i}\n")).collect();
+        write_commit(p, "old.txt", &body, "add old").await;
+        git(p, &["mv", "old.txt", "new.txt"]).await;
+        std::fs::write(p.join("new.txt"), format!("{body}extra\n")).unwrap();
+        git(p, &["add", "-A"]).await;
+        git(p, &["commit", "-m", "rename"]).await;
+        let head = git(p, &["rev-parse", "HEAD"]).await;
+        let diff = commit_file_diff_first_parent(p.to_str().unwrap(), &head, "new.txt")
+            .await
+            .unwrap();
+        assert!(diff.contains("rename from old.txt"), "{diff}");
+        assert!(diff.contains("rename to new.txt"), "{diff}");
+        assert!(diff.contains("+extra"), "{diff}");
+        assert!(!diff.contains("+line 0"), "{diff}");
+    }
+
+    // FR-016
+    #[tokio::test]
+    async fn containing_refs_skip_remote_head_alias() {
+        let dir = repo().await;
+        let p = dir.path();
+        let head = git(p, &["rev-parse", "HEAD"]).await;
+        git(p, &["update-ref", "refs/remotes/origin/main", &head]).await;
+        git(
+            p,
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+        )
+        .await;
+        let detail = commit_detail(&ctx(p), &head, true).await.unwrap();
+        assert_eq!(
+            detail.containing_refs,
+            vec!["main".to_string(), "origin/main".to_string()]
+        );
     }
 
     // FR-016

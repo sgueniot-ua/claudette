@@ -56,7 +56,7 @@ fn parse_record(record: &str) -> Option<GraphCommit> {
     })
 }
 
-/// 0-based index of `hash` (full hash or prefix of 4+ chars) within the first
+/// 0-based index of `hash` (full hash or unambiguous prefix of 4+ chars) within the first
 /// `MAX_COMMITS` commits reachable from `tips`, or `None`.
 pub async fn position_of(
     repo: &str,
@@ -71,7 +71,22 @@ pub async fn position_of(
     args.extend(tips.iter().map(String::as_str));
     args.push("--");
     let out = run_git(repo, &args).await?;
-    Ok(out.lines().position(|line| line.starts_with(hash)))
+    // Resolve to the full id first: an unknown or ambiguous prefix is "not found" instead
+    // of matching whichever commit happens to come first.
+    let Ok(full) = run_git(
+        repo,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{hash}^{{commit}}"),
+        ],
+    )
+    .await
+    else {
+        return Ok(None);
+    };
+    Ok(out.lines().position(|line| line == full))
 }
 
 #[cfg(test)]
@@ -173,6 +188,12 @@ mod tests {
         assert_eq!(position_of(p(&dir), &tips, &oldest).await.unwrap(), Some(3));
         assert_eq!(
             position_of(p(&dir), &tips, &oldest[..8]).await.unwrap(),
+            Some(3)
+        );
+        assert_eq!(
+            position_of(p(&dir), &tips, &oldest.to_uppercase())
+                .await
+                .unwrap(),
             Some(3)
         );
         let unknown = "f".repeat(40);
