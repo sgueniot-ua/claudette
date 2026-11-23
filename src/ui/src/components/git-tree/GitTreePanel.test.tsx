@@ -130,6 +130,7 @@ beforeEach(() => {
     selectWorkspace,
     openDiffTab,
     setDiffSelectedCommitHash,
+    rightSidebarVisible: true,
   } as never);
 });
 
@@ -359,5 +360,15 @@ describe("GitTreePanel", () => {
     setHook({ status: "loading", graph: null });
     c = await render(<GitTreePanel />);
     expect(c.querySelector('[data-testid="git-tree-skeleton"]')).not.toBeNull();
+  });
+
+  it("polls the graph only while the right sidebar is visible", async () => {
+    setHook({ status: "empty", graph: null });
+    await render(<GitTreePanel />);
+    expect(hookMock.useGitGraph).toHaveBeenLastCalledWith("w1", true);
+
+    useAppStore.setState({ rightSidebarVisible: false } as never);
+    await render(<GitTreePanel />);
+    expect(hookMock.useGitGraph).toHaveBeenLastCalledWith("w1", false);
   });
 });

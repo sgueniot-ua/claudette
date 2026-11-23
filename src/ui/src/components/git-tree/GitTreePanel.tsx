@@ -12,7 +12,8 @@ export function GitTreePanel() {
   const { t } = useTranslation("sidebar");
   const workspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const selectWorkspace = useAppStore((s) => s.selectWorkspace);
-  const g = useGitGraph(workspaceId, true);
+  const rightSidebarVisible = useAppStore((s) => s.rightSidebarVisible);
+  const g = useGitGraph(workspaceId, rightSidebarVisible);
   const { graph } = g;
 
   return (
