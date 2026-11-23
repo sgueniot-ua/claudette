@@ -8,6 +8,7 @@ pub async fn repo() -> tempfile::TempDir {
     git(dir.path(), &["init", "-b", "main"]).await;
     git(dir.path(), &["config", "user.email", "test@test.com"]).await;
     git(dir.path(), &["config", "user.name", "Test"]).await;
+    git(dir.path(), &["config", "commit.gpgsign", "false"]).await;
     git(dir.path(), &["commit", "--allow-empty", "-m", "initial"]).await;
     dir
 }

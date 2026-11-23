@@ -3,6 +3,7 @@
 use crate::git::GitError;
 
 pub mod log;
+pub mod refs;
 #[cfg(test)]
 pub(crate) mod test_support;
 
