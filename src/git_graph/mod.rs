@@ -2,10 +2,12 @@
 
 use crate::git::GitError;
 
+pub mod context;
 pub mod log;
 pub mod refs;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod worktrees;
 
 /// Number of commits loaded per page.
 pub const PAGE_SIZE: u32 = 200;
