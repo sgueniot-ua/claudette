@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useAppStore } from "../stores/useAppStore";
 import type { CompletedTurn, ToolActivity } from "../stores/useAppStore";
+import { useTeamAgentSessionTabs } from "./useTeamAgentSessionTabs";
 import { collectSessionAgents, type SessionAgent } from "../stores/sessionAgents";
 
 const EMPTY_ACTIVITIES: ToolActivity[] = [];
@@ -16,9 +17,11 @@ export function useSessionAgents(sessionId: string | null): SessionAgent[] {
     (s) => (sessionId ? s.completedTurns[sessionId] : null) ?? EMPTY_TURNS,
   );
 
+  const excludeTeamAgents = useTeamAgentSessionTabs();
+
   return useMemo(() => {
     if (!sessionId) return EMPTY_AGENTS;
-    const agents = collectSessionAgents(toolActivities, completedTurns);
+    const agents = collectSessionAgents(toolActivities, completedTurns, excludeTeamAgents);
     return agents.length === 0 ? EMPTY_AGENTS : agents;
-  }, [sessionId, toolActivities, completedTurns]);
+  }, [sessionId, toolActivities, completedTurns, excludeTeamAgents]);
 }
