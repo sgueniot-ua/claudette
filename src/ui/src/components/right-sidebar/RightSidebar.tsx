@@ -13,6 +13,7 @@ import {
   IDLE_REFRESH_INTERVAL_MS,
   workspaceRefreshPollingAllowed,
 } from "../../utils/pollingIntervals";
+import { useTranslation } from "react-i18next";
 import { ChevronRight, Undo2, Trash2, Plus, Minus, FilePenLine } from "lucide-react";
 import { useAppStore, selectActiveSessionId } from "../../stores/useAppStore";
 import type { RightSidebarTab } from "../../stores/slices/uiSlice";
@@ -35,6 +36,7 @@ import {
   type AttachmentContextMenuItem,
 } from "../chat/AttachmentContextMenu";
 import { TaskList } from "./TaskList";
+import { AgentsPanel } from "./AgentsPanel";
 import { PrStatusBanner } from "./PrStatusBanner";
 import { FilesPanel } from "../files/FilesPanel";
 import {
@@ -89,6 +91,7 @@ function isDiscardableLayer(layer: DiffLayer | undefined): layer is DiscardableL
 }
 
 export const RightSidebar = memo(function RightSidebar() {
+  const { t } = useTranslation("chat");
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const workspaces = useAppStore((s) => s.workspaces);
   const diffFiles = useAppStore((s) => s.diffFiles);
@@ -778,9 +781,19 @@ export const RightSidebar = memo(function RightSidebar() {
             <span className={styles.tabBadge}>{taskCount}</span>
           )}
         </button>
+        <button
+          className={`${styles.tab} ${activeTab === "agents" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("agents")}
+        >
+          {t("agents_tab")}
+        </button>
       </div>
 
       {activeTab === "files" && <FilesPanel />}
+
+      {activeTab === "agents" && selectedWorkspaceId && (
+        <AgentsPanel workspaceId={selectedWorkspaceId} />
+      )}
 
       {activeTab === "changes" && (
         <>

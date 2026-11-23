@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import "../../i18n";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,6 +50,10 @@ vi.mock("./PrStatusBanner", () => ({
 
 vi.mock("./TaskList", () => ({
   TaskList: () => null,
+}));
+
+vi.mock("./AgentsPanel", () => ({
+  AgentsPanel: () => <div data-testid="agents-panel" />,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -217,5 +222,22 @@ describe("RightSidebar changes cache", () => {
       await refreshed.promise;
     });
     expect(container.textContent).toContain("src/refreshed.ts");
+  });
+});
+
+describe("RightSidebar agents tab", () => {
+  it("RightSidebar shows an Agents tab", async () => {
+    // FR-008
+    serviceMocks.loadDiffFiles.mockResolvedValue(diffResult("src/a.ts"));
+    const container = await renderSidebar();
+    const tab = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Agents",
+    );
+    expect(tab).toBeDefined();
+    expect(container.querySelector('[data-testid="agents-panel"]')).toBeNull();
+    await act(async () => {
+      tab!.click();
+    });
+    expect(container.querySelector('[data-testid="agents-panel"]')).not.toBeNull();
   });
 });
