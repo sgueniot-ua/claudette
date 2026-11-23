@@ -4,6 +4,7 @@ import { AlignJustify, Columns2, Eye, FilePenLine, GitCompare } from "lucide-rea
 import { useAppStore } from "../../stores/useAppStore";
 import {
   loadCommitFileDiff,
+  loadCommitFileDiffFirstParent,
   loadFileDiff,
   readWorkspaceFile,
   readWorkspaceFileForViewer,
@@ -119,6 +120,7 @@ export function DiffViewer() {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId);
   const openFileTab = useAppStore((s) => s.openFileTab);
   const diffSelectedCommitHash = useAppStore((s) => s.diffSelectedCommitHash);
+  const diffCommitParentMode = useAppStore((s) => s.diffCommitParentMode);
 
   const ws = workspaces.find((w) => w.id === selectedWorkspaceId);
   const isMarkdown = !!diffSelectedFile && MARKDOWN_EXT.test(diffSelectedFile);
@@ -154,12 +156,14 @@ export function DiffViewer() {
     const version = ++loadVersionRef.current;
     setDiffLoading(true);
     const load = diffSelectedCommitHash
-      ? loadCommitFileDiff(
-          ws.worktree_path,
-          diffSelectedCommitHash,
-          diffSelectedFile,
-          ws.id,
-        )
+      ? diffCommitParentMode === "first-parent"
+        ? loadCommitFileDiffFirstParent(ws.id, diffSelectedCommitHash, diffSelectedFile)
+        : loadCommitFileDiff(
+            ws.worktree_path,
+            diffSelectedCommitHash,
+            diffSelectedFile,
+            ws.id,
+          )
       : loadFileDiff(
           ws.worktree_path,
           diffMergeBase!,
@@ -182,6 +186,7 @@ export function DiffViewer() {
     diffSelectedFile,
     diffSelectedLayer,
     diffSelectedCommitHash,
+    diffCommitParentMode,
     ws?.worktree_path,
     ws?.id,
     diffMergeBase,

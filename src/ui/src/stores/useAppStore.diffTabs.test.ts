@@ -343,3 +343,19 @@ describe("selectWorkspace clears active diff pointer", () => {
     expect(useAppStore.getState().diffMergeBase).toBeNull();
   });
 });
+
+// FR-016
+describe("diff commit parent mode", () => {
+  beforeEach(reset);
+
+  it("setDiffSelectedCommitHash defaults the parent mode and clearDiff resets it", () => {
+    useAppStore.getState().setDiffSelectedCommitHash("abc1234");
+    expect(useAppStore.getState().diffCommitParentMode).toBe("default");
+
+    useAppStore.getState().setDiffSelectedCommitHash("abc1234", "first-parent");
+    expect(useAppStore.getState().diffCommitParentMode).toBe("first-parent");
+
+    useAppStore.getState().clearDiff();
+    expect(useAppStore.getState().diffCommitParentMode).toBe("default");
+  });
+});

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { isAgentBusy } from "../../utils/agentStatus";
 import {
   DIFF_AGENT_RUNNING_INTERVAL_MS,
@@ -15,6 +16,7 @@ import {
 } from "../../utils/pollingIntervals";
 import { ChevronRight, Undo2, Trash2, Plus, Minus, FilePenLine } from "lucide-react";
 import { useAppStore, selectActiveSessionId } from "../../stores/useAppStore";
+import type { RightSidebarTab } from "../../stores/slices/uiSlice";
 import { isPendingPlaceholderWorkspace } from "../../utils/workspaceEnvironment";
 import { useWorkspaceTaskHistory } from "../../hooks/useWorkspaceTaskHistory";
 import {
@@ -36,6 +38,7 @@ import {
 import { TaskList } from "./TaskList";
 import { PrStatusBanner } from "./PrStatusBanner";
 import { FilesPanel } from "../files/FilesPanel";
+import { GitTreePanel } from "../git-tree/GitTreePanel";
 import {
   DiscardChangesConfirm,
   type DiscardableLayer,
@@ -113,8 +116,9 @@ export const RightSidebar = memo(function RightSidebar() {
     (s) => s.rightSidebarTabByWorkspace[s.selectedWorkspaceId ?? ""] ?? "files",
   );
   const setRightSidebarTabForWorkspace = useAppStore((s) => s.setRightSidebarTabForWorkspace);
+  const { t } = useTranslation();
   const setActiveTab = useCallback(
-    (tab: "files" | "changes" | "tasks") => {
+    (tab: RightSidebarTab) => {
       if (selectedWorkspaceId) setRightSidebarTabForWorkspace(selectedWorkspaceId, tab);
     },
     [selectedWorkspaceId, setRightSidebarTabForWorkspace],
@@ -777,6 +781,12 @@ export const RightSidebar = memo(function RightSidebar() {
             <span className={styles.tabBadge}>{taskCount}</span>
           )}
         </button>
+        <button
+          className={`${styles.tab} ${activeTab === "git-tree" ? styles.tabActive : ""}`}
+          onClick={() => setActiveTab("git-tree")}
+        >
+          {t("gitTree.tab", { ns: "sidebar" })}
+        </button>
       </div>
 
       {activeTab === "files" && <FilesPanel />}
@@ -880,6 +890,8 @@ export const RightSidebar = memo(function RightSidebar() {
           ? <TaskList taskHistory={taskHistory} />
           : <div className={styles.list}><div className={styles.empty}>No workspace selected</div></div>
       )}
+
+      {activeTab === "git-tree" && <GitTreePanel />}
 
       {contextMenu && (
         <AttachmentContextMenu

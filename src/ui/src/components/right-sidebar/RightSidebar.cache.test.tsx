@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import "../../i18n";
 import { useAppStore } from "../../stores/useAppStore";
 import type { DiffFilesResult } from "../../services/tauri";
 import type { DiffFile, StagedDiffFiles } from "../../types/diff";
@@ -49,6 +50,10 @@ vi.mock("./PrStatusBanner", () => ({
 
 vi.mock("./TaskList", () => ({
   TaskList: () => null,
+}));
+
+vi.mock("../git-tree/GitTreePanel", () => ({
+  GitTreePanel: () => "git-tree-panel-mounted",
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -217,5 +222,23 @@ describe("RightSidebar changes cache", () => {
       await refreshed.promise;
     });
     expect(container.textContent).toContain("src/refreshed.ts");
+  });
+
+  // FR-001
+  it("shows the Git tree tab and mounts the panel", async () => {
+    const container = await renderSidebar();
+    const gitTreeTab = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Git tree",
+    );
+    expect(gitTreeTab).toBeDefined();
+    expect(gitTreeTab?.previousElementSibling?.textContent).toContain("Tasks");
+
+    await act(async () => {
+      gitTreeTab!.click();
+    });
+    expect(useAppStore.getState().rightSidebarTabByWorkspace["changes-cache-ws-a"]).toBe(
+      "git-tree",
+    );
+    expect(container.textContent).toContain("git-tree-panel-mounted");
   });
 });
