@@ -14,9 +14,16 @@ export interface DiffFile {
 export type DiffLayer = "committed" | "staged" | "unstaged" | "untracked";
 export type GitFileLayer = "staged" | "unstaged" | "untracked" | "mixed";
 
+export type DiffCommitParentMode = "default" | "first-parent";
+
 export interface DiffFileTab {
   path: string;
   layer: DiffLayer | null;
+  // Commit this tab diffs (Changes commit list, Git tree), restored into
+  // `diffSelectedCommitHash` / `diffCommitParentMode` whenever the tab
+  // becomes active. Absent for working-tree diffs.
+  commitHash?: string;
+  commitParentMode?: DiffCommitParentMode;
 }
 
 export interface DiffSelection {

@@ -255,9 +255,22 @@ describe("GitTreePanel", () => {
     await click(more);
     expect(state.loadMore).toHaveBeenCalled();
 
-    setHook({ canLoadMore: false, atCap: true });
+    setHook({
+      canLoadMore: false,
+      atCap: true,
+      graph: makeGraph({ has_more: true, limit: 10_000 }),
+    });
     c = await render(<GitTreePanel />);
     expect(c.textContent).toContain("Tree limit reached (10,000 commits)");
+
+    // The whole history fits in the cap: nothing was cut off.
+    setHook({
+      canLoadMore: false,
+      atCap: true,
+      graph: makeGraph({ has_more: false, limit: 10_000 }),
+    });
+    c = await render(<GitTreePanel />);
+    expect(c.textContent).not.toContain("Tree limit reached");
 
     setHook({ tooOldTarget: "abcdef0123456789" });
     c = await render(<GitTreePanel />);
@@ -311,8 +324,9 @@ describe("GitTreePanel", () => {
     expect(panel.textContent).toContain("feature");
     await click(panel.querySelector('[data-file-path="src/a.ts"]'));
     expect(openDiffTab).toHaveBeenCalledWith("w1", "src/a.ts", "committed");
-    expect(setDiffSelectedCommitHash.mock.invocationCallOrder[0]).toBeLessThan(
-      openDiffTab.mock.invocationCallOrder[0],
+    // Open first, then stamp the commit on the now-active tab.
+    expect(openDiffTab.mock.invocationCallOrder[0]).toBeLessThan(
+      setDiffSelectedCommitHash.mock.invocationCallOrder[0],
     );
     expect(panel.querySelector('[data-file-path="src/a.ts"]')!.textContent).toContain("Modified");
     expect(setDiffSelectedCommitHash).toHaveBeenCalledWith("h1", "first-parent");

@@ -7,6 +7,7 @@ import type {
 } from "../../types";
 import type {
   CommitEntry,
+  DiffCommitParentMode,
   DiffLayer,
   DiffSelection,
   StagedDiffFiles,
@@ -45,7 +46,7 @@ export interface DiffSlice {
   diffSelectedCommitHash: string | null;
   // How the selected commit's files are diffed: the existing default, or
   // against the first parent (Git tree tab, merge commits).
-  diffCommitParentMode: "default" | "first-parent";
+  diffCommitParentMode: DiffCommitParentMode;
   setDiffFiles: (
     files: DiffFile[],
     mergeBase: string,
@@ -59,9 +60,11 @@ export interface DiffSlice {
   setDiffLoading: (loading: boolean) => void;
   setDiffError: (error: string | null) => void;
   setCommitHistory: (commits: CommitEntry[] | null) => void;
+  // Also stamps the active diff tab, so the commit follows that tab when
+  // the user switches to another diff tab and back.
   setDiffSelectedCommitHash: (
     hash: string | null,
-    mode?: "default" | "first-parent",
+    mode?: DiffCommitParentMode,
   ) => void;
   setDiffPreviewMode: (mode: "diff" | "rendered") => void;
   setDiffPreviewContent: (content: FileContent | null) => void;
@@ -90,6 +93,25 @@ export interface DiffSlice {
     path: string,
     layer?: DiffLayer | null,
   ) => void;
+}
+
+// Commit globals the diff viewer must use for `tab` (null/default when the
+// tab is a working-tree diff or unknown).
+export function diffCommitStateOf(
+  tab: DiffFileTab | undefined,
+): Pick<DiffSlice, "diffSelectedCommitHash" | "diffCommitParentMode"> {
+  return {
+    diffSelectedCommitHash: tab?.commitHash ?? null,
+    diffCommitParentMode: tab?.commitParentMode ?? "default",
+  };
+}
+
+function findDiffTab(
+  tabs: DiffFileTab[] | undefined,
+  path: string | null,
+  layer: DiffLayer | null,
+): DiffFileTab | undefined {
+  return tabs?.find((t) => t.path === path && t.layer === layer);
 }
 
 export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
@@ -129,7 +151,26 @@ export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
   setDiffError: (error) => set({ diffError: error }),
   setCommitHistory: (commits) => set({ commitHistory: commits }),
   setDiffSelectedCommitHash: (hash, mode = "default") =>
-    set({ diffSelectedCommitHash: hash, diffCommitParentMode: mode }),
+    set((s) => {
+      const updates: Partial<AppState> = {
+        diffSelectedCommitHash: hash,
+        diffCommitParentMode: mode,
+      };
+      const wsId = s.selectedWorkspaceId;
+      const tabs = wsId ? s.diffTabsByWorkspace[wsId] : undefined;
+      const active = findDiffTab(tabs, s.diffSelectedFile, s.diffSelectedLayer);
+      if (wsId && tabs && active) {
+        const stamped: DiffFileTab =
+          hash === null
+            ? { path: active.path, layer: active.layer }
+            : { path: active.path, layer: active.layer, commitHash: hash, commitParentMode: mode };
+        updates.diffTabsByWorkspace = {
+          ...s.diffTabsByWorkspace,
+          [wsId]: tabs.map((t) => (t === active ? stamped : t)),
+        };
+      }
+      return updates;
+    }),
   setDiffPreviewMode: (mode) => set({ diffPreviewMode: mode }),
   setDiffPreviewContent: (content) => set({ diffPreviewContent: content }),
   setDiffPreviewLoading: (loading) => set({ diffPreviewLoading: loading }),
@@ -209,6 +250,10 @@ export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
         ...(isSameSelection
           ? {}
           : {
+              // Callers that diff a commit stamp it right after opening.
+              ...diffCommitStateOf(
+                findDiffTab(nextTabs[workspaceId], path, normalizedLayer),
+              ),
               diffContent: null,
               diffError: null,
               diffPreviewMode: "diff",
@@ -224,9 +269,13 @@ export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
       const isSameSelection =
         s.diffSelectedFile === path && s.diffSelectedLayer === normalizedLayer;
       if (isSameSelection) return s;
+      const tabs = s.selectedWorkspaceId
+        ? s.diffTabsByWorkspace[s.selectedWorkspaceId]
+        : undefined;
       return {
         diffSelectedFile: path,
         diffSelectedLayer: normalizedLayer,
+        ...diffCommitStateOf(findDiffTab(tabs, path, normalizedLayer)),
         diffContent: null,
         diffError: null,
         diffPreviewMode: "diff",

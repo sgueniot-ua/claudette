@@ -359,3 +359,75 @@ describe("diff commit parent mode", () => {
     expect(useAppStore.getState().diffCommitParentMode).toBe("default");
   });
 });
+
+// FR-016
+describe("commit diff stays attached to its tab", () => {
+  beforeEach(() => {
+    reset();
+    useAppStore.setState({
+      selectedWorkspaceId: WS_A,
+      diffSelectedCommitHash: null,
+      diffCommitParentMode: "default",
+      diffSelectionByWorkspace: {},
+    });
+  });
+
+  it("working-tree tab shows its own diff after a Git tree commit diff is opened", () => {
+    const s = () => useAppStore.getState();
+    // Working-tree diff of foo.ts (Changes tab).
+    s().openDiffTab(WS_A, "foo.ts", "unstaged");
+    s().setDiffSelectedCommitHash(null);
+    // Git tree: first-parent diff of bar.ts in commit h1.
+    s().openDiffTab(WS_A, "bar.ts", "committed");
+    s().setDiffSelectedCommitHash("h1", "first-parent");
+    expect(s().diffSelectedCommitHash).toBe("h1");
+    expect(s().diffCommitParentMode).toBe("first-parent");
+
+    s().selectDiffTab("foo.ts", "unstaged");
+    expect(s().diffSelectedCommitHash).toBeNull();
+    expect(s().diffCommitParentMode).toBe("default");
+
+    s().selectDiffTab("bar.ts", "committed");
+    expect(s().diffSelectedCommitHash).toBe("h1");
+    expect(s().diffCommitParentMode).toBe("first-parent");
+  });
+
+  it("a Changes commit-list tab keeps its commit across tab switches", () => {
+    const s = () => useAppStore.getState();
+    s().openDiffTab(WS_A, "a.ts", "committed");
+    s().setDiffSelectedCommitHash("c1");
+    s().openDiffTab(WS_A, "b.ts", "unstaged");
+    expect(s().diffSelectedCommitHash).toBeNull();
+
+    s().selectDiffTab("a.ts", "committed");
+    expect(s().diffSelectedCommitHash).toBe("c1");
+    expect(s().diffCommitParentMode).toBe("default");
+  });
+
+  it("reopening a commit tab as a working-tree diff clears its commit", () => {
+    const s = () => useAppStore.getState();
+    s().openDiffTab(WS_A, "a.ts", "committed");
+    s().setDiffSelectedCommitHash("h1", "first-parent");
+    s().openDiffTab(WS_A, "b.ts", "unstaged");
+    s().openDiffTab(WS_A, "a.ts", "committed");
+    expect(s().diffSelectedCommitHash).toBe("h1");
+    s().setDiffSelectedCommitHash(null);
+    expect(s().diffTabsByWorkspace[WS_A]).toEqual([
+      { path: "a.ts", layer: "committed" },
+      { path: "b.ts", layer: "unstaged" },
+    ]);
+  });
+
+  it("switching workspace restores the commit of that workspace's tab only", () => {
+    const s = () => useAppStore.getState();
+    s().openDiffTab(WS_A, "bar.ts", "committed");
+    s().setDiffSelectedCommitHash("h1", "first-parent");
+    s().selectWorkspace(WS_B);
+    expect(s().diffSelectedCommitHash).toBeNull();
+    expect(s().diffCommitParentMode).toBe("default");
+    s().selectWorkspace(WS_A);
+    expect(s().diffSelectedFile).toBe("bar.ts");
+    expect(s().diffSelectedCommitHash).toBe("h1");
+    expect(s().diffCommitParentMode).toBe("first-parent");
+  });
+});

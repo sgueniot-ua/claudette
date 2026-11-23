@@ -3,6 +3,7 @@ import { notifyWorkspaceSelected } from "../../services/tauri";
 import type { Workspace } from "../../types";
 import { prewarmWorkspaceFiles } from "../../utils/workspaceFileCache";
 import type { AppState } from "../useAppStore";
+import { diffCommitStateOf } from "./diffSlice";
 
 // Fire-and-forget wrapper around the typed service call. Errors are
 // swallowed because selection is a pure UI action — a failed notification
@@ -641,11 +642,13 @@ export const createWorkspacesSlice: StateCreator<
       // Restore incoming workspace's selection, validated against open tabs.
       const restored = id ? selectionMap[id] : undefined;
       const incomingTabs = id ? (s.diffTabsByWorkspace[id] ?? []) : [];
-      const tabExists =
-        restored?.path != null &&
-        incomingTabs.some(
-          (t) => t.path === restored.path && t.layer === restored.layer,
-        );
+      const restoredTab =
+        restored?.path != null
+          ? incomingTabs.find(
+              (t) => t.path === restored.path && t.layer === restored.layer,
+            )
+          : undefined;
+      const tabExists = restoredTab !== undefined;
 
       const updates: Partial<AppState> = {
         selectedWorkspaceId: id,
@@ -660,6 +663,9 @@ export const createWorkspacesSlice: StateCreator<
         diffSelectionByWorkspace: selectionMap,
         diffSelectedFile: tabExists ? restored!.path : null,
         diffSelectedLayer: tabExists ? restored!.layer : null,
+        // The commit a diff tab shows travels with that tab, not across
+        // workspaces.
+        ...diffCommitStateOf(restoredTab),
         diffContent: null,
         diffError: null,
         diffPreviewMode: "diff",

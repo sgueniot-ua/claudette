@@ -91,8 +91,8 @@ export function CommitDetail({ workspaceId, hash, includeRemotes, worktrees }: C
               className={styles.fileButton}
               data-file-path={f.path}
               onClick={() => {
-                setDiffSelectedCommitHash(detail.hash, "first-parent");
                 openDiffTab(workspaceId, f.path, "committed");
+                setDiffSelectedCommitHash(detail.hash, "first-parent");
               }}
             >
               <span className={styles.fileStatus} aria-hidden="true">
