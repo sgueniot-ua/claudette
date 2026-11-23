@@ -741,6 +741,19 @@ export function useAgentStream() {
                 updates.agentStatus = streamEvent.status;
               } else if (streamEvent.subtype === "task_progress") {
                 updates.agentStatus = "running";
+              } else if (
+                streamEvent.subtype === "task_started" &&
+                findToolActivity(
+                  useAppStore.getState(),
+                  sessionId,
+                  streamEvent.tool_use_id,
+                )?.toolName === "Agent"
+              ) {
+                // `task_started` carries no status, and a background
+                // Agent's launch acknowledgement fills `resultText` at once,
+                // so without this it would read "done" until the first
+                // `task_progress`.
+                updates.agentStatus = "starting";
               }
               updateToolActivity(sessionId, streamEvent.tool_use_id, updates);
               // A backgrounded Workflow usually finishes after the turn
