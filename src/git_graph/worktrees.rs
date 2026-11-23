@@ -88,14 +88,15 @@ pub async fn list_graph_worktrees(
         .await?
         .into_iter()
         .map(|(is_main, e)| {
-            let link = if is_missing(&e) {
+            let missing = is_missing(&e);
+            let link = if missing {
                 None
             } else {
                 let path = canonical(&e.path);
                 links.iter().find(|(p, _)| *p == path).map(|(_, w)| *w)
             };
             GraphWorktree {
-                state: if is_missing(&e) {
+                state: if missing {
                     WorktreeState::Missing
                 } else {
                     WorktreeState::Unknown
@@ -286,5 +287,15 @@ mod tests {
         assert_eq!(state_of(main.path()), WorktreeState::Clean);
         assert_eq!(state_of(&d1), WorktreeState::Dirty);
         assert_eq!(state_of(&d2), WorktreeState::Dirty);
+    }
+
+    // FR-009
+    #[tokio::test]
+    async fn git_failure_maps_to_unknown() {
+        let (main, _wt, d1, _d2) = setup().await;
+        std::fs::write(d1.join(".git"), "").unwrap();
+        let states = worktree_states(s(main.path())).await.unwrap();
+        let st = states.iter().find(|e| e.path.ends_with("d1")).unwrap();
+        assert_eq!(st.state, WorktreeState::Unknown);
     }
 }

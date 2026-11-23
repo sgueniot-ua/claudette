@@ -19,6 +19,7 @@ pub(crate) async fn run_git(repo: &str, args: &[&str]) -> Result<String, GitErro
     let output = crate::process::command(crate::git::resolve_git_path_blocking())
         .args(["-C", repo])
         .args(args)
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(GitError::from_spawn_io)?;
