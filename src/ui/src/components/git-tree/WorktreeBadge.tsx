@@ -37,6 +37,9 @@ export function WorktreeBadge({ worktree, state, onSelectWorkspace }: WorktreeBa
     <>
       {name}
       {detached && <span className={styles.worktreeSuffix}> ({t("gitTree.detached")})</span>}
+      {!missing && kind === "external" && (
+        <span className={styles.srOnly}> — {t("gitTree.notClaudette", { path: worktree.path })}</span>
+      )}
       {missing && <span className={styles.srOnly}> — {t("gitTree.folderNotFound")}</span>}
       {state === "dirty" && (
         <span

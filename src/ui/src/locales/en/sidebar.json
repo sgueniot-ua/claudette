@@ -113,6 +113,16 @@
     "unsupported": "This machine does not support the git tree yet.",
     "files": "Files",
     "containedIn": "Contained in",
-    "more": "+{{count}}"
+    "more": "+{{count}}",
+    "showMoreLabels": "Show {{count}} more labels",
+    "hideMoreLabels": "Hide extra labels",
+    "status": {
+      "added": "Added",
+      "modified": "Modified",
+      "deleted": "Deleted",
+      "renamed": "Renamed",
+      "copied": "Copied",
+      "type_changed": "Type changed"
+    }
   }
 }

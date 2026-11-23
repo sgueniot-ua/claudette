@@ -91,16 +91,15 @@ export function CommitDetail({ workspaceId, hash, includeRemotes, worktrees }: C
               className={styles.fileButton}
               data-file-path={f.path}
               onClick={() => {
-                openDiffTab(workspaceId, f.path, "committed");
                 setDiffSelectedCommitHash(detail.hash, "first-parent");
+                openDiffTab(workspaceId, f.path, "committed");
               }}
             >
-              <span
-                className={styles.fileStatus}
-                title={f.status.replace("_", " ")}
-                aria-label={f.status.replace("_", " ")}
-              >
-                {STATUS_LETTER[f.status]}
+              <span className={styles.fileStatus} aria-hidden="true">
+                {STATUS_LETTER[f.status] ?? "?"}
+              </span>
+              <span className={styles.srOnly}>
+                {t(`gitTree.status.${f.status}`, { defaultValue: f.status })}{" "}
               </span>
               {f.path}
             </button>

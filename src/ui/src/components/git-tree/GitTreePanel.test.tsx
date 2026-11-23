@@ -190,6 +190,7 @@ describe("GitTreePanel", () => {
     const missing = c.querySelector('[data-worktree-state="missing"]')!;
     expect(missing.getAttribute("title")).toBe("Folder not found");
     const external = c.querySelector('[data-worktree-kind="external"]')!;
+    expect(external.textContent).toContain("Not a Claudette workspace");
     expect(external.getAttribute("title")).toBe(
       "Not a Claudette workspace — /ext/folder",
     );
@@ -309,6 +310,10 @@ describe("GitTreePanel", () => {
     expect(panel.textContent).toContain("feature");
     await click(panel.querySelector('[data-file-path="src/a.ts"]'));
     expect(openDiffTab).toHaveBeenCalledWith("w1", "src/a.ts", "committed");
+    expect(setDiffSelectedCommitHash.mock.invocationCallOrder[0]).toBeLessThan(
+      openDiffTab.mock.invocationCallOrder[0],
+    );
+    expect(panel.querySelector('[data-file-path="src/a.ts"]')!.textContent).toContain("Modified");
     expect(setDiffSelectedCommitHash).toHaveBeenCalledWith("h1", "first-parent");
   });
 
@@ -324,8 +329,11 @@ describe("GitTreePanel", () => {
     expect(row.querySelectorAll("[data-ref-label]").length).toBe(3);
     const more = row.querySelector('[data-testid="more-labels"]') as HTMLElement;
     expect(more.textContent).toBe("+2");
+    expect(more.getAttribute("aria-label")).toBe("Show 2 more labels");
     await click(more);
-    expect(row.querySelectorAll("[data-ref-label]").length).toBe(5);
+    const popover = row.querySelector('[data-testid="labels-popover"]')!;
+    expect(popover.querySelectorAll("[data-ref-label]").length).toBe(5);
+    expect(more.getAttribute("aria-label")).toBe("Hide extra labels");
   });
 
   // Edge

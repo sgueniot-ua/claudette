@@ -87,35 +87,39 @@ function RowLabels({
 }) {
   const { t } = useTranslation("sidebar");
   const [expanded, setExpanded] = useState(false);
-  const shown = expanded ? labels : labels.slice(0, MAX_INLINE_LABELS);
   const hidden = labels.length - MAX_INLINE_LABELS;
+  const renderLabel = (l: Label) =>
+    l.kind === "ref" ? (
+      <span
+        key={l.key}
+        data-ref-label
+        className={l.remote ? styles.refLabelRemote : styles.refLabel}
+      >
+        {l.name}
+      </span>
+    ) : (
+      <span key={l.key} data-ref-label>
+        <WorktreeBadge
+          worktree={l.worktree}
+          state={worktreeStateOf(l.worktree.path, l.worktree.state, worktreeStates)}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </span>
+    );
   return (
     <span className={styles.labels}>
-      {shown.map((l) =>
-        l.kind === "ref" ? (
-          <span
-            key={l.key}
-            data-ref-label
-            className={l.remote ? styles.refLabelRemote : styles.refLabel}
-          >
-            {l.name}
-          </span>
-        ) : (
-          <span key={l.key} data-ref-label>
-            <WorktreeBadge
-              worktree={l.worktree}
-              state={worktreeStateOf(l.worktree.path, l.worktree.state, worktreeStates)}
-              onSelectWorkspace={onSelectWorkspace}
-            />
-          </span>
-        ),
-      )}
+      {labels.slice(0, MAX_INLINE_LABELS).map(renderLabel)}
       {hidden > 0 && (
         <button
           type="button"
           className={styles.moreLabels}
           data-testid="more-labels"
           aria-expanded={expanded}
+          aria-label={
+            expanded
+              ? t("gitTree.hideMoreLabels")
+              : t("gitTree.showMoreLabels", { count: hidden })
+          }
           onClick={(e) => {
             e.stopPropagation();
             setExpanded((v) => !v);
@@ -123,6 +127,11 @@ function RowLabels({
         >
           {expanded ? "−" : t("gitTree.more", { count: hidden })}
         </button>
+      )}
+      {expanded && (
+        <span className={styles.labelsPopover} data-testid="labels-popover">
+          {labels.map(renderLabel)}
+        </span>
       )}
     </span>
   );
