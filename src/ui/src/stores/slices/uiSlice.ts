@@ -6,7 +6,7 @@ import type {
 } from "../../types/plugins";
 import type { AppState } from "../useAppStore";
 
-export const RIGHT_SIDEBAR_TABS = ["files", "changes", "tasks"] as const;
+export const RIGHT_SIDEBAR_TABS = ["files", "changes", "tasks", "agents"] as const;
 export type RightSidebarTab = (typeof RIGHT_SIDEBAR_TABS)[number];
 
 export interface ClaudeAuthFailureState {
@@ -34,6 +34,8 @@ export interface UiSlice {
   terminalHeight: number;
   composerHeight: number;
   rightSidebarTabByWorkspace: Record<string, RightSidebarTab>;
+  // UI-only (never persisted): selected sub-agent toolUseId per session.
+  selectedAgentBySession: Record<string, string | null>;
   sidebarGroupBy: "status" | "repo";
   sidebarRepoFilter: string; // repo ID or "all"
   sidebarShowArchived: boolean;
@@ -47,6 +49,8 @@ export interface UiSlice {
   toggleSidebar: () => void;
   toggleRightSidebar: () => void;
   setRightSidebarTabForWorkspace: (workspaceId: string, tab: RightSidebarTab) => void;
+  openAgentInSidebar: (workspaceId: string, sessionId: string, toolUseId: string | null) => void;
+  selectAgentInSidebar: (sessionId: string, toolUseId: string | null) => void;
   setSidebarWidth: (w: number) => void;
   setRightSidebarWidth: (w: number) => void;
   setTerminalHeight: (h: number) => void;
@@ -189,6 +193,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (
   terminalHeight: 300,
   composerHeight: 52,
   rightSidebarTabByWorkspace: {},
+  selectedAgentBySession: {},
   sidebarGroupBy: "repo",
   sidebarRepoFilter: "all",
   sidebarShowArchived: false,
@@ -203,6 +208,16 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (
   setRightSidebarTabForWorkspace: (workspaceId, tab) =>
     set((s) => ({
       rightSidebarTabByWorkspace: { ...s.rightSidebarTabByWorkspace, [workspaceId]: tab },
+    })),
+  openAgentInSidebar: (workspaceId, sessionId, toolUseId) =>
+    set((s) => ({
+      selectedAgentBySession: { ...s.selectedAgentBySession, [sessionId]: toolUseId },
+      rightSidebarTabByWorkspace: { ...s.rightSidebarTabByWorkspace, [workspaceId]: "agents" },
+      rightSidebarVisible: true,
+    })),
+  selectAgentInSidebar: (sessionId, toolUseId) =>
+    set((s) => ({
+      selectedAgentBySession: { ...s.selectedAgentBySession, [sessionId]: toolUseId },
     })),
   setSidebarWidth: (w) => set({ sidebarWidth: w }),
   setRightSidebarWidth: (w) => set({ rightSidebarWidth: w }),
