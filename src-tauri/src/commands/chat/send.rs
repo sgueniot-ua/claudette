@@ -47,7 +47,7 @@ use self::background_tasks::{
     arm_background_task_from_system_notification, emit_agent_background_task_event,
     get_or_create_agent_shell_terminal_tab, is_final_terminal_task_status,
     mirror_background_task_output, schedule_background_task_wake, should_defer_persistent_restart,
-    terminal_text,
+    starts_tracked_background_agent, terminal_text, track_background_agent_started,
 };
 use self::team_agents::TeamAgentInputTracker;
 pub(super) use self::team_agents::team_agent_session_tabs_enabled;
@@ -389,6 +389,7 @@ async fn reset_persistent_session_after_auth_failure(
         // `IdleWithBackground`, and (with the continue-on-timeout wake) a wake
         // that spins forever against a task that will never complete.
         session.running_background_tasks.clear();
+        session.running_background_agents.clear();
         session.background_task_output_paths.clear();
         session.background_wake_active = false;
         (pid, ended_sid, session.workspace_id.clone())
@@ -1252,6 +1253,7 @@ pub async fn send_chat_message(
                 session_backend_hash: String::new(),
                 pending_permissions: std::collections::HashMap::new(),
                 running_background_tasks: std::collections::HashSet::new(),
+                running_background_agents: std::collections::HashSet::new(),
                 background_wake_active: false,
                 background_task_output_paths: std::collections::HashMap::new(),
                 session_exited_plan: false,
@@ -1285,6 +1287,7 @@ pub async fn send_chat_message(
             session_backend_hash: String::new(),
             pending_permissions: std::collections::HashMap::new(),
             running_background_tasks: std::collections::HashSet::new(),
+            running_background_agents: std::collections::HashSet::new(),
             background_wake_active: false,
             background_task_output_paths: std::collections::HashMap::new(),
             session_exited_plan: false,
@@ -2652,6 +2655,20 @@ pub async fn send_chat_message(
                 }
             }
 
+            // A backgrounded `Agent` subagent announces itself only with
+            // `task_started` (never a non-terminal `task_notification`), so
+            // track it separately for the activity status.
+            if let AgentEvent::Stream(StreamEvent::System {
+                subtype,
+                task_id: Some(task_id),
+                task_type,
+                ..
+            }) = &event
+                && starts_tracked_background_agent(subtype, task_type.as_deref())
+            {
+                track_background_agent_started(&app, &chat_session_id_for_stream, task_id).await;
+            }
+
             background_task_inputs.observe_bash_input_delta(&event);
             team_agent_inputs.observe_event(&event, team_agent_tabs_enabled, &app, &ws_id);
             background_task_inputs
@@ -3194,6 +3211,7 @@ pub async fn send_chat_message(
                     // Also cleanly terminates any in-flight wake: its
                     // `still_pending` check flips false on the next tick.
                     session.running_background_tasks.clear();
+                    session.running_background_agents.clear();
                     session.background_task_output_paths.clear();
                     session.background_wake_active = false;
                     ended_own_session = true;
@@ -3410,6 +3428,7 @@ mod tests {
             session_backend_hash: String::new(),
             pending_permissions: Default::default(),
             running_background_tasks: Default::default(),
+            running_background_agents: Default::default(),
             background_task_output_paths: Default::default(),
             background_wake_active: false,
             session_exited_plan: false,

@@ -266,6 +266,35 @@ fn should_arm_wake_for_status(status: &str) -> bool {
     !is_terminal_task_status(status)
 }
 
+/// Whether a System event starts a backgrounded `Agent` subagent that must be
+/// tracked in `running_background_agents` (activity status only, no wake).
+pub(super) fn starts_tracked_background_agent(subtype: &str, task_type: Option<&str>) -> bool {
+    subtype == "task_started" && task_type == Some("local_agent")
+}
+
+/// Record a backgrounded `Agent` subagent in `running_background_agents` and
+/// signal the activity change. Removal happens in
+/// [`apply_task_notification_status`] on the terminal notification.
+pub(super) async fn track_background_agent_started(
+    app: &AppHandle,
+    chat_session_id: &str,
+    task_id: &str,
+) {
+    let app_state = app.state::<AppState>();
+    let workspace_id = {
+        let mut agents = app_state.agents.write().await;
+        agents.get_mut(chat_session_id).map(|session| {
+            session
+                .running_background_agents
+                .insert(task_id.to_string());
+            session.workspace_id.clone()
+        })
+    };
+    if let Some(ws) = workspace_id {
+        crate::commands::chat::activity::emit_activity_changed(app, &ws, chat_session_id);
+    }
+}
+
 /// Arm the background-task wake for *any* background task the Claude CLI
 /// reports via a trusted `task_notification` System event — not just Bash.
 ///
@@ -741,12 +770,7 @@ pub(super) async fn apply_task_notification_status(
         let session_found = {
             let mut agents = app_state.agents.write().await;
             if let Some(session) = agents.get_mut(chat_session_id) {
-                session.running_background_tasks.remove(task_id);
-                session.background_task_output_paths.remove(task_id);
-                if let Some(tool_use_id) = tool_use_id {
-                    session.running_background_tasks.remove(tool_use_id);
-                    session.background_task_output_paths.remove(tool_use_id);
-                }
+                session.finish_background_task(task_id, tool_use_id);
                 true
             } else {
                 false
@@ -1291,7 +1315,8 @@ mod tests {
     use super::{
         BackgroundTaskCompletion, BackgroundTaskInputTracker,
         build_background_task_completion_prompt, is_terminal_task_status, markdown_code_fence_for,
-        should_arm_wake_for_status, should_defer_persistent_restart_for_state, terminal_text,
+        should_arm_wake_for_status, should_defer_persistent_restart_for_state,
+        starts_tracked_background_agent, terminal_text,
     };
     use claudette::agent::{
         AgentEvent, InnerStreamEvent, StartContentBlock, StreamEvent, UserContentBlock,
@@ -1322,6 +1347,23 @@ mod tests {
     #[test]
     fn terminal_text_normalizes_crlf_without_extra_clear() {
         assert_eq!(terminal_text("one\r\ntwo\r\n"), "one\r\ntwo\r\n");
+    }
+
+    #[test]
+    fn only_task_started_local_agent_is_tracked_as_background_agent() {
+        assert!(starts_tracked_background_agent(
+            "task_started",
+            Some("local_agent")
+        ));
+        assert!(!starts_tracked_background_agent(
+            "task_started",
+            Some("local_bash")
+        ));
+        assert!(!starts_tracked_background_agent("task_started", None));
+        assert!(!starts_tracked_background_agent(
+            "task_progress",
+            Some("local_agent")
+        ));
     }
 
     #[test]

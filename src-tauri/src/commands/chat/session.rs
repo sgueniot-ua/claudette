@@ -17,7 +17,7 @@ fn hydrate_session(
     if let Some(agent) = agents.get(&session.id) {
         session.agent_status = claudette::activity::session_status(
             agent.active_pid.is_some(),
-            !agent.running_background_tasks.is_empty(),
+            agent.has_background_activity(),
         );
         session.needs_attention = agent.needs_attention;
         session.attention_kind = agent.attention_kind.map(|k| match k {
@@ -298,6 +298,7 @@ mod tests {
                 .iter()
                 .map(|task| (*task).to_string())
                 .collect(),
+            running_background_agents: Default::default(),
             background_wake_active: false,
             background_task_output_paths: std::collections::HashMap::new(),
             session_exited_plan: false,

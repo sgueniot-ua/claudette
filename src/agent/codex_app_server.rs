@@ -2864,6 +2864,7 @@ fn codex_compacting_status_event() -> AgentEvent {
         compact_result: None,
         compact_metadata: None,
         command_line: None,
+        task_type: None,
     })
 }
 
@@ -2900,6 +2901,7 @@ fn codex_context_compaction_event() -> AgentEvent {
             duration_ms: 0,
         }),
         command_line: None,
+        task_type: None,
     })
 }
 
@@ -2960,6 +2962,7 @@ fn codex_command_execution_status_event(item: &Value, status: &str) -> AgentEven
         compact_result: None,
         compact_metadata: None,
         command_line: None,
+        task_type: None,
     })
 }
 
@@ -3082,6 +3085,7 @@ pub fn codex_turn_start_events(thread_id: &str) -> Vec<AgentEvent> {
             compact_result: None,
             compact_metadata: None,
             command_line: None,
+            task_type: None,
         }),
         AgentEvent::Stream(StreamEvent::Stream {
             event: InnerStreamEvent::MessageStart {},

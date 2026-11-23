@@ -233,6 +233,11 @@ pub enum StreamEvent {
         /// `crate::agent::args::format_redacted_invocation`.
         #[serde(default)]
         command_line: Option<String>,
+        /// Present on `task_started` events: the kind of task the CLI began
+        /// (`local_agent` for a backgrounded `Agent` subagent, `local_bash`
+        /// for a Bash command, ...).
+        #[serde(default)]
+        task_type: Option<String>,
     },
 
     #[serde(rename = "stream_event")]
@@ -316,6 +321,7 @@ impl StreamEvent {
             compact_result: None,
             compact_metadata: None,
             command_line: Some(line),
+            task_type: None,
         }
     }
 }
@@ -1238,6 +1244,32 @@ mod compaction_tests {
                 assert_eq!(s, "compacting");
             }
             other => panic!("expected System(status:compacting), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserializes_task_started_system_event_with_task_type() {
+        let line = r#"{
+            "type": "system",
+            "subtype": "task_started",
+            "task_id": "a39f",
+            "tool_use_id": "toolu_1",
+            "task_type": "local_agent",
+            "description": "Explore the repo"
+        }"#;
+        let ev: StreamEvent = serde_json::from_str(line).unwrap();
+        match ev {
+            StreamEvent::System {
+                subtype,
+                task_id,
+                task_type,
+                ..
+            } => {
+                assert_eq!(subtype, "task_started");
+                assert_eq!(task_id.as_deref(), Some("a39f"));
+                assert_eq!(task_type.as_deref(), Some("local_agent"));
+            }
+            other => panic!("expected System(task_started), got {other:?}"),
         }
     }
 

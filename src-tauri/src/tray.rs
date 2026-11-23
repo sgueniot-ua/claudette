@@ -792,6 +792,7 @@ mod tests {
             session_backend_hash: String::new(),
             pending_permissions: HashMap::new(),
             running_background_tasks: Default::default(),
+            running_background_agents: Default::default(),
             background_wake_active: false,
             background_task_output_paths: std::collections::HashMap::new(),
             session_exited_plan: false,

@@ -157,6 +157,7 @@ pub async fn rollback_to_checkpoint(
                 session_backend_hash: String::new(),
                 pending_permissions: Default::default(),
                 running_background_tasks: Default::default(),
+                running_background_agents: Default::default(),
                 background_wake_active: false,
                 background_task_output_paths: Default::default(),
                 session_exited_plan: false,

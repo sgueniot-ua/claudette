@@ -62,7 +62,7 @@ fn session_activity(
         Some(agent) => SessionActivity {
             agent_status: session_status(
                 agent.active_pid.is_some(),
-                !agent.running_background_tasks.is_empty(),
+                agent.has_background_activity(),
             ),
             needs_attention: agent.needs_attention,
             attention_kind: agent.attention_kind.map(|k| match k {
@@ -155,6 +155,7 @@ mod tests {
             session_backend_hash: String::new(),
             pending_permissions: HashMap::new(),
             running_background_tasks: Default::default(),
+            running_background_agents: Default::default(),
             background_wake_active: false,
             background_task_output_paths: HashMap::new(),
             session_exited_plan: false,
@@ -240,6 +241,52 @@ mod tests {
         let result = build_workspaces_activity(&db, &agents).unwrap();
 
         assert_eq!(result[0].agent_status, AgentStatus::IdleWithBackground);
+    }
+
+    // FR-006, FR-009
+    #[test]
+    fn background_agents_alone_make_session_idle_with_background() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db_with_workspace(&dir);
+        let sid = db.default_session_id_for_workspace("w1").unwrap().unwrap();
+        let mut bg = agent("w1", &sid, None);
+        bg.running_background_agents.insert("a39f".into());
+        // The wake gates read `running_background_tasks` only: it stays empty.
+        assert!(bg.running_background_tasks.is_empty());
+        let agents = HashMap::from([(sid.clone(), bg)]);
+
+        let result = build_workspaces_activity(&db, &agents).unwrap();
+
+        assert_eq!(result[0].agent_status, AgentStatus::IdleWithBackground);
+        assert_eq!(
+            result[0].sessions[0].agent_status,
+            AgentStatus::IdleWithBackground
+        );
+    }
+
+    // FR-006
+    #[test]
+    fn running_wins_over_background_agents() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db_with_workspace(&dir);
+        let sid = db.default_session_id_for_workspace("w1").unwrap().unwrap();
+        let mut s = agent("w1", &sid, Some(7));
+        s.running_background_agents.insert("a39f".into());
+        let agents = HashMap::from([(sid, s)]);
+
+        let result = build_workspaces_activity(&db, &agents).unwrap();
+
+        assert_eq!(result[0].sessions[0].agent_status, AgentStatus::Running);
+    }
+
+    // FR-006, FR-008
+    #[test]
+    fn terminal_notification_clears_background_agent() {
+        let mut s = agent("w1", "s1", None);
+        s.running_background_agents.insert("a39f".into());
+        s.finish_background_task("a39f", Some("toolu_1"));
+        assert!(s.running_background_agents.is_empty());
+        assert!(!s.has_background_activity());
     }
 
     // FR-012

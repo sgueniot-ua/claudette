@@ -201,6 +201,16 @@ pub struct AgentSessionState {
     /// Keys begin as tool_use_id while the task is starting, then switch to the
     /// CLI task_id once the tool result binds it.
     pub running_background_tasks: std::collections::HashSet<String>,
+    /// Backgrounded `Agent` subagents (`task_started` with
+    /// `task_type: "local_agent"`) that are still running, keyed by CLI
+    /// task_id. Feeds the activity status ONLY (see
+    /// [`AgentSessionState::has_background_activity`]). Kept apart from
+    /// `running_background_tasks` on purpose: that set arms
+    /// `schedule_background_task_wake`, and the CLI already re-invokes itself
+    /// when a backgrounded subagent finishes, so a Claudette wake would
+    /// double-report. The CLI never emits a non-terminal `task_notification`
+    /// for these, hence the separate `task_started` tracking.
+    pub running_background_agents: std::collections::HashSet<String>,
     /// True while Claudette has an internal wake turn queued/running to let
     /// Claude Code drain task-notification messages for background jobs.
     pub background_wake_active: bool,
@@ -267,6 +277,23 @@ pub struct AgentSessionState {
 }
 
 impl AgentSessionState {
+    /// Whether the session still has work running in the background, for the
+    /// activity status only (FR-006, FR-009). Wake gates must keep reading
+    /// `running_background_tasks` alone.
+    pub fn has_background_activity(&self) -> bool {
+        !self.running_background_tasks.is_empty() || !self.running_background_agents.is_empty()
+    }
+
+    /// Forget a background task that reached a terminal status, under both
+    /// its CLI task_id and (while it was still starting) its tool_use_id.
+    pub fn finish_background_task(&mut self, task_id: &str, tool_use_id: Option<&str>) {
+        for id in std::iter::once(task_id).chain(tool_use_id) {
+            self.running_background_tasks.remove(id);
+            self.running_background_agents.remove(id);
+            self.background_task_output_paths.remove(id);
+        }
+    }
+
     /// Reset every attention-related field to its quiescent default.
     ///
     /// All four "the user no longer needs to engage" paths (per-session
