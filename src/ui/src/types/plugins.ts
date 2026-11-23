@@ -1,5 +1,5 @@
-export type PluginScope = "managed" | "user" | "project" | "local";
-export type EditablePluginScope = Exclude<PluginScope, "managed">;
+export type PluginScope = "managed" | "user" | "project" | "local" | "synced" | "unknown";
+export type EditablePluginScope = "user" | "project" | "local";
 export type PluginSettingsTab = "available" | "installed" | "marketplaces";
 
 export interface PluginConfigField {

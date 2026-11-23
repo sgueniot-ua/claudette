@@ -69,7 +69,7 @@ pub async fn install_plugin(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    require_non_managed_scope(scope)?;
+    require_editable_scope(scope)?;
     let repo_path = resolve_scope_repo_path(&state, repo_id.as_deref(), scope)?;
     let output = plugin::run_claude_plugin_command(
         repo_path.as_deref(),
@@ -100,7 +100,7 @@ pub async fn uninstall_plugin(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    require_non_managed_scope(scope)?;
+    require_editable_scope(scope)?;
     let repo_path = resolve_scope_repo_path(&state, repo_id.as_deref(), scope)?;
     let output = plugin::run_claude_plugin_command(
         repo_path.as_deref(),
@@ -121,7 +121,7 @@ pub async fn enable_plugin(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    require_non_managed_scope(scope)?;
+    require_editable_scope(scope)?;
     let repo_path = resolve_scope_repo_path(&state, repo_id.as_deref(), scope)?;
     let output = plugin::run_claude_plugin_command(
         repo_path.as_deref(),
@@ -141,7 +141,7 @@ pub async fn disable_plugin(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    require_non_managed_scope(scope)?;
+    require_editable_scope(scope)?;
     let repo_path = resolve_scope_repo_path(&state, repo_id.as_deref(), scope)?;
     let output = plugin::run_claude_plugin_command(
         repo_path.as_deref(),
@@ -161,6 +161,7 @@ pub async fn update_plugin(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    require_updatable_scope(scope)?;
     let repo_path = resolve_scope_repo_path(&state, repo_id.as_deref(), scope)?;
     let output = plugin::run_claude_plugin_command(
         repo_path.as_deref(),
@@ -209,9 +210,7 @@ pub async fn update_all_plugins(
     }
 
     if succeeded > 0 {
-        let has_global_scope = update_targets
-            .iter()
-            .any(|plugin| matches!(plugin.scope, PluginScope::Managed | PluginScope::User));
+        let has_global_scope = update_targets.iter().any(|plugin| plugin.scope.is_global());
         let has_repo_scope = update_targets
             .iter()
             .any(|plugin| matches!(plugin.scope, PluginScope::Project | PluginScope::Local));
@@ -239,7 +238,7 @@ pub async fn add_plugin_marketplace(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    require_non_managed_scope(scope)?;
+    require_editable_scope(scope)?;
     let repo_path = resolve_scope_repo_path(&state, repo_id.as_deref(), scope)?;
     plugin::run_claude_plugin_command(
         repo_path.as_deref(),
@@ -338,7 +337,9 @@ fn resolve_scope_repo_path(
                 repo_id.ok_or("A local repository is required for project/local scope")?;
             resolve_repo_path(state, repo_id).map(Some)
         }
-        PluginScope::Managed | PluginScope::User => resolve_optional_repo_path(state, repo_id),
+        PluginScope::Managed | PluginScope::User | PluginScope::Synced | PluginScope::Unknown => {
+            resolve_optional_repo_path(state, repo_id)
+        }
     }
 }
 
@@ -351,11 +352,24 @@ fn resolve_repo_path(state: &State<'_, AppState>, repo_id: &str) -> Result<PathB
     Ok(PathBuf::from(repo.path))
 }
 
-fn require_non_managed_scope(scope: PluginScope) -> Result<(), String> {
-    if scope == PluginScope::Managed {
-        Err("Managed scope is not editable in Claudette".to_string())
-    } else {
+fn require_editable_scope(scope: PluginScope) -> Result<(), String> {
+    if scope.is_editable() {
         Ok(())
+    } else {
+        let label = match scope {
+            PluginScope::Managed => "Managed",
+            PluginScope::Synced => "Synced",
+            _ => "Unknown",
+        };
+        Err(format!("{label} scope is not editable in Claudette"))
+    }
+}
+
+fn require_updatable_scope(scope: PluginScope) -> Result<(), String> {
+    match scope {
+        PluginScope::Synced => Err("Synced scope cannot be updated from Claudette".to_string()),
+        PluginScope::Unknown => Err("Unknown scope cannot be updated from Claudette".to_string()),
+        _ => Ok(()),
     }
 }
 
@@ -392,18 +406,20 @@ fn affected_local_repo_ids(
                 repo_id.ok_or("A local repository is required for project/local scope")?;
             Ok(std::iter::once(repo_id.to_string()).collect())
         }
-        PluginScope::Managed | PluginScope::User => Ok(db
+        PluginScope::Managed | PluginScope::User | PluginScope::Synced => Ok(db
             .list_repositories()
             .map_err(|e| e.to_string())?
             .into_iter()
             .map(|repo| repo.id)
             .collect()),
+        PluginScope::Unknown => Ok(HashSet::new()),
     }
 }
 
 fn plugin_entries_for_bulk_update(plugins: &[InstalledPlugin]) -> Vec<&InstalledPlugin> {
     plugins
         .iter()
+        .filter(|plugin| plugin.scope.is_updatable())
         .filter(|plugin| plugin.update_available || plugin.latest_known_version.is_none())
         .collect()
 }
@@ -604,5 +620,78 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["needs-update@official", "unknown@official"]
         );
+    }
+
+    #[test]
+    fn require_editable_scope_rejects_synced_unknown_and_managed() {
+        // FR-004, FR-005, FR-006
+        assert_eq!(
+            require_editable_scope(PluginScope::Managed).unwrap_err(),
+            "Managed scope is not editable in Claudette"
+        );
+        assert_eq!(
+            require_editable_scope(PluginScope::Synced).unwrap_err(),
+            "Synced scope is not editable in Claudette"
+        );
+        assert_eq!(
+            require_editable_scope(PluginScope::Unknown).unwrap_err(),
+            "Unknown scope is not editable in Claudette"
+        );
+        assert!(require_editable_scope(PluginScope::User).is_ok());
+    }
+
+    #[test]
+    fn require_updatable_scope_rejects_synced_and_unknown_only() {
+        // FR-004, FR-005, FR-006
+        assert_eq!(
+            require_updatable_scope(PluginScope::Synced).unwrap_err(),
+            "Synced scope cannot be updated from Claudette"
+        );
+        assert_eq!(
+            require_updatable_scope(PluginScope::Unknown).unwrap_err(),
+            "Unknown scope cannot be updated from Claudette"
+        );
+        for scope in [
+            PluginScope::Managed,
+            PluginScope::User,
+            PluginScope::Project,
+            PluginScope::Local,
+        ] {
+            assert!(require_updatable_scope(scope).is_ok());
+        }
+    }
+
+    #[test]
+    fn bulk_update_targets_skip_synced_and_unknown_scopes() {
+        // FR-004, FR-005
+        let make = |name: &str, scope| InstalledPlugin {
+            channels: Vec::new(),
+            command_count: 0,
+            description: None,
+            enabled: true,
+            install_path: format!("/tmp/{name}"),
+            installed_at: None,
+            last_updated: None,
+            latest_known_version: Some("2.0.0".into()),
+            marketplace: Some("official".into()),
+            mcp_servers: Vec::new(),
+            name: name.into(),
+            plugin_id: format!("{name}@official"),
+            scope,
+            skill_count: 0,
+            update_available: true,
+            user_config_schema: BTreeMap::new(),
+            version: "1.0.0".into(),
+        };
+        let plugins = vec![
+            make("a", PluginScope::User),
+            make("b", PluginScope::Synced),
+            make("c", PluginScope::Unknown),
+        ];
+        let ids: Vec<_> = plugin_entries_for_bulk_update(&plugins)
+            .into_iter()
+            .map(|p| p.plugin_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["a@official"]);
     }
 }

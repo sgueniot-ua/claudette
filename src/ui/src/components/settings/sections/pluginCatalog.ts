@@ -50,15 +50,48 @@ export function summarizeAvailablePlugins(
   };
 }
 
+export interface PluginScopeActions {
+  toggle: boolean;
+  update: boolean;
+  uninstall: boolean;
+  configure: boolean;
+}
+
 const scopeOrder: Record<PluginScope, number> = {
   managed: 0,
   user: 1,
-  project: 2,
-  local: 3,
+  synced: 2,
+  project: 3,
+  local: 4,
+  unknown: 5,
 };
 
+export function isGlobalPluginScope(scope: PluginScope): boolean {
+  return scope === "managed" || scope === "user" || scope === "synced";
+}
+
 export function hasGlobalInstallation(scopes: PluginScope[]): boolean {
-  return scopes.includes("managed") || scopes.includes("user");
+  return scopes.some(isGlobalPluginScope);
+}
+
+export function isEditablePluginScope(scope: PluginScope): scope is EditablePluginScope {
+  return scope === "user" || scope === "project" || scope === "local";
+}
+
+export function isUpdatablePluginScope(
+  scope: PluginScope,
+): scope is EditablePluginScope | "managed" {
+  return scope === "managed" || isEditablePluginScope(scope);
+}
+
+export function pluginScopeActions(scope: PluginScope): PluginScopeActions {
+  if (scope === "synced" || scope === "unknown") {
+    return { toggle: false, update: false, uninstall: false, configure: false };
+  }
+  if (scope === "managed") {
+    return { toggle: false, update: true, uninstall: false, configure: true };
+  }
+  return { toggle: true, update: true, uninstall: true, configure: true };
 }
 
 export function primaryInstalledScope(scopes: PluginScope[]): PluginScope | null {

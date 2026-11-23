@@ -6,11 +6,14 @@ import {
   canInstallAvailablePluginAtScope,
   formatInstallCount,
   hasGlobalInstallation,
+  isEditablePluginScope,
+  isUpdatablePluginScope,
   marketplaceSourceLink,
   matchesAvailablePlugin,
   matchesInstalledPlugin,
   matchesMarketplace,
   primaryInstalledScope,
+  pluginScopeActions,
   sortAvailablePlugins,
   summarizeAvailablePlugins,
   summarizeInstalledPlugins,
@@ -283,5 +286,44 @@ describe("plugin catalog helpers", () => {
     expect(canInstallAvailablePluginAtScope(globalPlugin, "local")).toBe(false);
     expect(canInstallAvailablePluginAtScope(projectPlugin, "user")).toBe(true);
     expect(canInstallAvailablePluginAtScope(projectPlugin, "project")).toBe(false);
+  });
+
+  it("treats synced installs as global and unknown ones as not available", () => {
+    // FR-003, FR-005a
+    expect(hasGlobalInstallation(["synced"])).toBe(true);
+    expect(hasGlobalInstallation(["unknown"])).toBe(false);
+    const synced = makeAvailablePlugin({ installed: true, installed_scopes: ["synced"] });
+    const unknown = makeAvailablePlugin({ installed: true, installed_scopes: ["unknown"] });
+    expect(canInstallAvailablePluginAtScope(synced, "project")).toBe(false);
+    expect(canInstallAvailablePluginAtScope(unknown, "project")).toBe(true);
+    expect(canInstallAvailablePluginAtScope(unknown, "local")).toBe(true);
+  });
+
+  it("orders scopes for display as managed, user, synced, project, local, unknown", () => {
+    // R4b, FR-006
+    expect(primaryInstalledScope(["local", "synced"])).toBe("synced");
+    expect(primaryInstalledScope(["synced", "user"])).toBe("user");
+    expect(primaryInstalledScope(["unknown", "local"])).toBe("local");
+    expect(primaryInstalledScope(["managed", "synced"])).toBe("managed");
+  });
+
+  it("withholds every action, including configure, on synced and unknown scopes", () => {
+    // FR-004, FR-004a, FR-005, FR-006
+    const none = { toggle: false, update: false, uninstall: false, configure: false };
+    expect(pluginScopeActions("synced")).toEqual(none);
+    expect(pluginScopeActions("unknown")).toEqual(none);
+    expect(pluginScopeActions("managed")).toEqual({ toggle: false, update: true, uninstall: false, configure: true });
+    for (const scope of ["user", "project", "local"] as const) {
+      expect(pluginScopeActions(scope)).toEqual({ toggle: true, update: true, uninstall: true, configure: true });
+    }
+  });
+
+  it("narrows editable and updatable scopes", () => {
+    // FR-004, FR-005
+    expect(isEditablePluginScope("synced")).toBe(false);
+    expect(isEditablePluginScope("user")).toBe(true);
+    expect(isUpdatablePluginScope("managed")).toBe(true);
+    expect(isUpdatablePluginScope("synced")).toBe(false);
+    expect(isUpdatablePluginScope("unknown")).toBe(false);
   });
 });

@@ -33,10 +33,14 @@ import {
   availablePluginLinks,
   canInstallAvailablePluginAtScope,
   formatInstallCount,
+  isEditablePluginScope,
+  isGlobalPluginScope,
+  isUpdatablePluginScope,
   marketplaceSourceLink,
   matchesAvailablePlugin,
   matchesInstalledPlugin,
   matchesMarketplace,
+  pluginScopeActions,
   primaryInstalledScope,
   sortAvailablePlugins,
   summarizeAvailablePlugins,
@@ -118,7 +122,7 @@ function installedPluginSelectionKey(plugin: Pick<InstalledPlugin, "plugin_id" |
 
 function repoAvailabilityDetail(scope: PluginScope, hasRepoContext: boolean): string | null {
   if (!hasRepoContext) return null;
-  if (scope === "user" || scope === "managed") {
+  if (isGlobalPluginScope(scope)) {
     return `available in this repo via ${scope} scope`;
   }
   return null;
@@ -331,7 +335,7 @@ export function ClaudeCodePluginsSettings() {
     [installedPlugins, selectedPluginKey],
   );
   const globallyInstalledPlugins = useMemo(
-    () => installedPlugins.filter((plugin) => plugin.scope === "user" || plugin.scope === "managed"),
+    () => installedPlugins.filter((plugin) => isGlobalPluginScope(plugin.scope)),
     [installedPlugins],
   );
 
@@ -498,7 +502,11 @@ export function ClaudeCodePluginsSettings() {
     const targetPlugin = matchingPlugins.find((plugin) => plugin.scope === primaryScope)
       ?? matchingPlugins[0]
       ?? null;
-    setSelectedPluginKey(targetPlugin ? installedPluginSelectionKey(targetPlugin) : null);
+    setSelectedPluginKey(
+      targetPlugin && pluginScopeActions(targetPlugin.scope).configure
+        ? installedPluginSelectionKey(targetPlugin)
+        : null,
+    );
   }
 
   async function handleInstall(targetOverride?: string) {
@@ -537,22 +545,27 @@ export function ClaudeCodePluginsSettings() {
     plugin: InstalledPlugin,
     action: "enable" | "disable" | "uninstall" | "update",
   ) {
-    const repoId = repoIdForPluginScope(plugin.scope);
+    const scope = plugin.scope;
+    const repoId = repoIdForPluginScope(scope);
 
-    await withBusy(`${action}:${plugin.plugin_id}:${plugin.scope}`, async () => {
-      if (action === "enable") {
-        await enablePlugin(plugin.plugin_id, plugin.scope as EditablePluginScope, repoId);
-      } else if (action === "disable") {
-        await disablePlugin(plugin.plugin_id, plugin.scope as EditablePluginScope, repoId);
-      } else if (action === "uninstall") {
-        await uninstallPlugin(plugin.plugin_id, plugin.scope as EditablePluginScope, false, repoId);
-        if (selectedPluginKey === installedPluginSelectionKey(plugin)) {
-          setSelectedPluginKey(null);
-        }
+    await withBusy(`${action}:${plugin.plugin_id}:${scope}`, async () => {
+      if (action === "update") {
+        if (!isUpdatablePluginScope(scope)) return;
+        await updatePlugin(plugin.plugin_id, scope, repoId);
       } else {
-        await updatePlugin(plugin.plugin_id, plugin.scope, repoId);
+        if (!isEditablePluginScope(scope)) return;
+        if (action === "enable") {
+          await enablePlugin(plugin.plugin_id, scope, repoId);
+        } else if (action === "disable") {
+          await disablePlugin(plugin.plugin_id, scope, repoId);
+        } else {
+          await uninstallPlugin(plugin.plugin_id, scope, false, repoId);
+          if (selectedPluginKey === installedPluginSelectionKey(plugin)) {
+            setSelectedPluginKey(null);
+          }
+        }
       }
-      await afterMutation(plugin.scope, `${action} completed for ${plugin.plugin_id}.`);
+      await afterMutation(scope, `${action} completed for ${plugin.plugin_id}.`);
       setPendingActionHint(null);
       setPendingTargetHint(null);
     });
@@ -744,7 +757,7 @@ export function ClaudeCodePluginsSettings() {
           </div>
 
           <div className={styles.pluginInlineNote}>
-            Claude Code treats user and managed installs as global, so this browser does not offer redundant project or local installs for plugins that are already available everywhere. Refresh marketplaces to recalculate update badges.
+            Claude Code treats user, managed and synced installs as global, so this browser does not offer redundant project or local installs for plugins that are already available everywhere. Refresh marketplaces to recalculate update badges.
           </div>
 
           <div className={styles.pluginFormRow}>
@@ -972,7 +985,7 @@ export function ClaudeCodePluginsSettings() {
                       </div>
 
                       <div className={styles.pluginActions}>
-                        {plugin.scope !== "managed" && (
+                        {pluginScopeActions(plugin.scope).toggle && (
                           plugin.enabled ? (
                             <button
                               className={styles.iconBtn}
@@ -991,14 +1004,16 @@ export function ClaudeCodePluginsSettings() {
                             </button>
                           )
                         )}
-                        <button
-                          className={styles.iconBtn}
-                          onClick={() => void handlePluginAction(plugin, "update")}
-                          disabled={busyKey === `update:${plugin.plugin_id}:${plugin.scope}`}
-                        >
-                          Update
-                        </button>
-                        {plugin.scope !== "managed" && (
+                        {pluginScopeActions(plugin.scope).update && (
+                          <button
+                            className={styles.iconBtn}
+                            onClick={() => void handlePluginAction(plugin, "update")}
+                            disabled={busyKey === `update:${plugin.plugin_id}:${plugin.scope}`}
+                          >
+                            Update
+                          </button>
+                        )}
+                        {pluginScopeActions(plugin.scope).uninstall && (
                           <button
                             className={styles.iconBtn}
                             onClick={() => void handlePluginAction(plugin, "uninstall")}
@@ -1007,7 +1022,7 @@ export function ClaudeCodePluginsSettings() {
                             Uninstall
                           </button>
                         )}
-                        {hasConfig(plugin) && (
+                        {hasConfig(plugin) && pluginScopeActions(plugin.scope).configure && (
                           <button
                             className={styles.iconBtn}
                             onClick={() => setSelectedPluginKey((current) =>

@@ -11,6 +11,9 @@ pub enum PluginScope {
     User,
     Project,
     Local,
+    Synced,
+    #[serde(other)]
+    Unknown,
 }
 
 impl PluginScope {
@@ -20,7 +23,24 @@ impl PluginScope {
             Self::User => "user",
             Self::Project => "project",
             Self::Local => "local",
+            Self::Synced => "synced",
+            Self::Unknown => "unknown",
         }
+    }
+
+    /// Scopes that apply regardless of the current repository.
+    pub fn is_global(self) -> bool {
+        matches!(self, Self::Managed | Self::User | Self::Synced)
+    }
+
+    /// Scopes Claudette may mutate (install, uninstall, enable, disable).
+    pub fn is_editable(self) -> bool {
+        matches!(self, Self::User | Self::Project | Self::Local)
+    }
+
+    /// Scopes Claudette may update through `claude plugin update`.
+    pub fn is_updatable(self) -> bool {
+        !matches!(self, Self::Synced | Self::Unknown)
     }
 
     fn precedence(self) -> u8 {
@@ -28,7 +48,9 @@ impl PluginScope {
             Self::Local => 0,
             Self::Project => 1,
             Self::User => 2,
-            Self::Managed => 3,
+            Self::Synced => 3,
+            Self::Managed => 4,
+            Self::Unknown => 5,
         }
     }
 }
@@ -268,6 +290,11 @@ struct SettingsDocs {
     local: Value,
 }
 
+fn parse_cli_plugin_list(output: &str) -> Result<Vec<CliInstalledPluginEntry>, String> {
+    serde_json::from_str::<Vec<CliInstalledPluginEntry>>(output)
+        .map_err(|e| format!("Failed to parse `claude plugin list --json`: {e}"))
+}
+
 pub async fn list_installed_plugins(
     repo_path: Option<&Path>,
 ) -> Result<Vec<InstalledPlugin>, String> {
@@ -282,15 +309,13 @@ pub async fn list_installed_plugins(
     )
     .await?;
 
-    let mut plugins: Vec<InstalledPlugin> =
-        serde_json::from_str::<Vec<CliInstalledPluginEntry>>(&output)
-            .map_err(|e| format!("Failed to parse `claude plugin list --json`: {e}"))?
-            .into_iter()
-            .map(|entry| {
-                let latest_known_version = marketplace_versions.get(&entry.id).cloned();
-                enrich_installed_plugin(entry, latest_known_version)
-            })
-            .collect();
+    let mut plugins: Vec<InstalledPlugin> = parse_cli_plugin_list(&output)?
+        .into_iter()
+        .map(|entry| {
+            let latest_known_version = marketplace_versions.get(&entry.id).cloned();
+            enrich_installed_plugin(entry, latest_known_version)
+        })
+        .collect();
 
     plugins.sort_by(|a, b| {
         a.name
@@ -666,9 +691,10 @@ fn enrich_installed_plugin(
                 .collect()
         })
         .unwrap_or_default();
-    let update_available = latest_known_version
-        .as_deref()
-        .is_some_and(|latest| version_is_newer(&version, latest));
+    let update_available = entry.scope.is_updatable()
+        && latest_known_version
+            .as_deref()
+            .is_some_and(|latest| version_is_newer(&version, latest));
 
     InstalledPlugin {
         channels,
@@ -1489,8 +1515,9 @@ fn select_installation<'a>(
     installs
         .iter()
         .filter(|install| match install.scope {
-            PluginScope::Managed | PluginScope::User => true,
-            PluginScope::Project | PluginScope::Local => repo_path
+            scope if scope.is_global() => true,
+            PluginScope::Unknown => false,
+            _ => repo_path
                 .as_ref()
                 .zip(install.project_path.as_ref())
                 .is_some_and(|(repo_path, project_path)| repo_path == project_path),
@@ -1682,6 +1709,151 @@ mod tests {
                 None => unsafe { std::env::remove_var("CLAUDE_TEST_CREDENTIALS_FILE") },
             }
         }
+    }
+
+    const CLI_LIST_WITH_SYNCED: &str = r#"[
+      {"id":"demo@official","version":"1.0.0","scope":"user","enabled":true,
+       "installPath":"/tmp/demo","installedAt":"2026-10-20T08:40:29.571Z",
+       "lastUpdated":"2026-10-20T08:40:29.571Z","projectEnabled":false},
+      {"id":"superpowers@synced","version":"7.0.2","scope":"synced","enabled":true,
+       "installPath":"/tmp/synced/abc~g3"},
+      {"id":"later@official","version":"0.1.0","scope":"future-scope","enabled":true,
+       "installPath":"/tmp/later"}
+    ]"#;
+
+    fn install_entry(
+        scope: PluginScope,
+        path: &str,
+        project: Option<&str>,
+    ) -> InstalledPluginEntry {
+        InstalledPluginEntry {
+            scope,
+            project_path: project.map(str::to_string),
+            install_path: path.to_string(),
+        }
+    }
+
+    #[test]
+    fn parse_cli_plugin_list_accepts_synced_and_unknown_scopes() {
+        // FR-001, FR-005
+        let entries = parse_cli_plugin_list(CLI_LIST_WITH_SYNCED).unwrap();
+        let scopes: Vec<_> = entries.iter().map(|e| e.scope).collect();
+        assert_eq!(
+            scopes,
+            vec![PluginScope::User, PluginScope::Synced, PluginScope::Unknown]
+        );
+        assert_eq!(entries[1].id, "superpowers@synced");
+    }
+
+    #[test]
+    fn plugin_scope_serializes_new_values_and_keeps_existing_ones() {
+        // FR-002, FR-006
+        assert_eq!(
+            serde_json::to_string(&PluginScope::Synced).unwrap(),
+            "\"synced\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PluginScope::Unknown).unwrap(),
+            "\"unknown\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PluginScope::Managed).unwrap(),
+            "\"managed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PluginScope::User).unwrap(),
+            "\"user\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PluginScope::Project).unwrap(),
+            "\"project\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PluginScope::Local).unwrap(),
+            "\"local\""
+        );
+    }
+
+    #[test]
+    fn plugin_scope_rules_match_spec() {
+        // FR-003, FR-004, FR-005a, FR-006
+        use PluginScope::*;
+        for (scope, global, editable, updatable) in [
+            (Managed, true, false, true),
+            (User, true, true, true),
+            (Project, false, true, true),
+            (Local, false, true, true),
+            (Synced, true, false, false),
+            (Unknown, false, false, false),
+        ] {
+            assert_eq!(scope.is_global(), global, "is_global {scope:?}");
+            assert_eq!(scope.is_editable(), editable, "is_editable {scope:?}");
+            assert_eq!(scope.is_updatable(), updatable, "is_updatable {scope:?}");
+        }
+    }
+
+    #[test]
+    fn plugin_scope_precedence_orders_synced_between_user_and_managed() {
+        // FR-003a
+        use PluginScope::*;
+        let order = [Local, Project, User, Synced, Managed, Unknown];
+        assert!(
+            order
+                .windows(2)
+                .all(|w| w[0].precedence() < w[1].precedence())
+        );
+    }
+
+    #[test]
+    fn select_installation_prefers_user_over_synced() {
+        // FR-003a
+        let installs = vec![
+            install_entry(PluginScope::Synced, "/synced", None),
+            install_entry(PluginScope::User, "/user", None),
+        ];
+        let picked = select_installation(&installs, None).unwrap();
+        assert_eq!(picked.install_path, "/user");
+    }
+
+    #[test]
+    fn select_installation_uses_synced_without_repo_match() {
+        // FR-003
+        let installs = vec![install_entry(PluginScope::Synced, "/synced", None)];
+        let repo = Path::new("/some/repo");
+        assert_eq!(
+            select_installation(&installs, Some(repo))
+                .unwrap()
+                .install_path,
+            "/synced"
+        );
+        assert_eq!(
+            select_installation(&installs, None).unwrap().install_path,
+            "/synced"
+        );
+    }
+
+    #[test]
+    fn select_installation_never_returns_unknown_scope() {
+        // FR-005a
+        let installs = vec![install_entry(
+            PluginScope::Unknown,
+            "/u",
+            Some("/some/repo"),
+        )];
+        assert!(select_installation(&installs, Some(Path::new("/some/repo"))).is_none());
+        assert!(select_installation(&installs, None).is_none());
+    }
+
+    #[test]
+    fn installed_plugins_file_keeps_entries_with_unknown_scope() {
+        // FR-005
+        let file: InstalledPluginsFile = serde_json::from_str(
+            r#"{"version":2,"plugins":{"a@m":[{"scope":"user","installPath":"/a"}],
+            "b@m":[{"scope":"future-scope","installPath":"/b"}]}}"#,
+        )
+        .unwrap();
+        assert_eq!(file.plugins.len(), 2);
+        assert_eq!(file.plugins["b@m"][0].scope, PluginScope::Unknown);
     }
 
     #[test]
@@ -1890,6 +2062,30 @@ mod tests {
         assert_eq!(available[1].plugin_id, "fresh@official");
         assert!(!available[1].installed);
         assert!(!available[1].update_available);
+    }
+
+    #[test]
+    fn enrich_installed_plugin_reports_updates_only_for_updatable_scopes() {
+        // FR-004b
+        for (scope, expected) in [
+            (PluginScope::User, true),
+            (PluginScope::Synced, false),
+            (PluginScope::Unknown, false),
+        ] {
+            let entry = CliInstalledPluginEntry {
+                id: "demo@official".into(),
+                version: "1.0.0".into(),
+                scope,
+                enabled: true,
+                install_path: "/nonexistent/demo".into(),
+                installed_at: None,
+                last_updated: None,
+                mcp_servers: BTreeMap::new(),
+            };
+            let plugin = enrich_installed_plugin(entry, Some("1.2.0".into()));
+            assert_eq!(plugin.update_available, expected, "{scope:?}");
+            assert_eq!(plugin.latest_known_version.as_deref(), Some("1.2.0"));
+        }
     }
 
     #[test]
