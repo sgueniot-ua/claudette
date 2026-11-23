@@ -303,5 +303,13 @@
   "agents_stopped": "{{count}} gestoppt",
   "agents_queued": "{{count}} wartend",
   "task_progress_count": "{{completed}}/{{total}} Aufgaben",
-  "tab_rename_failed": "Umbenennen fehlgeschlagen: {{error}}"
+  "tab_rename_failed": "Umbenennen fehlgeschlagen: {{error}}",
+  "running_agents_bar_label": "Laufende Agenten",
+  "running_agents_more": "+{{count}} weitere",
+  "running_agent_open": "{{type}}-Agent öffnen: {{description}} ({{state}})",
+  "agents_tab": "Agenten",
+  "agents_panel_empty": "In diesem Chat wurden keine Subagenten gestartet.",
+  "agents_panel_running": "Läuft",
+  "agents_panel_finished": "Beendet",
+  "agents_panel_all": "Alle Agenten"
 }

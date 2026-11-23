@@ -305,5 +305,13 @@
   "agents_stopped": "{{count}} stopped",
   "agents_queued": "{{count}} queued",
   "task_progress_count": "{{completed}}/{{total}} tasks",
-  "tab_rename_failed": "Rename failed: {{error}}"
+  "tab_rename_failed": "Rename failed: {{error}}",
+  "running_agents_bar_label": "Running agents",
+  "running_agents_more": "+{{count}} more",
+  "running_agent_open": "Open {{type}} agent: {{description}} ({{state}})",
+  "agents_tab": "Agents",
+  "agents_panel_empty": "No sub-agents were launched in this chat.",
+  "agents_panel_running": "Running",
+  "agents_panel_finished": "Finished",
+  "agents_panel_all": "All agents"
 }

@@ -1,0 +1,78 @@
+/* Running sub-agents, pinned above the composer next to the workflow pill.
+ * Same chrome as WorkflowStatusPill so the two read as one family. */
+
+.bar {
+  align-self: center;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 100%;
+  margin: var(--space-1) 0;
+}
+
+.row,
+.more {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-3);
+  background: var(--chat-input-bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.more {
+  align-self: center;
+}
+
+.row:hover,
+.more:hover {
+  background: var(--hover-bg);
+  border-color: var(--accent-primary);
+}
+
+.row:focus-visible,
+.more:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.icon {
+  display: flex;
+  flex-shrink: 0;
+  animation: runningAgentPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes runningAgentPulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon {
+    animation: none;
+  }
+}
+
+.type {
+  flex-shrink: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.description {
+  min-width: 0;
+  max-width: 24rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -231,5 +231,13 @@
   "agents_stopped": "{{count}} detenidos",
   "agents_queued": "{{count}} en cola",
   "task_progress_count": "{{completed}}/{{total}} tareas",
-  "tab_rename_failed": "No se pudo renombrar: {{error}}"
+  "tab_rename_failed": "No se pudo renombrar: {{error}}",
+  "running_agents_bar_label": "Agentes en ejecución",
+  "running_agents_more": "+{{count}} más",
+  "running_agent_open": "Abrir agente {{type}}: {{description}} ({{state}})",
+  "agents_tab": "Agentes",
+  "agents_panel_empty": "No se lanzó ningún subagente en este chat.",
+  "agents_panel_running": "En ejecución",
+  "agents_panel_finished": "Finalizados",
+  "agents_panel_all": "Todos los agentes"
 }

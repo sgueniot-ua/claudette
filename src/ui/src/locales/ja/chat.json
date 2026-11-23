@@ -229,5 +229,13 @@
   "agents_stopped": "{{count}} 件停止",
   "agents_queued": "{{count}} 件待機中",
   "task_progress_count": "{{completed}}/{{total}} タスク",
-  "tab_rename_failed": "名前の変更に失敗しました: {{error}}"
+  "tab_rename_failed": "名前の変更に失敗しました: {{error}}",
+  "running_agents_bar_label": "実行中のエージェント",
+  "running_agents_more": "他 {{count}} 件",
+  "running_agent_open": "{{type}} エージェントを開く: {{description}}（{{state}}）",
+  "agents_tab": "エージェント",
+  "agents_panel_empty": "このチャットではサブエージェントは起動されていません。",
+  "agents_panel_running": "実行中",
+  "agents_panel_finished": "完了",
+  "agents_panel_all": "すべてのエージェント"
 }

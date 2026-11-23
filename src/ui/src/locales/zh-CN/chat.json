@@ -229,5 +229,13 @@
   "agents_stopped": "{{count}} 个已停止",
   "agents_queued": "{{count}} 个排队中",
   "task_progress_count": "{{completed}}/{{total}} 个任务",
-  "tab_rename_failed": "重命名失败：{{error}}"
+  "tab_rename_failed": "重命名失败：{{error}}",
+  "running_agents_bar_label": "运行中的智能体",
+  "running_agents_more": "还有 {{count}} 个",
+  "running_agent_open": "打开 {{type}} 智能体：{{description}}（{{state}}）",
+  "agents_tab": "智能体",
+  "agents_panel_empty": "此聊天中未启动任何子智能体。",
+  "agents_panel_running": "运行中",
+  "agents_panel_finished": "已完成",
+  "agents_panel_all": "所有智能体"
 }

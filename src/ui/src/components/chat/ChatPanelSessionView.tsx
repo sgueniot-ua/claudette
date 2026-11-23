@@ -24,6 +24,7 @@ import { OverlayScrollbar } from "./OverlayScrollbar";
 import { QueuedMessagesPopover } from "./QueuedMessagesPopover";
 import { ScrollContext } from "./ScrollContext";
 import { ScrollToBottomPill } from "./ScrollToBottomPill";
+import { RunningAgentsBar } from "./RunningAgentsBar";
 import { WorkflowStatusPill } from "./WorkflowStatusPill";
 import { SetupScriptBanner } from "./SetupScriptBanner";
 import { StreamingMessage } from "./StreamingMessage";
@@ -389,6 +390,9 @@ export function ChatPanelSessionView({
           the viewport within seconds (its launching turn ends almost
           immediately), so this is what keeps a multi-minute run visible. */}
       <WorkflowStatusPill sessionId={activeSessionId} />
+      {selectedWorkspaceId && activeSessionId && (
+        <RunningAgentsBar workspaceId={selectedWorkspaceId} sessionId={activeSessionId} />
+      )}
 
       <ScrollToBottomPill
         visible={!isAtBottom && messages.length > 0}
