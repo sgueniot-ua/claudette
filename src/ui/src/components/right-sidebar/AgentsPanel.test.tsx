@@ -174,12 +174,30 @@ describe("AgentsPanel", () => {
     const c = await render();
     const names = items(c).map((b) => b.getAttribute("aria-label") ?? "");
     expect(names[0]).toMatch(/scout.*Attendre 9.*Running/);
-    expect(names[1]).toMatch(/scout.*Attendre 9.*Finished/);
+    expect(names[1]).toMatch(/scout.*Attendre 9.*Completed/);
     expect(names.every((n) => !n.includes("  "))).toBe(true);
     await act(async () => {
       items(c)[1].click();
     });
     expect(useAppStore.getState().selectedAgentBySession.s1).toBe("scout");
+  });
+
+  it("failed and stopped agents get distinct accessible names", async () => {
+    // FR-015
+    useAppStore.setState({
+      toolActivities: {
+        s1: [
+          agent("bad", { summary: "Same", inputJson: "{}", agentStatus: "failed" }),
+          agent("halt", { summary: "Same", inputJson: "{}", agentStatus: "stopped" }),
+        ],
+      },
+    });
+    const c = await render();
+    const names = items(c).map((b) => b.getAttribute("aria-label") ?? "");
+    expect(names).toHaveLength(2);
+    expect(names.find((n) => n.includes("Failed"))).toBeTruthy();
+    expect(names.find((n) => n.includes("Stopped"))).toBeTruthy();
+    expect(new Set(names).size).toBe(2);
   });
 
   it("untyped agent name has no double space or leading hyphen", async () => {

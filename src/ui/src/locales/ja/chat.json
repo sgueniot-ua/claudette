@@ -240,5 +240,10 @@
   "agents_panel_empty": "このチャットではサブエージェントは起動されていません。",
   "agents_panel_running": "実行中",
   "agents_panel_finished": "完了",
-  "agents_panel_all": "すべてのエージェント"
+  "agents_panel_all": "すべてのエージェント",
+  "agents_state_running": "実行中",
+  "agents_state_completed": "完了",
+  "agents_state_failed": "失敗",
+  "agents_state_stopped": "停止",
+  "agents_state_queued": "待機中"
 }

@@ -18,6 +18,11 @@ const KEYS = [
   "agents_panel_running",
   "agents_panel_finished",
   "agents_panel_all",
+  "agents_state_running",
+  "agents_state_completed",
+  "agents_state_failed",
+  "agents_state_stopped",
+  "agents_state_queued",
 ] as const;
 
 const PLACEHOLDERS: Record<string, string[]> = {

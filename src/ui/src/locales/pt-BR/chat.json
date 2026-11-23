@@ -242,5 +242,10 @@
   "agents_panel_empty": "Nenhum subagente foi iniciado neste chat.",
   "agents_panel_running": "Em execução",
   "agents_panel_finished": "Concluídos",
-  "agents_panel_all": "Todos os agentes"
+  "agents_panel_all": "Todos os agentes",
+  "agents_state_running": "Em execução",
+  "agents_state_completed": "Concluído",
+  "agents_state_failed": "Com falha",
+  "agents_state_stopped": "Parado",
+  "agents_state_queued": "Na fila"
 }

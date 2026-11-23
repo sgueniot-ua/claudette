@@ -316,5 +316,10 @@
   "agents_panel_empty": "No sub-agents were launched in this chat.",
   "agents_panel_running": "Running",
   "agents_panel_finished": "Finished",
-  "agents_panel_all": "All agents"
+  "agents_panel_all": "All agents",
+  "agents_state_running": "Running",
+  "agents_state_completed": "Completed",
+  "agents_state_failed": "Failed",
+  "agents_state_stopped": "Stopped",
+  "agents_state_queued": "Queued"
 }

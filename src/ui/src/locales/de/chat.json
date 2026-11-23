@@ -314,5 +314,10 @@
   "agents_panel_empty": "In diesem Chat wurden keine Subagenten gestartet.",
   "agents_panel_running": "Läuft",
   "agents_panel_finished": "Beendet",
-  "agents_panel_all": "Alle Agenten"
+  "agents_panel_all": "Alle Agenten",
+  "agents_state_running": "Läuft",
+  "agents_state_completed": "Abgeschlossen",
+  "agents_state_failed": "Fehlgeschlagen",
+  "agents_state_stopped": "Gestoppt",
+  "agents_state_queued": "In Warteschlange"
 }

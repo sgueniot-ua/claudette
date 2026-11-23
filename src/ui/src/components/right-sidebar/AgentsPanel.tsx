@@ -3,8 +3,23 @@ import { selectActiveSessionId, useAppStore } from "../../stores/useAppStore";
 import { orderForAgentsPanel } from "../../stores/sessionAgents";
 import { useSessionAgents } from "../../hooks/useSessionAgents";
 import { AgentToolCallGroup } from "../chat/AgentToolCallGroup";
-import { TaskStateIcon } from "../chat/TaskStateIcon";
+import { TaskStateIcon, type TaskState } from "../chat/TaskStateIcon";
 import styles from "./AgentsPanel.module.css";
+
+const STATE_LABEL_KEYS: Record<
+  TaskState,
+  | "agents_state_running"
+  | "agents_state_completed"
+  | "agents_state_failed"
+  | "agents_state_stopped"
+  | "agents_state_queued"
+> = {
+  progress: "agents_state_running",
+  done: "agents_state_completed",
+  error: "agents_state_failed",
+  stopped: "agents_state_stopped",
+  queued: "agents_state_queued",
+};
 
 export function AgentsPanel({ workspaceId }: { workspaceId: string }) {
   const { t } = useTranslation("chat");
@@ -70,11 +85,11 @@ export function AgentsPanel({ workspaceId }: { workspaceId: string }) {
                       ? t("running_agent_open", {
                           type: a.subagentType,
                           description: a.label || t("running_agent_default_label"),
-                          state: a.running ? t("agents_panel_running") : t("agents_panel_finished"),
+                          state: t(STATE_LABEL_KEYS[a.state]),
                         })
                       : t("running_agent_open_untyped", {
                           description: a.label || t("running_agent_default_label"),
-                          state: a.running ? t("agents_panel_running") : t("agents_panel_finished"),
+                          state: t(STATE_LABEL_KEYS[a.state]),
                         })
                   }
                   onClick={() => selectAgentInSidebar(sessionId, a.toolUseId)}
