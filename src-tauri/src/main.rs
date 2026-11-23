@@ -1254,6 +1254,12 @@ fn main() {
             commands::diff::unstage_files,
             commands::diff::discard_files,
             commands::diff::load_commit_file_diff,
+            // Git tree
+            commands::git_graph::load_git_graph,
+            commands::git_graph::load_git_graph_fingerprint,
+            commands::git_graph::load_worktree_states,
+            commands::git_graph::load_commit_detail,
+            commands::git_graph::load_commit_file_diff_first_parent,
             // Terminal
             commands::terminal::create_terminal_tab,
             commands::terminal::delete_terminal_tab,

@@ -21,6 +21,7 @@ pub mod dialog;
 pub mod diff;
 pub mod env;
 pub mod files;
+pub mod git_graph;
 pub mod grammars;
 pub mod mcp;
 pub mod metrics;

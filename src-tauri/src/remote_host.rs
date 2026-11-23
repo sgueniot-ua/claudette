@@ -183,6 +183,65 @@ impl RpcHost for TauriRpcHost {
                 )
                 .await?,
             ),
+            "load_git_graph" => to_value(
+                commands::git_graph::load_git_graph(
+                    str_param(&params, "workspace_id")?,
+                    params
+                        .get("include_remotes")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    params
+                        .get("limit")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32)
+                        .unwrap_or(200),
+                    params
+                        .get("until_hash")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    self.state(),
+                )
+                .await?,
+            ),
+            "load_git_graph_fingerprint" => to_value(
+                commands::git_graph::load_git_graph_fingerprint(
+                    str_param(&params, "workspace_id")?,
+                    params
+                        .get("include_remotes")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    self.state(),
+                )
+                .await?,
+            ),
+            "load_worktree_states" => to_value(
+                commands::git_graph::load_worktree_states(
+                    str_param(&params, "workspace_id")?,
+                    self.state(),
+                )
+                .await?,
+            ),
+            "load_commit_detail" => to_value(
+                commands::git_graph::load_commit_detail(
+                    str_param(&params, "workspace_id")?,
+                    str_param(&params, "commit_hash")?,
+                    params
+                        .get("include_remotes")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    self.state(),
+                )
+                .await?,
+            ),
+            "load_commit_file_diff_first_parent" => to_value(
+                commands::git_graph::load_commit_file_diff_first_parent(
+                    str_param(&params, "workspace_id")?,
+                    str_param(&params, "commit_hash")?,
+                    str_param(&params, "file_path")?,
+                    self.state(),
+                )
+                .await?,
+            ),
             "prepare_cross_harness_migration" => {
                 commands::chat::lifecycle::prepare_cross_harness_migration(
                     chat_session_param(&params)?,

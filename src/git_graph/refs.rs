@@ -136,23 +136,28 @@ pub(crate) async fn ahead_behind_fallback(
 ) -> Result<(), GitError> {
     use futures::stream::{StreamExt, TryStreamExt};
 
-    let counts: Vec<(usize, u32, u32)> = futures::stream::iter(
-        refs.iter()
-            .enumerate()
-            .filter(|(_, r)| r.kind == RefKind::Local && !r.is_base)
-            .map(|(i, r)| (i, r.name.clone())),
-    )
-    .map(|(i, name)| async move {
-        let range = format!("{base_ref}...refs/heads/{name}");
-        let out = super::run_git(repo, &["rev-list", "--left-right", "--count", &range]).await?;
-        // Left side = in base only (behind), right side = in the ref only (ahead).
-        let (behind, ahead) = parse_counts(&out)
-            .ok_or_else(|| GitError::CommandFailed(format!("Unexpected rev-list output: {out}")))?;
-        Ok::<_, GitError>((i, ahead, behind))
-    })
-    .buffer_unordered(8)
-    .try_collect()
-    .await?;
+    // Collect before streaming: a `filter` closure kept alive across `.await` makes the
+    // future non-Send for the Tauri command handlers.
+    let local: Vec<(usize, String)> = refs
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.kind == RefKind::Local && !r.is_base)
+        .map(|(i, r)| (i, r.name.clone()))
+        .collect();
+    let counts: Vec<(usize, u32, u32)> = futures::stream::iter(local)
+        .map(|(i, name)| async move {
+            let range = format!("{base_ref}...refs/heads/{name}");
+            let out =
+                super::run_git(repo, &["rev-list", "--left-right", "--count", &range]).await?;
+            // Left side = in base only (behind), right side = in the ref only (ahead).
+            let (behind, ahead) = parse_counts(&out).ok_or_else(|| {
+                GitError::CommandFailed(format!("Unexpected rev-list output: {out}"))
+            })?;
+            Ok::<_, GitError>((i, ahead, behind))
+        })
+        .buffer_unordered(8)
+        .try_collect()
+        .await?;
 
     for (i, ahead, behind) in counts {
         refs[i].ahead = Some(ahead);
