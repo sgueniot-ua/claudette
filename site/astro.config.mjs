@@ -76,6 +76,7 @@ export default defineConfig({
           items: [
             { slug: 'features/parallel-agents' },
             { slug: 'features/git-worktrees' },
+            { slug: 'features/git-tree' },
             { slug: 'features/checkpoints-and-forking' },
             { slug: 'features/diff-viewer' },
             { slug: 'features/file-editor' },

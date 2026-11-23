@@ -1,0 +1,81 @@
+---
+title: Git Tree
+description: See the commit history of a repository as a graph, with the branches and worktrees that point at each commit.
+---
+
+The **Git tree** tab shows the commit history of a repository as a graph. Each branch sits on its commit, and each worktree shows where it is checked out. Use it to see at a glance which branch lives in which workspace and how far each branch has drifted from your base branch.
+
+The tab is read-only. Claudette never fetches, commits, checks out or otherwise modifies your repository from this view.
+
+## Opening the Tab
+
+The Git tree is the fourth tab of the right sidebar, after **Files**, **Changes** and **Tasks**. It shows the repository of the selected workspace. Like the other tabs, the last tab you chose is remembered for each workspace. Switching to a workspace in another repository reloads the tree for that repository.
+
+## Reference List
+
+The top of the tab lists every branch and every worktree, whatever commits are currently loaded in the graph.
+
+- The base branch comes first and is marked **base**. It is the branch Claudette creates workspaces from.
+- Each local branch shows how far it is from the base branch: `↑n` for commits ahead and `↓m` for commits behind. For example, `↑3 ↓2` means the branch has three commits the base does not have and is missing two of its commits.
+- A branch checked out in a worktree shows the worktree marker next to its name.
+- Click an entry to load the graph up to that commit (loading more history if needed) and select it.
+
+If the commit is more than 10,000 commits back in history, the graph does not move. A banner reads **This commit is too old to show in the tree**, with the full hash and a **Copy hash** button.
+
+## The Graph
+
+Each row is one commit. A row shows the lane graph, the reference labels, worktree badges, the summary message, the author, the relative date and the short hash.
+
+### Reference Labels
+
+When several labels point at the same commit, they are shown side by side and wrap when needed. Beyond three labels, a **+N** button opens a popover with the full list, so labels never overlap.
+
+### Worktree Badges
+
+A worktree badge appears on the commit its worktree points at. There are six cases:
+
+| Case | What you see | Click |
+|---|---|---|
+| Claudette workspace | The workspace name, in a solid badge | Selects that workspace |
+| External worktree | The folder name, in an outlined badge. The tooltip shows the path, starting with **Not a Claudette workspace**. | Nothing: the worktree is not a Claudette workspace |
+| Main checkout | The label **main checkout** | Selects the workspace of the main checkout, if there is one |
+| Detached HEAD | The suffix **detached**, on the commit it points at | Same rules as above, depending on the case |
+| Uncommitted changes | A dot, with the tooltip **Uncommitted changes** | Nothing |
+| Folder not found | A struck-through badge, with the tooltip **Folder not found** | Nothing |
+
+Uncommitted changes are detected every 10 seconds while the tab is open, so the dot appears or disappears within that delay.
+
+## Commit Detail
+
+Click a row to open the commit detail below the graph. It shows:
+
+- the full commit message, the author and the date;
+- the full hash, with a **Copy hash** button;
+- the branches and worktrees that contain the commit;
+- the changed files, each with its status (**Added**, **Modified**, **Deleted**, **Renamed**, **Copied** or **Type changed**).
+
+Clicking a changed file opens its diff in the existing [diff viewer](/claudette/features/diff-viewer/).
+
+For a merge commit, the changed files and the diff are computed against its **first parent**. This shows what the merge brought into the branch that received it, which is usually what you want to review.
+
+## Remote Branches
+
+Remote branches are hidden by default. Tick **Show remote branches** in the toolbar to list them. Your base branch is always shown and marked **base**, even when it is a remote branch such as `origin/main`. The ahead and behind counters are always computed against that base branch.
+
+## Limits and Refresh
+
+- The graph first loads the 200 most recent commits. **Load more** adds the next 200.
+- The graph never loads more than **10,000 commits**. At that point the **Load more** button disappears and **Tree limit reached (10,000 commits)** takes its place.
+- The tab checks for changes every **3 seconds**: new commits, moved branches and added or removed worktrees appear without a reload. The worktree states (uncommitted changes, folder not found) are refreshed every **10 seconds**.
+- A refresh keeps your selected commit and your scroll position when that commit still exists.
+
+## Paired Machines
+
+The Git tree works on repositories of a [paired machine](/claudette/features/remote-workspaces/) too, from the desktop app. If the paired machine runs an older Claudette that does not support the Git tree yet, the tab shows **This machine does not support the git tree yet.** Update Claudette on that machine to use the tab.
+
+The Git tree is not available in the [mobile app](/claudette/features/mobile-app/).
+
+## Related
+
+- [Git Worktrees](/claudette/features/git-worktrees/): how Claudette creates and tracks the worktrees you see in the tree.
+- [Diff Viewer](/claudette/features/diff-viewer/): the diff you open from a changed file in the commit detail.

@@ -76,6 +76,10 @@ claudette workspace purge --repo <repo-id>
 
 The CLI rejects non-Archived IDs at the server, so an Active workspace can never be removed via this path even if its ID accidentally slips into the resolved list.
 
+## Seeing Worktrees in the Git Tree
+
+The **Git tree** tab shows every worktree on the commit it points at, next to the branches and their commit history. See [Git Tree](/claudette/features/git-tree/).
+
 ## Worktree Base Directory
 
 By default, worktrees are created under `~/.claudette/workspaces`. You can change this in `Settings > General > Worktree base directory`.
