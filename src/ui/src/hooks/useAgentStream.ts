@@ -5,6 +5,7 @@ import {
   findToolActivity,
   findToolActivityWhere,
 } from "../stores/findToolActivity";
+import { parseToolInput } from "../utils/toolInput";
 import { collectInFlightWorkflows } from "../stores/inFlightWorkflows";
 import {
   FAILED_BACKGROUND_TASK_STATUS,
@@ -1184,8 +1185,21 @@ export function useAgentStream() {
                   typeof block.content === "string"
                     ? block.content
                     : JSON.stringify(block.content);
+                const finished = findToolActivity(
+                  useAppStore.getState(),
+                  sessionId,
+                  block.tool_use_id,
+                );
+                // A foreground Agent has no later task event once its result
+                // lands: drop a leftover "starting" so the result reads as done.
+                // Background agents keep it (the result is only a launch ack).
+                const foregroundStarting =
+                  finished?.toolName === "Agent" &&
+                  finished.agentStatus === "starting" &&
+                  parseToolInput(finished.inputJson)?.run_in_background !== true;
                 updateToolActivity(sessionId, block.tool_use_id, {
                   resultText: text,
+                  ...(foregroundStarting ? { agentStatus: null } : {}),
                 });
                 resolveNeverStartedWorkflow(
                   sessionId,
