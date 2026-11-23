@@ -1279,10 +1279,11 @@ impl Database {
     /// any time. Idempotent, and safe to run unconditionally: at boot,
     /// there is by definition no live CLI process from a previous run.
     ///
-    /// Scoped to `Workflow`. `Task` / `Agent` activities can wedge the same
-    /// way, but they render as a status word inside a collapsed turn rather
-    /// than as a persistent floating indicator, so rewriting their
-    /// historical status is not worth the blast radius here.
+    /// Scoped to `Workflow`. Background `Agent` activities are swept
+    /// separately by `resolve_orphaned_agent_activities`; `Task` activities
+    /// render as a status word inside a collapsed turn rather than as a
+    /// persistent floating indicator, so rewriting their historical status
+    /// is not worth the blast radius here.
     ///
     /// Returns the number of rows resolved.
     pub fn resolve_orphaned_workflow_activities(&self) -> Result<usize, rusqlite::Error> {
@@ -1331,6 +1332,52 @@ impl Database {
                     activity_id,
                     error = %err,
                     "failed to resolve orphaned workflow activity; continuing sweep"
+                ),
+            }
+        }
+        Ok(resolved)
+    }
+
+    /// Resolve background `Agent` activities left in flight by a previous app
+    /// session.
+    ///
+    /// An agent's `task_notification` can only arrive from the CLI process
+    /// that launched it, and none survive a Claudette restart. A row still
+    /// at `running` or `starting` at boot would be read back as in progress
+    /// forever (the running-agents bar and card), because the frontend's
+    /// `ProcessExited` reaper never fires for a process from a previous run.
+    ///
+    /// Only an exact `running` / `starting` (case-insensitive, trimmed) is
+    /// rewritten, to the shared `REAPED_TASK_STATUS`; `NULL` and terminal
+    /// statuses are left alone, matching the frontend reaper's scope. Per-row
+    /// with log-and-continue and no transaction, like the Workflow sweep.
+    ///
+    /// Returns the number of rows resolved.
+    pub fn resolve_orphaned_agent_activities(&self) -> Result<usize, rusqlite::Error> {
+        use crate::agent::workflow_progress::REAPED_TASK_STATUS;
+
+        let orphaned: Vec<String> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id FROM turn_tool_activities
+                  WHERE tool_name = 'Agent'
+                    AND LOWER(TRIM(agent_status)) IN ('running', 'starting')",
+            )?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+
+        let mut resolved = 0;
+        for activity_id in orphaned {
+            match self.conn.execute(
+                "UPDATE turn_tool_activities SET agent_status = ?1 WHERE id = ?2",
+                params![REAPED_TASK_STATUS, activity_id],
+            ) {
+                Ok(rows) => resolved += rows,
+                Err(err) => tracing::warn!(
+                    target: "claudette::chat",
+                    activity_id,
+                    error = %err,
+                    "failed to resolve orphaned agent activity; continuing sweep"
                 ),
             }
         }
@@ -2106,6 +2153,56 @@ mod tests {
 
         // Idempotent: a second boot has nothing left to do.
         assert_eq!(db.resolve_orphaned_workflow_activities().unwrap(), 0);
+    }
+
+    /// FR-002: background agents a previous app session left running or
+    /// starting are reaped at boot; NULL / terminal agents and Workflow rows
+    /// are left alone.
+    #[test]
+    fn test_resolve_orphaned_agent_activities() {
+        let db = setup_db_with_workspace();
+        db.insert_chat_message(&make_chat_msg(&db, "m1", "w1", ChatRole::Assistant, "a1"))
+            .unwrap();
+        db.insert_checkpoint(&make_checkpoint(&db, "cp1", "w1", "m1", 0))
+            .unwrap();
+
+        let mut rows = Vec::new();
+        for (i, (id, tool, status)) in [
+            ("a1", "Agent", Some("running")),
+            ("a2", "Agent", Some("starting")),
+            ("a3", "Agent", None),
+            ("a4", "Agent", Some("completed")),
+            ("a5", "Workflow", Some("running")),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut a = make_tool_activity(id, "cp1", tool, i as i32);
+            a.agent_status = status.map(Into::into);
+            rows.push(a);
+        }
+        db.insert_turn_tool_activities(&rows).unwrap();
+
+        assert_eq!(db.resolve_orphaned_agent_activities().unwrap(), 2);
+
+        let turns = db.list_completed_turns("w1").unwrap();
+        let by_id = |id: &str| {
+            turns[0]
+                .activities
+                .iter()
+                .find(|a| a.tool_use_id == id)
+                .unwrap()
+                .agent_status
+                .clone()
+        };
+        assert_eq!(by_id("tu_a1").as_deref(), Some("stopped"));
+        assert_eq!(by_id("tu_a2").as_deref(), Some("stopped"));
+        assert_eq!(by_id("tu_a3"), None);
+        assert_eq!(by_id("tu_a4").as_deref(), Some("completed"));
+        assert_eq!(by_id("tu_a5").as_deref(), Some("running"));
+
+        // Idempotent: a second boot has nothing left to do.
+        assert_eq!(db.resolve_orphaned_agent_activities().unwrap(), 0);
     }
 
     /// The bug this whole path exists for: a run reports `completed` while the

@@ -548,6 +548,19 @@ fn main() {
                     "failed to resolve orphaned workflow activities"
                 ),
             }
+            match db.resolve_orphaned_agent_activities() {
+                Ok(0) => {}
+                Ok(count) => tracing::info!(
+                    target: "claudette::chat",
+                    count,
+                    "resolved orphaned agent activities from a previous session"
+                ),
+                Err(e) => tracing::warn!(
+                    target: "claudette::chat",
+                    error = %e,
+                    "failed to resolve orphaned agent activities"
+                ),
+            }
         }
     } else {
         tracing::info!(
