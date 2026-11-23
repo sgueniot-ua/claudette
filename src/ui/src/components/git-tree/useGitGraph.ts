@@ -20,7 +20,7 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
   const [graph, setGraph] = useState<GitGraph | null>(null);
   const [status, setStatus] = useState<GitGraphStatus>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [includeRemotes, setIncludeRemotes] = useState(true);
+  const [includeRemotes, setIncludeRemotes] = useState(false);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
   const [tooOldTarget, setTooOldTarget] = useState<string | null>(null);

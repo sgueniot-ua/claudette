@@ -99,12 +99,12 @@ describe("useGitGraph", () => {
     expect(result.current.atCap).toBe(false);
     act(() => result.current.loadMore());
     await flush();
-    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", true, 400, undefined);
+    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", false, 400, undefined);
     for (let i = 0; i < 60; i++) {
       act(() => result.current.loadMore());
       await flush();
     }
-    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", true, 10_000, undefined);
+    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", false, 10_000, undefined);
     expect(result.current.atCap).toBe(true);
     expect(result.current.canLoadMore).toBe(false);
     const calls = loadGitGraph.mock.calls.length;
@@ -122,7 +122,7 @@ describe("useGitGraph", () => {
     );
     act(() => result.current.goToCommit("h4"));
     await flush();
-    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", true, 200, "h4");
+    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", false, 200, "h4");
     expect(result.current.selectedCommit).toBe("h4");
     expect(result.current.tooOldTarget).toBeNull();
 
@@ -267,7 +267,7 @@ describe("useGitGraph", () => {
     expect(result.current.status).toBe("empty");
 
     loadGitGraph.mockRejectedValueOnce(new Error("boom"));
-    act(() => result.current.setIncludeRemotes(false));
+    act(() => result.current.setIncludeRemotes(true));
     await flush();
     expect(result.current.status).toBe("error");
     expect(result.current.error).toBe("boom");

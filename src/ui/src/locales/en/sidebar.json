@@ -93,5 +93,26 @@
   "remote_needs_repair": "{{name}} no longer accepts this device — pair again with its token",
   "remote_cancel_reconnect": "Stop reconnecting",
   "remote_revoke_failed": "Removed {{name}}, but couldn't revoke its access there ({{error}}). Use {{reset}} on that machine to revoke it.",
-  "scheduler_status": "{{looping}} looping · {{scheduled}} scheduled · {{attention}} need attention"
+  "scheduler_status": "{{looping}} looping · {{scheduled}} scheduled · {{attention}} need attention",
+  "gitTree": {
+    "tab": "Git tree",
+    "showRemotes": "Show remote branches",
+    "base": "base",
+    "loadMore": "Load more",
+    "limitReached": "Tree limit reached (10,000 commits)",
+    "tooOld": "This commit is too old to show in the tree",
+    "copyHash": "Copy hash",
+    "detached": "detached",
+    "mainCheckout": "main checkout",
+    "notClaudette": "Not a Claudette workspace — {{path}}",
+    "uncommitted": "Uncommitted changes",
+    "folderNotFound": "Folder not found",
+    "noCommits": "This repository has no commits yet.",
+    "readError": "Could not read the git history.",
+    "retry": "Retry",
+    "unsupported": "This machine does not support the git tree yet.",
+    "files": "Files",
+    "containedIn": "Contained in",
+    "more": "+{{count}}"
+  }
 }

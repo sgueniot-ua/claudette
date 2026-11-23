@@ -43,6 +43,9 @@ export interface DiffSlice {
   diffSelectionByWorkspace: Record<string, DiffSelection>;
   commitHistory: CommitEntry[] | null;
   diffSelectedCommitHash: string | null;
+  // How the selected commit's files are diffed: the existing default, or
+  // against the first parent (Git tree tab, merge commits).
+  diffCommitParentMode: "default" | "first-parent";
   setDiffFiles: (
     files: DiffFile[],
     mergeBase: string,
@@ -56,7 +59,10 @@ export interface DiffSlice {
   setDiffLoading: (loading: boolean) => void;
   setDiffError: (error: string | null) => void;
   setCommitHistory: (commits: CommitEntry[] | null) => void;
-  setDiffSelectedCommitHash: (hash: string | null) => void;
+  setDiffSelectedCommitHash: (
+    hash: string | null,
+    mode?: "default" | "first-parent",
+  ) => void;
   setDiffPreviewMode: (mode: "diff" | "rendered") => void;
   setDiffPreviewContent: (content: FileContent | null) => void;
   setDiffPreviewLoading: (loading: boolean) => void;
@@ -106,6 +112,7 @@ export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
   diffSelectionByWorkspace: {},
   commitHistory: null,
   diffSelectedCommitHash: null,
+  diffCommitParentMode: "default",
   setDiffFiles: (files, mergeBase, stagedFiles, commits) =>
     set({
       diffFiles: files,
@@ -121,7 +128,8 @@ export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
   setDiffLoading: (loading) => set({ diffLoading: loading }),
   setDiffError: (error) => set({ diffError: error }),
   setCommitHistory: (commits) => set({ commitHistory: commits }),
-  setDiffSelectedCommitHash: (hash) => set({ diffSelectedCommitHash: hash }),
+  setDiffSelectedCommitHash: (hash, mode = "default") =>
+    set({ diffSelectedCommitHash: hash, diffCommitParentMode: mode }),
   setDiffPreviewMode: (mode) => set({ diffPreviewMode: mode }),
   setDiffPreviewContent: (content) => set({ diffPreviewContent: content }),
   setDiffPreviewLoading: (loading) => set({ diffPreviewLoading: loading }),
@@ -133,6 +141,7 @@ export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
       diffStagedFiles: null,
       commitHistory: null,
       diffSelectedCommitHash: null,
+      diffCommitParentMode: "default",
     }),
   clearDiff: () =>
     set({
@@ -151,6 +160,7 @@ export const createDiffSlice: StateCreator<AppState, [], [], DiffSlice> = (
       diffSelectionByWorkspace: {},
       commitHistory: null,
       diffSelectedCommitHash: null,
+      diffCommitParentMode: "default",
     }),
   setDiffTabsForWorkspace: (workspaceId, tabs) =>
     set((s) => ({
