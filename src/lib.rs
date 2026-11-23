@@ -18,6 +18,7 @@ pub mod file_expand;
 pub mod file_watcher;
 pub mod fork;
 pub mod git;
+pub mod git_graph;
 pub mod global_prompt;
 pub mod grammar_provider;
 pub mod i18n;

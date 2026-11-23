@@ -5,6 +5,7 @@ mod chat_message;
 mod chat_session;
 mod checkpoint;
 pub mod diff;
+pub mod git_graph;
 mod metrics;
 mod pinned_prompt;
 mod remote_connection;
