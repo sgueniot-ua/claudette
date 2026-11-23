@@ -58,9 +58,31 @@ fn spawn_event_forwarder(
                         dropped = n,
                         "event stream lag — receiver dropped events"
                     );
+                    // Activity indicators depend on the dropped events: have
+                    // the webview refetch (FR-013).
+                    let payload = lagged_activity_payload(&connection_id);
+                    if let Err(e) = app.emit(ACTIVITY_CHANGED_EVENT, payload) {
+                        tracing::warn!(
+                            target: "claudette::mobile",
+                            error = %e,
+                            "failed to emit activity refresh after lag"
+                        );
+                    }
                 }
             }
         }
+    })
+}
+
+/// Wire event the webview treats as "refetch activity".
+const ACTIVITY_CHANGED_EVENT: &str = "agent-activity-changed";
+
+/// Forwarded-shape `agent-activity-changed` sent after a lag. The webview only
+/// uses it as a trigger and filters on `connection_id`; the payload is empty.
+fn lagged_activity_payload(connection_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "connection_id": connection_id,
+        "payload": serde_json::Value::Null,
     })
 }
 
@@ -418,6 +440,14 @@ pub async fn forget_connection(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lagged_activity_payload_is_wrapped_for_the_connection() {
+        // FR-013
+        let v = super::lagged_activity_payload("c1");
+        assert_eq!(v["connection_id"], "c1");
+        assert!(v["payload"].is_null());
+    }
+
     use super::*;
 
     #[test]
