@@ -1,8 +1,10 @@
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -28,7 +30,7 @@ export function ActivityProvider(props: {
 }) {
   const { connectionId, children } = props;
   const [state, setState] = useState<ActivityState>({ kind: "loading" });
-  const [throttle, setThrottle] = useState<RefetchThrottle | null>(null);
+  const throttleRef = useRef<RefetchThrottle | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -50,7 +52,10 @@ export function ActivityProvider(props: {
     };
 
     const t = new RefetchThrottle(() => void fetchActivity(), 300);
-    setThrottle(t);
+    throttleRef.current = t;
+    const request = () => {
+      if (!disposed) t.request();
+    };
 
     const track = (p: Promise<UnlistenFn>) =>
       p.then((u) => {
@@ -58,29 +63,34 @@ export function ActivityProvider(props: {
         else unlistens.push(u);
       }, () => undefined);
 
-    void track(onActivitySignal(connectionId, () => t.request()));
+    void track(onActivitySignal(connectionId, request));
     void track(
       onConnectionState(connectionId, (isConnected) => {
+        if (disposed) return;
         connected = isConnected;
-        if (isConnected) t.request();
+        if (isConnected) request();
         else {
           seq++;
           setState(nextStateOnFetch({ ok: false }, false));
         }
       }),
     );
-    t.request();
+    // Also serves a refresh() asked before this effect ran (children's effects
+    // run first, while throttleRef is still null): it is not lost.
+    request();
 
     return () => {
       disposed = true;
+      throttleRef.current = null;
       t.dispose();
       unlistens.forEach((u) => u());
     };
   }, [connectionId]);
 
+  const refresh = useCallback(() => throttleRef.current?.request(), []);
   const value = useMemo<ActivityContextValue>(
-    () => ({ state, refresh: () => throttle?.request() }),
-    [state, throttle],
+    () => ({ state, refresh }),
+    [state, refresh],
   );
 
   return (
