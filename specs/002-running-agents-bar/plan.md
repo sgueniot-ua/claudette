@@ -11,18 +11,20 @@ de la session, et ouvrir leur détail en direct dans un nouvel onglet « Agents 
 droite. Approche retenue par l'utilisateur : **tout côté front** (`src/ui`), données dérivées des
 activités d'outil que le store tient déjà pour la carte des agents du chat, règle « en cours »
 identique à la carte (`agentTaskState`), détail rendu par le composant existant de la carte
-(`AgentToolCallGroup`). Aucun changement Rust. Une correction front ciblée : `task_started` sans
+(`AgentToolCallGroup`). Une correction front ciblée : `task_started` sans
 statut sur un `Agent` pose `starting`, pour que l'agent de fond soit vu en cours dès son lancement
-(research R3).
+(research R3). Amendement du 2026-11-23 (revue finale, choix de l'utilisateur) : un balayage Rust au
+démarrage passe à `stopped` les activités `Agent` restées `running`/`starting` d'une exécution
+précédente de l'app, comme c'est déjà fait pour les Workflows (research R14).
 
 ## Technical Context
 
-**Language/Version**: TypeScript (strict), React 19
+**Language/Version**: TypeScript (strict), React 19 ; Rust 2024 pour le seul balayage au démarrage (R14)
 
 **Primary Dependencies**: Zustand (store unique à slices), react-i18next, lucide-react — aucune
 nouvelle dépendance
 
-**Storage**: N/A (état UI non persisté, données dérivées du store)
+**Storage**: SQLite existante, table `turn_tool_activities` (mise à jour de `agent_status` au démarrage, R14) ; sinon état UI non persisté
 
 **Testing**: vitest (+ happy-dom pour les composants), `bunx tsc -b`, `bun run lint:css`
 
@@ -44,10 +46,10 @@ nouvelle responsabilité dans les god files (`ChatPanel.tsx`, `ChatInputArea.tsx
 
 | Principe | Statut | Note |
 |---|---|---|
-| I. Crates en couches | ✅ | aucun code Rust |
+| I. Crates en couches | ✅ | balayage dans le crate `claudette` (`src/db/checkpoint.rs`), appelé au démarrage à côté du balayage des Workflows ; aucune commande Tauri ajoutée |
 | II. Modèle pur, état | ✅ | état UI dans Zustand, non persisté (`selectedAgentBySession`) ; données dérivées |
 | III. Contrats / régressions | ✅ avec réserve | un changement visible intentionnel (carte : `starting` au lancement d'un agent de fond), épinglé par test et signalé en PR ; union d'onglet élargie sans retirer de valeur ; persistance de `rightSidebarTab` tolérante |
-| IV. Migrations | ✅ | N/A |
+| IV. Migrations | ✅ | aucune migration : mise à jour de données existantes au démarrage, comme le balayage des Workflows |
 | V. Tokens de design | ✅ | nouveaux CSS modules en `var(--…)`, `lint:css` |
 | VI. Sécurité plateformes | ✅ | N/A |
 | VII. God files | ✅ | barre dans un composant dédié, une ligne dans `ChatPanelSessionView.tsx` ; panneau dédié ; `RightSidebar.tsx` reçoit seulement l'onglet et le `case` |
@@ -94,6 +96,8 @@ src/ui/src/
 site/src/content/docs/features/running-agents.mdx        # NOUVEAU
 site/src/content/docs/features/task-history.mdx          # renvoi vers Agents
 site/astro.config.mjs                                    # entrée de navigation
+src/db/checkpoint.rs                                     # resolve_orphaned_agent_activities (+ test)
+src-tauri/src/main.rs                                    # appel au démarrage, à côté du balayage Workflow
 ```
 
 **Structure Decision**: front desktop uniquement, dans l'arborescence existante `src/ui/src`

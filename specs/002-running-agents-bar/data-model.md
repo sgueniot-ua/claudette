@@ -1,6 +1,6 @@
 # Data Model: Barre des sous-agents en cours et onglet Agents
 
-Aucune donnée persistée, aucun changement Rust ni de schéma. Tout est dérivé du store front
+Aucune nouvelle donnée persistée ni changement de schéma ; seul ajout Rust : le balayage au démarrage (R14). Tout est dérivé du store front
 (`src/ui/src/stores/`) ou y vit comme état UI non persisté.
 
 ## SessionAgent (dérivé, non stocké)
@@ -37,6 +37,7 @@ dans un tour, ordre des activités.
 (tool_use Agent) ──► queued/progress ──task_started*──► starting ──task_progress──► running
      running/starting ──SubagentStop / task_notification──► completed | failed | stopped
      running/starting ──ProcessExited (reapInFlightAgents)──► stopped
+     running/starting (ligne enregistrée) ──démarrage de l'app (resolve_orphaned_agent_activities)──► stopped   [R14]
 ```
 `*` nouveau (research R3) : `task_started` sans `status` sur une activité `Agent` pose `starting`.
 

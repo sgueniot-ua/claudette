@@ -138,3 +138,23 @@ Toutes les références sont relatives à `src/ui/src/` sauf mention contraire.
 - **Decision** : nouvelle page `site/src/content/docs/features/running-agents.mdx` (barre + onglet),
   enregistrée dans `site/astro.config.mjs` ; une phrase dans `task-history.mdx` renvoyant vers elle
   pour distinguer Tasks (listes de tâches) et Agents (activité des sous-agents).
+
+## R14 — Agents orphelins après fermeture ou plantage de l'app (amendement 2026-11-23)
+
+- **Constat (revue finale)** : le tour qui lance un agent de fond est enregistré en quelques secondes
+  avec `agent_status` = `starting` (R3) ou `running`. Si l'app se ferme ou plante avant la
+  `task_notification`, la ligne garde ce statut. Au relancement, `agentTaskState` la lit comme
+  `progress` : la barre et la carte montrent un agent mort comme en cours, sans fin.
+  `reapInFlightAgents` ne s'exécute que sur `ProcessExited` de la session, qui n'arrive jamais pour
+  un process de l'exécution précédente. Le balayage Rust au démarrage
+  (`resolve_orphaned_workflow_activities`, `src/db/checkpoint.rs`) exclut volontairement les
+  `Agent`, faute d'indicateur persistant : cette fonctionnalité en ajoute un.
+- **Decision (choix de l'utilisateur)** : nouvelle fonction `Database::resolve_orphaned_agent_activities()`
+  dans `src/db/checkpoint.rs`, appelée au démarrage au même endroit que le balayage des Workflows :
+  les lignes `tool_name = 'Agent'` dont `LOWER(TRIM(agent_status))` vaut exactement `running` ou
+  `starting` passent au statut de récolte partagé (`REAPED_TASK_STATUS`, `stopped`). Les lignes à
+  statut `NULL` ou terminal ne sont pas touchées (même périmètre que `reapInFlightAgents`).
+  Ligne par ligne avec log-and-continue, comme le balayage des Workflows. Tests Rust sur le modèle de
+  `test_resolve_orphaned_workflow_activities`.
+- **Alternatives considered** : heuristique front sur l'existence d'un process de session (rejetée :
+  devinette) ; ne rien faire (rejeté par l'utilisateur).
