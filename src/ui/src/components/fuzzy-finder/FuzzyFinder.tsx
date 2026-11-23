@@ -19,17 +19,15 @@ export function filterFuzzyWorkspaces(
   );
 }
 
-/** One "Project chats" entry per local repo, matched on label + repo name. */
+/** One "Project chats" entry per local repo, matched on the repo name only
+ *  (the generic label would match almost any short query). */
 export function filterFuzzyProjectChats(
   repositories: readonly Repository[],
   query: string,
-  label = "Project chats",
 ): Repository[] {
   const q = query.toLowerCase();
   return repositories.filter(
-    (r) =>
-      !r.remote_connection_id &&
-      (label.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)),
+    (r) => !r.remote_connection_id && r.name.toLowerCase().includes(q),
   );
 }
 
@@ -47,16 +45,18 @@ export function FuzzyFinder() {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const projectLabel = t("project_chats_row");
+  // Workspaces first: opening a project chat can create a workspace or chat,
+  // so it must never be the default Enter target.
   const results = useMemo<FuzzyResult[]>(
     () => [
-      ...filterFuzzyProjectChats(repositories, query, projectLabel).map(
-        (repo): FuzzyResult => ({ key: `project:${repo.id}`, kind: "project", repo }),
-      ),
       ...filterFuzzyWorkspaces(workspaces, query).map(
         (ws): FuzzyResult => ({ key: ws.id, kind: "workspace", ws }),
       ),
+      ...filterFuzzyProjectChats(repositories, query).map(
+        (repo): FuzzyResult => ({ key: `project:${repo.id}`, kind: "project", repo }),
+      ),
     ],
-    [workspaces, repositories, query, projectLabel],
+    [workspaces, repositories, query],
   );
 
   const handleSelect = (r: FuzzyResult) => {

@@ -129,7 +129,9 @@ describe("filterFuzzyProjectChats", () => {
     const repos = [repo("r1", "alpha"), repo("r2", "beta"), repo("r3", "gamma", "conn")];
     expect(filterFuzzyProjectChats(repos, "").map((r) => r.id)).toEqual(["r1", "r2"]);
     expect(filterFuzzyProjectChats(repos, "BET").map((r) => r.id)).toEqual(["r2"]);
-    expect(filterFuzzyProjectChats(repos, "chats").map((r) => r.id)).toEqual(["r1", "r2"]);
+    // The generic label must not flood the results (matches on repo name only).
+    expect(filterFuzzyProjectChats(repos, "chats")).toEqual([]);
+    expect(filterFuzzyProjectChats(repos, "pro")).toEqual([]);
   });
 });
 
@@ -158,5 +160,40 @@ describe("FuzzyFinder project chats entry", () => {
     });
     expect(openProjectChatTarget).toHaveBeenCalledWith("r1");
     expect(useAppStore.getState().fuzzyFinderOpen).toBe(false);
+  });
+
+  it("lists workspaces before project entries (empty query: first result is a workspace)", async () => { // FR-013
+    vi.mocked(openProjectChatTarget).mockClear();
+    useAppStore.setState({
+      workspaces: [
+        {
+          id: "w1",
+          repository_id: "r1",
+          name: "alpha-ws",
+          branch_name: "main",
+          worktree_path: "/wt",
+          status: "Active",
+          agent_status: "Idle",
+          status_line: "",
+          created_at: "2026-01-01T00:00:00Z",
+          sort_order: 0,
+          input_values: null,
+          remote_connection_id: null,
+          kind: "worktree",
+        },
+      ],
+      repositories: [
+        { id: "r1", name: "alpha", remote_connection_id: null } as unknown as Repository,
+      ],
+      fuzzyFinderOpen: true,
+    });
+    await mount();
+    const entries = Array.from(
+      container!.querySelector("[class*=results]")!.children,
+    ) as HTMLElement[];
+    expect(entries).toHaveLength(2);
+    expect(entries[0].textContent).toContain("alpha-ws");
+    expect(entries[1].textContent).toContain("alpha");
+    expect(entries[1].textContent).not.toContain("alpha-ws");
   });
 });
