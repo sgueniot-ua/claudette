@@ -259,6 +259,63 @@ describe("useGitGraph", () => {
     expect(loadFingerprint).not.toHaveBeenCalled();
   });
 
+  // FR-012
+  it("a failed background reload keeps the tree on screen", async () => {
+    const { result } = renderHook(() => useGitGraph("w1", true));
+    await flush();
+    loadFingerprint.mockResolvedValue({ fingerprint: "fp2" });
+    loadGitGraph.mockRejectedValueOnce(new Error("transient"));
+    await act(async () => {
+      vi.advanceTimersByTime(3_000);
+    });
+    await flush();
+    expect(loadGitGraph).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("ready");
+    expect(result.current.graph?.fingerprint).toBe("fp1");
+    // The fingerprint still differs: the next tick retries.
+    loadGitGraph.mockResolvedValueOnce(makeGraph({ fingerprint: "fp2" }));
+    await act(async () => {
+      vi.advanceTimersByTime(3_000);
+    });
+    await flush();
+    expect(result.current.graph?.fingerprint).toBe("fp2");
+  });
+
+  // FR-011 FR-014
+  it("a remotes toggle during loadMore or goToCommit keeps the request", async () => {
+    const { result } = renderHook(() => useGitGraph("w1", true));
+    await flush();
+    loadGitGraph.mockImplementationOnce(() => new Promise<GitGraph>(() => {}));
+    act(() => result.current.loadMore());
+    act(() => result.current.setIncludeRemotes(true));
+    await flush();
+    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", true, 400, undefined);
+    expect(result.current.graph?.limit).toBe(400);
+
+    loadGitGraph.mockImplementationOnce(() => new Promise<GitGraph>(() => {}));
+    act(() => result.current.goToCommit("abcd"));
+    loadGitGraph.mockResolvedValueOnce(makeGraph({ limit: 400, target_beyond_cap: true }));
+    act(() => result.current.setIncludeRemotes(false));
+    await flush();
+    expect(loadGitGraph).toHaveBeenLastCalledWith("w1", false, 400, "abcd");
+    expect(result.current.tooOldTarget).toBe("abcd");
+  });
+
+  // FR-015
+  it("stops reading worktree states on an unsupported host", async () => {
+    loadGitGraph.mockRejectedValue(new Error("Unknown method: load_git_graph"));
+    loadStates.mockRejectedValue(new Error("Unknown method: load_worktree_states"));
+    const { result } = renderHook(() => useGitGraph("w1", true));
+    await flush();
+    expect(result.current.status).toBe("unsupported");
+    const calls = loadStates.mock.calls.length;
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    await flush();
+    expect(loadStates).toHaveBeenCalledTimes(calls);
+  });
+
   // Edge : dépôt vide / erreur
   it("reports empty and error states, retry reloads", async () => {
     loadGitGraph.mockResolvedValueOnce(makeGraph({ count: 0, has_more: false }));

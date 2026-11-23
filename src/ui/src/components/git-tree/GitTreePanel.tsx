@@ -68,7 +68,7 @@ export function GitTreePanel() {
                 {t("gitTree.loadMore")}
               </button>
             )}
-            {!g.canLoadMore && g.atCap && <span>{t("gitTree.limitReached")}</span>}
+            {graph.has_more && g.atCap && <span>{t("gitTree.limitReached")}</span>}
           </div>
           {g.selectedCommit && workspaceId && (
             <CommitDetail

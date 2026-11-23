@@ -38,6 +38,14 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
   // Count of user-initiated fetches (loadMore / goToCommit) still in flight;
   // the fingerprint poll must not supersede them.
   const userFetchesRef = useRef(0);
+  // Latest user fetch still in flight: a reload of the same workspace (remotes
+  // toggle, retry) supersedes it, so the reload carries its request instead.
+  const pendingUserFetchRef = useRef<{
+    workspaceId: string;
+    limit: number;
+    untilHash?: string;
+    onLoaded?: (g: GitGraph) => void;
+  } | null>(null);
 
   const applyGraph = useCallback((g: GitGraph) => {
     setGraph(g);
@@ -74,10 +82,21 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
       return;
     }
     setStatus("loading");
-    loadGitGraph(workspaceId, includeRemotes, PAGE_SIZE)
+    const carried =
+      pendingUserFetchRef.current?.workspaceId === workspaceId
+        ? pendingUserFetchRef.current
+        : null;
+    pendingUserFetchRef.current = null;
+    loadGitGraph(
+      workspaceId,
+      includeRemotes,
+      carried?.limit ?? PAGE_SIZE,
+      carried?.untilHash,
+    )
       .then((g) => {
         if (version !== versionRef.current) return;
         applyGraph(g);
+        carried?.onLoaded?.(g);
       })
       .catch((e) => {
         if (version !== versionRef.current) return;
@@ -94,7 +113,13 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
     ) => {
       if (!workspaceId) return;
       const version = ++versionRef.current;
-      if (userInitiated) userFetchesRef.current++;
+      const pending = userInitiated
+        ? { workspaceId, limit: nextLimit, untilHash, onLoaded }
+        : null;
+      if (pending) {
+        userFetchesRef.current++;
+        pendingUserFetchRef.current = pending;
+      }
       loadGitGraph(workspaceId, includeRemotes, nextLimit, untilHash)
         .then((g) => {
           if (version !== versionRef.current) return;
@@ -103,10 +128,15 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
         })
         .catch((e) => {
           if (version !== versionRef.current) return;
+          // A failed background reload keeps the tree on screen: its
+          // fingerprint is unchanged, so the next poll tick retries.
+          if (!userInitiated && graphRef.current) return;
           fail(e);
         })
         .finally(() => {
-          if (userInitiated) userFetchesRef.current--;
+          if (!pending) return;
+          userFetchesRef.current--;
+          if (pendingUserFetchRef.current === pending) pendingUserFetchRef.current = null;
         });
     },
     [workspaceId, includeRemotes, applyGraph, fail],
@@ -176,9 +206,11 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
     return () => clearInterval(id);
   }, [active, workspaceId, includeRemotes, hasGraph, fetchGraph]);
 
-  // Worktree states: on mount, then every 10 s.
+  // Worktree states: on mount, then every 10 s (not on a host without the
+  // git tree methods).
+  const unsupported = status === "unsupported";
   useEffect(() => {
-    if (!active || !workspaceId) return;
+    if (!active || !workspaceId || unsupported) return;
     let cancelled = false;
     const read = () => {
       if (!workspaceRefreshPollingAllowed()) return;
@@ -196,7 +228,7 @@ export function useGitGraph(workspaceId: string | null, active: boolean) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [active, workspaceId]);
+  }, [active, workspaceId, unsupported]);
 
   return {
     status,
