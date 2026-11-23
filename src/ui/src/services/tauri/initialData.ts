@@ -7,6 +7,8 @@ export interface InitialData {
   workspaces: Workspace[];
   worktree_base_dir: string;
   default_branches: Record<string, string>;
+  /** Branch checked out in each local repo folder ("HEAD" when detached). */
+  repository_branches?: Record<string, string>;
   last_messages: ChatMessage[];
   scm_cache: ScmStatusCacheRow[];
   /** Optional: a headless server older than this field omits it over

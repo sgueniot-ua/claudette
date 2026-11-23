@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../stores/useAppStore";
 import { isAgentBusy } from "../../utils/agentStatus";
-import { useOpenProjectChat } from "../../hooks/useOpenProjectChat";
+import { findRepositoryWorkspace, useOpenProjectChat } from "../../hooks/useOpenProjectChat";
 import type { Repository } from "../../types/repository";
 import { JumpShortcutBadge } from "./JumpShortcutBadge";
 import styles from "./Sidebar.module.css";
@@ -28,14 +28,8 @@ export function ProjectChatsRow({
 }) {
   const { t } = useTranslation("sidebar");
   const { open } = useOpenProjectChat();
-  const ws = useAppStore((s) =>
-    s.workspaces.find(
-      (w) =>
-        w.repository_id === repo.id &&
-        w.kind === "repository" &&
-        w.status === "Active",
-    ),
-  );
+  const ws = useAppStore((s) => findRepositoryWorkspace(s.workspaces, repo.id));
+  const folderBranch = useAppStore((s) => s.repositoryBranches[repo.id]);
   const selected = useAppStore((s) => ws !== undefined && s.selectedWorkspaceId === ws.id);
   const sessions = useAppStore((s) => (ws ? s.sessionsByWorkspace[ws.id] : undefined));
   const unread = useAppStore((s) => (ws ? s.unreadCompletions.has(ws.id) : false));
@@ -49,12 +43,18 @@ export function ProjectChatsRow({
   );
   const badge = hasQuestion ? "ask" : hasPlan ? "plan" : unread && !busy ? "done" : null;
   const label = t("project_chats_row");
+  // The workspace's branch is kept fresh by the branch poll; before it
+  // exists, the branch probed at load time stands in.
+  const branch = ws?.branch_name ?? folderBranch;
+  const subLabel = showRepoName
+    ? [repo.name, branch].filter(Boolean).join(" · ")
+    : branch;
 
   return (
     <div
       role="button"
       tabIndex={0}
-      aria-label={label}
+      aria-label={`${label} — ${repo.name}`}
       data-project-chats-row={repo.id}
       className={`${styles.wsItem} ${selected ? styles.wsSelected : ""} ${badge ? styles.wsUnread : ""}`}
       onClick={() => void open(repo.id)}
@@ -92,15 +92,7 @@ export function ProjectChatsRow({
       )}
       <div className={styles.wsInfo}>
         <span className={styles.wsName}>{label}</span>
-        {(showRepoName || ws) && (
-          <span className={styles.wsBranch}>
-            {showRepoName
-              ? ws
-                ? `${repo.name} · ${ws.branch_name}`
-                : repo.name
-              : ws?.branch_name}
-          </span>
-        )}
+        {subLabel && <span className={styles.wsBranch}>{subLabel}</span>}
       </div>
       {jumpNumber && <JumpShortcutBadge number={jumpNumber} />}
     </div>

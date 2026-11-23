@@ -23,6 +23,10 @@ pub struct InitialData {
     pub worktree_base_dir: String,
     /// Maps repo ID → default branch name (e.g., "main", "master").
     pub default_branches: HashMap<String, String>,
+    /// Maps repo ID → branch currently checked out in the repo folder
+    /// ("HEAD" when detached). Feeds the project chats row before its
+    /// `repository` workspace exists.
+    pub repository_branches: HashMap<String, String>,
     /// Most recent chat message per workspace (for dashboard display).
     pub last_messages: Vec<ChatMessage>,
     pub scm_cache: Vec<claudette::db::ScmStatusCacheRow>,
@@ -144,6 +148,29 @@ pub async fn load_initial_data(state: State<'_, AppState>) -> Result<InitialData
     let branch_results = futures::future::join_all(branch_futures).await;
     let default_branches: HashMap<String, String> = branch_results.into_iter().flatten().collect();
 
+    // Resolve the checked-out branch of each valid repo folder (project chats
+    // row sub-label before the `repository` workspace exists).
+    let checkout_futures: Vec<_> = repositories
+        .iter()
+        .filter(|r| r.path_valid)
+        .map(|r| {
+            let id = r.id.clone();
+            let path = r.path.clone();
+            let sem = Arc::clone(&probe_sem);
+            async move {
+                let _permit = sem.acquire_owned().await.ok();
+                (
+                    id,
+                    checked_out_branch_label(git::current_branch(&path).await),
+                )
+            }
+        })
+        .collect();
+    let repository_branches: HashMap<String, String> = futures::future::join_all(checkout_futures)
+        .await
+        .into_iter()
+        .collect();
+
     // Resolve current branch for each active workspace with a valid worktree path,
     // bounded by `probe_sem` so a user with many workspaces doesn't fan-out
     // unbounded git probes at startup.
@@ -207,9 +234,32 @@ pub async fn load_initial_data(state: State<'_, AppState>) -> Result<InitialData
         workspaces,
         worktree_base_dir,
         default_branches,
+        repository_branches,
         last_messages,
         scm_cache,
         workspace_scm_links,
         manual_workspace_order_repo_ids,
     })
+}
+
+/// Branch label for a repo folder: the branch name, or "HEAD" when detached
+/// or unreadable (`git::current_branch` errors on a detached HEAD).
+fn checked_out_branch_label(result: Result<String, git::GitError>) -> String {
+    result.unwrap_or_else(|_| "HEAD".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checked_out_branch_label_keeps_branch_name() {
+        assert_eq!(checked_out_branch_label(Ok("feat/x".into())), "feat/x");
+    }
+
+    #[test]
+    fn checked_out_branch_label_falls_back_to_head_when_detached() {
+        let err = git::GitError::CommandFailed("detached".into());
+        assert_eq!(checked_out_branch_label(Err(err)), "HEAD");
+    }
 }

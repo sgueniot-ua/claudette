@@ -91,6 +91,8 @@ beforeEach(() => {
   useAppStore.setState({
     workspaces: [],
     sessionsByWorkspace: {},
+    sessionsLoadedByWorkspace: {},
+    repositoryBranches: {},
     selectedWorkspaceId: null,
     unreadCompletions: new Set(),
     toasts: [],
@@ -112,6 +114,33 @@ describe("ProjectChatsRow", () => {
     expect(c.textContent).toContain("project_chats_row");
     expect(c.textContent).toContain("feature/x");
     expect(c.querySelector('[title="status_running"]')).not.toBeNull();
+  });
+
+  it("shows the checked-out branch before the project workspace exists", async () => {
+    // FR-013
+    useAppStore.setState({ repositoryBranches: { r1: "develop" } });
+    const c = await render();
+    expect(c.textContent).toContain("develop");
+    const withName = await render(makeRepo({ name: "my-repo" }), true);
+    expect(withName.textContent).toContain("my-repo · develop");
+    // Once the workspace exists, its own (polled) branch wins.
+    useAppStore.setState({ workspaces: [makeWorkspace()] });
+    const withWs = await render();
+    expect(withWs.textContent).toContain("feature/x");
+    expect(withWs.textContent).not.toContain("develop");
+  });
+
+  it("aria-label includes the repository name", async () => {
+    const c = await render(makeRepo({ name: "my-repo" }));
+    expect(c.firstElementChild?.getAttribute("aria-label")).toContain("my-repo");
+  });
+
+  it("ignores a repository workspace that belongs to a remote connection", async () => {
+    useAppStore.setState({
+      workspaces: [makeWorkspace({ remote_connection_id: "conn" })],
+    });
+    const c = await render();
+    expect(c.textContent).not.toContain("feature/x");
   });
 
   it("status section rows show the repository name", async () => { // FR-013

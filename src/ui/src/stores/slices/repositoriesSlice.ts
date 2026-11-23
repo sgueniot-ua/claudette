@@ -4,6 +4,10 @@ import type { AppState } from "../useAppStore";
 
 export interface RepositoriesSlice {
   repositories: Repository[];
+  /** Repo id → branch checked out in the repo folder (project chats row
+   *  sub-label before its `repository` workspace exists). */
+  repositoryBranches: Record<string, string>;
+  setRepositoryBranches: (branches: Record<string, string>) => void;
   setRepositories: (repos: Repository[]) => void;
   addRepository: (repo: Repository) => void;
   updateRepository: (id: string, updates: Partial<Repository>) => void;
@@ -17,6 +21,8 @@ export const createRepositoriesSlice: StateCreator<
   RepositoriesSlice
 > = (set) => ({
   repositories: [],
+  repositoryBranches: {},
+  setRepositoryBranches: (branches) => set({ repositoryBranches: branches }),
   setRepositories: (repos) => set({ repositories: repos }),
   addRepository: (repo) =>
     set((s) => ({ repositories: [...s.repositories, repo] })),
