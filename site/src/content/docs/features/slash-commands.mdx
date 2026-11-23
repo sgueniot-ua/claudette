@@ -84,7 +84,9 @@ When the agent pulls in a skill mid-turn, the chat transcript shows a `✦ <skil
 
 ## Plugin-contributed commands
 
-Enabled Claude Code plugins (managed via the **Plugins** settings panel) can ship their own commands and skills. They appear in the picker tagged with their plugin's name. See the Claude Code documentation for plugin authoring; Claudette discovers them automatically once installed.
+Enabled Claude Code plugins (managed via the **Claude Code Plugins** settings section) can ship their own commands and skills. They appear in the picker tagged with their plugin's name. See the Claude Code documentation for plugin authoring; Claudette discovers them automatically once installed.
+
+The **Claude Code Plugins** section lists each installed plugin with its scope: `user`, `project`, `local`, `managed`, or `synced`. A synced plugin comes from your Claude account and is available in every repository; in Claudette it is shown as available everywhere but is read-only, with no action at all (not even Configure). Its commands and skills are not yet taken into account by Claudette, neither in the picker nor in sessions. Managed plugins can be updated and configured but not enabled, disabled, or uninstalled. A scope Claudette does not recognize is listed without any action and is not used for any repository. Synced and unrecognized-scope plugins never count toward an update-available badge.
 
 ## Resolution order
 
