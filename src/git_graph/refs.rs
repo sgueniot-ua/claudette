@@ -73,7 +73,9 @@ pub async fn list_refs(
         rank(a).cmp(&rank(b)).then_with(|| a.name.cmp(&b.name))
     });
 
-    if let Some(base) = base_ref {
+    if let Some(base) = base_ref
+        && all.iter().any(|r| r.is_base)
+    {
         fill_ahead_behind(repo, base, &mut all).await?;
     }
     Ok(all)
@@ -85,19 +87,36 @@ pub async fn fill_ahead_behind(
     base_ref: &str,
     refs: &mut [GraphRef],
 ) -> Result<(), GitError> {
-    let format = format!("--format=%(refname:lstrip=2)%00%(ahead-behind:{base_ref})");
-    let Ok(out) = super::run_git(repo, &["for-each-ref", &format, "refs/heads"]).await else {
-        // `%(ahead-behind:)` needs git >= 2.41.
+    // `%(ahead-behind:)` needs git >= 2.41; fall back on any failure.
+    if ahead_behind_for_each_ref(repo, base_ref, refs)
+        .await
+        .is_err()
+    {
         return ahead_behind_fallback(repo, base_ref, refs).await;
-    };
+    }
+    Ok(())
+}
 
+/// Strict `for-each-ref %(ahead-behind:)` pass; leaves `refs` untouched on error.
+async fn ahead_behind_for_each_ref(
+    repo: &str,
+    base_ref: &str,
+    refs: &mut [GraphRef],
+) -> Result<(), GitError> {
+    let format = format!("--format=%(refname:lstrip=2)%00%(ahead-behind:{base_ref})");
+    let out = super::run_git(repo, &["for-each-ref", &format, "refs/heads"]).await?;
+
+    let mut counts = Vec::new();
     for line in out.lines() {
-        let Some((name, counts)) = line.split_once('\0') else {
+        let Some((name, raw)) = line.split_once('\0') else {
             continue;
         };
-        let Some((ahead, behind)) = parse_counts(counts) else {
-            return ahead_behind_fallback(repo, base_ref, refs).await;
-        };
+        let (ahead, behind) = parse_counts(raw).ok_or_else(|| {
+            GitError::CommandFailed(format!("Unexpected ahead-behind output: {raw}"))
+        })?;
+        counts.push((name, ahead, behind));
+    }
+    for (name, ahead, behind) in counts {
         if let Some(r) = refs
             .iter_mut()
             .find(|r| r.kind == RefKind::Local && !r.is_base && r.name == name)
@@ -248,9 +267,15 @@ mod tests {
     async fn fallback_gives_same_counts() {
         let dir = diverged().await;
         let repo = dir.path().to_str().unwrap();
-        let mut a = list_refs(repo, None, false).await.unwrap();
+        let mut a = list_refs(repo, Some("main"), false).await.unwrap();
+        for r in &mut a {
+            r.ahead = None;
+            r.behind = None;
+        }
         let mut b = a.clone();
-        fill_ahead_behind(repo, "main", &mut a).await.unwrap();
+        ahead_behind_for_each_ref(repo, "main", &mut a)
+            .await
+            .unwrap();
         ahead_behind_fallback(repo, "main", &mut b).await.unwrap();
         assert_eq!(a, b);
         let feat = a.iter().find(|r| r.name == "feat").unwrap();
@@ -262,6 +287,20 @@ mod tests {
     async fn no_base_ref_leaves_counters_empty() {
         let dir = diverged().await;
         let refs = list_refs(dir.path().to_str().unwrap(), None, false)
+            .await
+            .unwrap();
+        assert_eq!(refs.len(), 2);
+        assert!(
+            refs.iter()
+                .all(|r| !r.is_base && r.ahead.is_none() && r.behind.is_none())
+        );
+    }
+
+    // FR-007 FR-017
+    #[tokio::test]
+    async fn unresolvable_base_is_ignored() {
+        let dir = diverged().await;
+        let refs = list_refs(dir.path().to_str().unwrap(), Some("nope"), false)
             .await
             .unwrap();
         assert_eq!(refs.len(), 2);
