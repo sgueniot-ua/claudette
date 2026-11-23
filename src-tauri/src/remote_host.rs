@@ -190,11 +190,7 @@ impl RpcHost for TauriRpcHost {
                         .get("include_remotes")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false),
-                    params
-                        .get("limit")
-                        .and_then(|v| v.as_u64())
-                        .map(|v| v as u32)
-                        .unwrap_or(200),
+                    claudette::git_graph::limit_param(params.get("limit")),
                     params
                         .get("until_hash")
                         .and_then(|v| v.as_str())

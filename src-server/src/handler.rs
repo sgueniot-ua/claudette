@@ -1843,11 +1843,7 @@ async fn handle_load_git_graph(
     params: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let ctx = git_graph_context(state, params).await?;
-    let limit = params
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .unwrap_or(200);
+    let limit = claudette::git_graph::limit_param(params.get("limit"));
     let until_hash = params.get("until_hash").and_then(|v| v.as_str());
     let graph = claudette::git_graph::load_git_graph(
         &ctx,
@@ -1865,13 +1861,10 @@ async fn handle_load_git_graph_fingerprint(
     params: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let ctx = git_graph_context(state, params).await?;
-    let fingerprint = claudette::git_graph::fingerprint::fingerprint(
-        &ctx.repo_path,
-        ctx.base_ref.as_deref(),
-        param_bool(params, "include_remotes"),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let fingerprint =
+        claudette::git_graph::fingerprint::fingerprint(&ctx, param_bool(params, "include_remotes"))
+            .await
+            .map_err(|e| e.to_string())?;
     serde_json::to_value(claudette::model::git_graph::GraphFingerprint { fingerprint })
         .map_err(|e| e.to_string())
 }

@@ -29,10 +29,9 @@ pub(crate) async fn load_git_graph_fingerprint_impl(
     include_remotes: bool,
 ) -> Result<GraphFingerprint, String> {
     let ctx = resolve_repo_context(db_path, workspace_id).await?;
-    let fingerprint =
-        fingerprint::fingerprint(&ctx.repo_path, ctx.base_ref.as_deref(), include_remotes)
-            .await
-            .map_err(|e| e.to_string())?;
+    let fingerprint = fingerprint::fingerprint(&ctx, include_remotes)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(GraphFingerprint { fingerprint })
 }
 

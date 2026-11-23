@@ -24,6 +24,14 @@ pub fn clamp_limit(limit: u32) -> u32 {
     limit.clamp(1, MAX_COMMITS)
 }
 
+/// Commit limit read from a JSON-RPC `limit` param: `PAGE_SIZE` when absent, saturated
+/// (never wrapped) when above `u32::MAX`; `load_git_graph` clamps it afterwards.
+pub fn limit_param(value: Option<&serde_json::Value>) -> u32 {
+    value
+        .and_then(|v| v.as_u64())
+        .map_or(PAGE_SIZE, |v| u32::try_from(v).unwrap_or(u32::MAX))
+}
+
 /// Assemble the git graph: refs, worktrees, commits (with `until_hash` extension and cap)
 /// and fingerprint. A repository without commits yields an empty commit list.
 pub async fn load_git_graph(
@@ -32,8 +40,24 @@ pub async fn load_git_graph(
     limit: u32,
     until_hash: Option<&str>,
 ) -> Result<GitGraph, GitError> {
+    load_git_graph_with(ctx, include_remotes, limit, until_hash, async {}).await
+}
+
+/// `load_git_graph` with a hook awaited right after the fingerprint is taken (tests use it
+/// to change the repository mid-read).
+async fn load_git_graph_with(
+    ctx: &RepoContext,
+    include_remotes: bool,
+    limit: u32,
+    until_hash: Option<&str>,
+    after_fingerprint: impl std::future::Future<Output = ()>,
+) -> Result<GitGraph, GitError> {
     let repo = ctx.repo_path.as_str();
     let base_ref = ctx.base_ref.as_deref();
+    // Fingerprint first: a change landing while the graph is read then shows up as a
+    // fingerprint mismatch on the next poll (one extra reload) instead of being missed.
+    let fingerprint = fingerprint::fingerprint(ctx, include_remotes).await?;
+    after_fingerprint.await;
     let refs = refs::list_refs(repo, base_ref, include_remotes).await?;
     let worktrees = worktrees::list_graph_worktrees(repo, &ctx.workspaces).await?;
 
@@ -68,7 +92,6 @@ pub async fn load_git_graph(
     }
 
     let (commits, has_more) = log::read_commits(repo, &tips, limit).await?;
-    let fingerprint = fingerprint::fingerprint(repo, base_ref, include_remotes).await?;
     Ok(GitGraph {
         commits,
         refs,
@@ -161,6 +184,20 @@ mod tests {
     }
 
     // FR-011
+    #[test]
+    fn limit_param_defaults_and_saturates() {
+        use serde_json::json;
+        assert_eq!(limit_param(None), PAGE_SIZE);
+        assert_eq!(limit_param(Some(&json!("x"))), PAGE_SIZE);
+        assert_eq!(limit_param(Some(&json!(400))), 400);
+        assert_eq!(limit_param(Some(&json!(1_u64 << 32))), u32::MAX);
+        assert_eq!(
+            clamp_limit(limit_param(Some(&json!(1_u64 << 32)))),
+            MAX_COMMITS
+        );
+    }
+
+    // FR-011
     #[tokio::test]
     async fn until_hash_extends_limit_to_next_page() {
         let dir = repo().await;
@@ -211,6 +248,24 @@ mod tests {
         assert_eq!(graph.worktrees.len(), 2);
         let mut seen = std::collections::HashSet::new();
         assert!(graph.commits.iter().all(|c| seen.insert(c.hash.clone())));
+    }
+
+    // FR-012 SC-004
+    #[tokio::test]
+    async fn change_during_read_leaves_a_stale_fingerprint() {
+        let dir = repo().await;
+        let context = ctx(&dir);
+        let d = dir.path().to_path_buf();
+        let graph = load_git_graph_with(&context, false, 200, None, async {
+            commit(&d, "landed mid-read").await;
+        })
+        .await
+        .unwrap();
+        let now = fingerprint::fingerprint(&context, false).await.unwrap();
+        assert_ne!(
+            graph.fingerprint, now,
+            "the next poll must see a change and reload"
+        );
     }
 
     // Edge: empty repository
