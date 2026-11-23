@@ -12,6 +12,15 @@ use crate::model::git_graph::{GraphWorktree, WorktreeState, WorktreeStateEntry};
 /// Delay after which a `git status` is abandoned and the state reported as unknown.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Read-only status: `--no-optional-locks` keeps git from writing `index.lock` in worktrees
+/// that agents are using.
+const STATUS_ARGS: [&str; 4] = [
+    "--no-optional-locks",
+    "status",
+    "--porcelain",
+    "--untracked-files=normal",
+];
+
 /// One entry of `git worktree list --porcelain`.
 #[derive(Debug, Default)]
 struct RawWorktree {
@@ -121,10 +130,7 @@ pub async fn worktree_states(repo: &str) -> Result<Vec<WorktreeStateEntry>, GitE
             let state = if is_missing(&e) {
                 WorktreeState::Missing
             } else {
-                let status = super::run_git(
-                    &e.path,
-                    &["status", "--porcelain", "--untracked-files=normal"],
-                );
+                let status = super::run_git(&e.path, &STATUS_ARGS);
                 match tokio::time::timeout(STATUS_TIMEOUT, status).await {
                     Ok(Ok(out)) if out.is_empty() => WorktreeState::Clean,
                     Ok(Ok(_)) => WorktreeState::Dirty,
@@ -297,5 +303,12 @@ mod tests {
         let states = worktree_states(s(main.path())).await.unwrap();
         let st = states.iter().find(|e| e.path.ends_with("d1")).unwrap();
         assert_eq!(st.state, WorktreeState::Unknown);
+    }
+
+    // FR-013
+    #[test]
+    fn status_uses_no_optional_locks() {
+        assert_eq!(STATUS_ARGS[0], "--no-optional-locks");
+        assert_eq!(STATUS_ARGS[1], "status");
     }
 }
