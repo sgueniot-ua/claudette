@@ -146,17 +146,71 @@ describe("openProjectChatTarget", () => {
     expect(s.selectedSessionIdByWorkspaceId["w-project"]).toBe("s9");
   });
 
-  it("ignores an archived project workspace and creates a new one", async () => {
-    // FR-001
+  it("does not reuse an archived project workspace: asks the backend, which refuses", async () => {
+    // FR-001: the backend rejects an archived repository workspace
+    // ("project chat workspace is archived"); the user gets a toast.
     useAppStore.setState({
       workspaces: [makeWorkspace({ id: "old", status: "Archived" })],
     });
+    openProjectChat.mockRejectedValue(new Error("project chat workspace is archived"));
+    await openProjectChatTarget("r1");
+    expect(openProjectChat).toHaveBeenCalledWith("r1");
+    const s = useAppStore.getState();
+    expect(s.toasts.some((t) => t.message.includes("project chat workspace is archived"))).toBe(true);
+    expect(s.selectedWorkspaceId).toBeNull();
+  });
+
+  it("does not reuse a remote repository workspace", async () => {
+    useAppStore.setState({
+      workspaces: [makeWorkspace({ remote_connection_id: "conn" })],
+    });
     openProjectChat.mockResolvedValue({
-      workspace: makeWorkspace(),
-      session: makeSession(),
+      workspace: makeWorkspace({ id: "local" }),
+      session: makeSession({ workspace_id: "local" }),
     });
     await openProjectChatTarget("r1");
     expect(openProjectChat).toHaveBeenCalledWith("r1");
+  });
+
+  it("still selects the workspace and toasts when listing its chats fails", async () => {
+    useAppStore.setState({ workspaces: [makeWorkspace()] });
+    listChatSessions.mockRejectedValue(new Error("list failed"));
+    await openProjectChatTarget("r1");
+    const s = useAppStore.getState();
+    expect(createChatSession).not.toHaveBeenCalled();
+    expect(s.selectedWorkspaceId).toBe("w-project");
+    expect(s.sessionsLoadedByWorkspace["w-project"]).toBe(true);
+    expect(s.toasts.some((t) => t.message.includes("list failed"))).toBe(true);
+  });
+
+  it("concurrent opens create a single workspace and chat when the workspace is missing", async () => {
+    // FR-001, FR-013
+    let resolve!: (v: unknown) => void;
+    openProjectChat.mockReturnValue(new Promise((r) => (resolve = r)));
+    const a = openProjectChatTarget("r1");
+    const b = openProjectChatTarget("r1");
+    expect(b).toBe(a);
+    resolve({ workspace: makeWorkspace(), session: makeSession() });
+    await Promise.all([a, b]);
+    expect(openProjectChat).toHaveBeenCalledTimes(1);
+    expect(createChatSession).not.toHaveBeenCalled();
+  });
+
+  it("concurrent opens create a single chat when the workspace has no active chat", async () => {
+    // FR-013
+    let resolve!: (v: unknown) => void;
+    createChatSession.mockReturnValue(new Promise((r) => (resolve = r)));
+    useAppStore.setState({
+      workspaces: [makeWorkspace()],
+      sessionsByWorkspace: { "w-project": [] },
+      sessionsLoadedByWorkspace: { "w-project": true },
+    });
+    const a = openProjectChatTarget("r1");
+    const b = openProjectChatTarget("r1");
+    resolve(makeSession());
+    await Promise.all([a, b]);
+    expect(createChatSession).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().selectedSessionIdByWorkspaceId["w-project"]).toBe("s9");
   });
 
   it("failure shows a toast and selects nothing", async () => {

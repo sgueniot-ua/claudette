@@ -178,7 +178,8 @@ export function useKeyboardShortcuts() {
             visible,
           )[idx];
           if (target?.kind === "projectChats") {
-            void openProjectChatTarget(target.repoId);
+            // A held key repeats keydown: one open per press.
+            if (!e.repeat) void openProjectChatTarget(target.repoId);
           } else if (target) {
             currentState.selectWorkspace(target.id);
           }
