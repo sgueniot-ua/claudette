@@ -23,6 +23,10 @@ export async function refreshSessionBackgroundStatus(
   workspaceId: string,
   sessionId: string,
 ): Promise<void> {
+  const known = (useAppStore.getState().sessionsByWorkspace[workspaceId] ?? []).some(
+    (session) => session.id === sessionId,
+  );
+  if (!known) return;
   const request = ++requestCounter;
   latestRequest[sessionId] = request;
   let fresh: SessionAgentStatus;

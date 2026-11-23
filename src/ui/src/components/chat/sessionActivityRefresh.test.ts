@@ -86,6 +86,14 @@ describe("refreshSessionBackgroundStatus", () => {
     expect(status()).toBe("Idle");
   });
 
+  // FR-006: no fetch for a session the store does not hold.
+  it("skips the fetch for a session not in the store", async () => {
+    seed("Idle");
+    await refreshSessionBackgroundStatus("ws-1", "unknown-session");
+    await refreshSessionBackgroundStatus("ws-other", "session-1");
+    expect(getChatSessionMock).not.toHaveBeenCalled();
+  });
+
   it("swallows a failed read", async () => {
     seed("Idle");
     getChatSessionMock.mockRejectedValue(new Error("offline"));
