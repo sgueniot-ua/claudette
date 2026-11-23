@@ -65,7 +65,11 @@ export function AgentsPanel({ workspaceId }: { workspaceId: string }) {
                   type="button"
                   data-agent-id={a.toolUseId}
                   className={styles.item}
-                  aria-current={a.toolUseId === selectedId ? "true" : undefined}
+                  aria-label={t("running_agent_open", {
+                    type: a.subagentType ?? "",
+                    description: a.label,
+                    state: a.running ? t("agents_panel_running") : t("agents_panel_finished"),
+                  }).replace(/\s+/g, " ")}
                   onClick={() => selectAgentInSidebar(sessionId, a.toolUseId)}
                 >
                   <TaskStateIcon state={a.state} />

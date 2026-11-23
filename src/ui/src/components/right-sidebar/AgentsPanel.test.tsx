@@ -153,17 +153,32 @@ describe("AgentsPanel", () => {
     expect(c.textContent).not.toContain("All agents");
   });
 
-  it("selected agent has aria-current", async () => {
+  it("list items have readable accessible names", async () => {
     // FR-015
-    useAppStore.setState({ toolActivities: { s1: [agent("a1"), agent("a2")] } });
+    useAppStore.setState({
+      toolActivities: {
+        s1: [
+          agent("scout", {
+            summary: "Attendre 9",
+            inputJson: JSON.stringify({ description: "Attendre 9", subagent_type: "scout" }),
+            agentStatus: "completed",
+          }),
+          agent("run", {
+            summary: "Attendre 9",
+            inputJson: JSON.stringify({ description: "Attendre 9", subagent_type: "scout" }),
+            agentStatus: "running",
+          }),
+        ],
+      },
+    });
     const c = await render();
+    const names = items(c).map((b) => b.getAttribute("aria-label") ?? "");
+    expect(names[0]).toMatch(/scout.*Attendre 9.*Running/);
+    expect(names[1]).toMatch(/scout.*Attendre 9.*Finished/);
+    expect(names.every((n) => !n.includes("  "))).toBe(true);
     await act(async () => {
       items(c)[1].click();
     });
-    expect(useAppStore.getState().selectedAgentBySession.s1).toBe("a2");
-    await act(async () => {
-      useAppStore.getState().selectAgentInSidebar("s1", null);
-    });
-    expect(items(c).every((b) => b.getAttribute("aria-current") === null)).toBe(true);
+    expect(useAppStore.getState().selectedAgentBySession.s1).toBe("scout");
   });
 });

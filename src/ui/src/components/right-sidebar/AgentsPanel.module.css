@@ -51,8 +51,7 @@
   cursor: pointer;
 }
 
-.item:hover,
-.item[aria-current="true"] {
+.item:hover {
   background: var(--hover-bg);
 }
 
