@@ -127,7 +127,9 @@ export function ImportWorktreesModal() {
       }));
       const created = await importWorktrees(repoId, imports);
       for (const ws of created) {
-        addWorkspace(ws);
+        // The Rust model has no `remote_connection_id`; stamp the
+        // UI-only field so env preparation doesn't stall on `undefined`.
+        addWorkspace({ ...ws, remote_connection_id: null });
       }
       chainOrClose();
     } catch (e) {
