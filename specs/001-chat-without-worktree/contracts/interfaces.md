@@ -45,15 +45,20 @@ Ajout du champ `"kind": "worktree" | "repository"`. Aucun champ retiré ou renom
 
 ## 5. Contrat UI (desktop)
 
-- **Vue du projet** (`Dashboard.tsx`, branche `scopedRepo`) :
-  - section « Chats » qui liste les sessions actives du workspace `repository` (nom, statut de l'agent) ;
-  - bouton « Nouveau chat » qui appelle `openProjectChat`, sélectionne le workspace et la session ;
-  - mention permanente dans la section, donc visible à chaque création : tous les chats du projet
-    travaillent dans le dossier du projet, sans isolation (FR-005).
+- **Ligne « Chats du projet »** (`ProjectChatsRow.tsx`, épinglée en tête de chaque projet local de la
+  sidebar ; en mode statut, section dédiée `StatusProjectChatsSection.tsx`) :
+  - toujours présente, même sans chat (FR-013) ; sous-titre = branche extraite, statut de l'agent et
+    indicateurs d'attention du workspace `repository` ;
+  - l'ouvrir appelle `openProjectChatTarget` : sélectionne le workspace `repository` existant (et crée
+    un chat s'il n'a aucun chat actif), sinon appelle `openProjectChat` (workspace + premier chat) ;
+  - la vue du projet n'a plus de section « Chats ».
+  - mention « dossier partagé, sans isolation » (FR-005) : écran vide du chat de projet et info-bulle
+    du badge « Projet » de l'en-tête.
   - « Effacer la conversation » : option « restaurer les fichiers » masquée tant que la session n'a
     pas de snapshot de référence (FR-015).
 - **Sidebar, raccourcis ⌘1–9, Dashboard global, FuzzyFinder** : le workspace `repository` n'y apparaît
-  jamais (FR-013).
+  jamais comme workspace ordinaire ; il est représenté par la ligne « Chats du projet » (FR-013),
+  comptée en premier dans ⌘1–9 en mode statut.
 - **En-tête du chat** : badge « Projet » et nom du dépôt au lieu du nom de workspace ; branche live
   affichée (FR-008).
 - **RollbackModal** : avec `kind = repository` et « restaurer les fichiers » coché, avertissement

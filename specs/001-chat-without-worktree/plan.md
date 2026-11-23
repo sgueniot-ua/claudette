@@ -52,7 +52,7 @@ contrats existants inchangés pour `kind = worktree`
 | IV. Forward-Only Migrations | ✅ | nouveau fichier `<UTC>_workspace_kind.sql`, `ADD COLUMN … DEFAULT`, `CREATE UNIQUE INDEX IF NOT EXISTS` |
 | V. Design Tokens Only | ✅ | badge et avertissements avec les `var(--…)` existants ; `lint:css` |
 | VI. Platform Safety | ✅ | aucun nouveau spawn de processus ; aucune invite TCC |
-| VII. Surgical Changes to God Files | ✅ avec attention | filtre dans `utils/sidebarJumpTargets.ts` (pas dans `Sidebar.tsx`) ; section « Chats » extraite en composant `ProjectChatsSection.tsx`, branché dans `Dashboard.tsx` ; `ChatPanel.tsx` : seul le badge d'en-tête passe par `WorkspacePanelHeader.tsx` |
+| VII. Surgical Changes to God Files | ✅ avec attention | filtre dans `utils/sidebarJumpTargets.ts` (pas dans `Sidebar.tsx`) ; ligne épinglée `ProjectChatsRow.tsx` et section de mode statut `StatusProjectChatsSection.tsx` (rien d'autre ajouté à `Sidebar.tsx` que leur insertion), ouverture dans `hooks/useOpenProjectChat.ts` ; `ChatPanel.tsx` : seul le badge d'en-tête passe par `WorkspacePanelHeader.tsx` |
 | Workflow : documentation | ✅ | `site/src/content/docs/features/project-chats.mdx` (nouveau, ajouté à la sidebar `astro.config.mjs`) + mention dans `parallel-agents.mdx` et `cli-client.mdx` |
 
 **Re-check post-design** : ✅. Aucune violation, la Complexity Tracking est vide.
@@ -97,8 +97,10 @@ src/ui/src/
 ├── types/workspace.ts                       # kind
 ├── services/tauri/workspace.ts              # openProjectChat
 ├── utils/sidebarJumpTargets.ts              # exclusion de kind repository
-├── components/layout/ProjectChatsSection.tsx  # nouveau
-├── components/layout/Dashboard.tsx          # branchement de la section ; exclusion de la liste globale
+├── components/sidebar/ProjectChatsRow.tsx   # nouveau : ligne épinglée par projet local
+├── components/sidebar/StatusProjectChatsSection.tsx # nouveau : section du mode statut
+├── hooks/useOpenProjectChat.ts              # nouveau : ouverture partagée (ligne, ⌘1–9, recherche, barre système)
+├── components/layout/Dashboard.tsx          # exclusion de la liste globale
 ├── components/shared/WorkspacePanelHeader.tsx # badge Projet
 ├── components/modals/RollbackModal.tsx      # avertissements FR-014/015/017
 └── locales/*/{chat,modals,sidebar}.json     # nouvelles clés (6 langues)
@@ -107,8 +109,8 @@ site/src/content/docs/features/project-chats.mdx  # nouveau
 ```
 
 **Structure Decision**: structure existante du workspace Cargo et du frontend. Aucun nouveau crate ni
-module de premier niveau. Le seul nouveau composant est `ProjectChatsSection.tsx`, à côté de
-`Dashboard.tsx`.
+module de premier niveau. Les nouveaux composants sont `ProjectChatsRow.tsx` et
+`StatusProjectChatsSection.tsx`, dans `components/sidebar/`.
 
 ## Complexity Tracking
 

@@ -21,12 +21,12 @@ cd src/ui-mobile && bunx tsc -b
 
 | # | Action | Résultat attendu | Spec |
 |---|---|---|---|
-| 1 | Clic sur l'en-tête du projet, « Nouveau chat » | chat ouvert en moins de 2 s ; `git worktree list` et `git branch` inchangés ; aucun dossier sous `~/.claudette/workspaces` | US1-1, FR-001, FR-003, SC-002 |
+| 1 | Clic sur la ligne « Chats du projet » de la sidebar (en tête du projet) | chat ouvert en moins de 2 s ; `git worktree list` et `git branch` inchangés ; aucun dossier sous `~/.claudette/workspaces` | US1-1, FR-001, FR-003, SC-002 |
 | 2 | Demander à l'agent `pwd` et `git branch --show-current` | dossier du dépôt, `main` | US1-2, FR-002 |
 | 3 | Demander à l'agent de modifier `README.md` | fichier modifié dans le dépôt ; diff = modification non commitée | US1-4, FR-009 |
-| 4 | « Nouveau chat » deux fois de plus, puis un message dans chacun des 3 | 3 agents en parallèle, statuts et historiques distincts ; avertissement de dossier partagé visible | US2, FR-004, FR-005, SC-003 |
-| 5 | Regarder la sidebar et appuyer sur ⌘1–9 | aucune entrée pour les chats de projet | FR-013 |
-| 6 | Redémarrer Claudette, ouvrir la vue du projet | les 3 chats et leur historique sont là | US1-3, FR-006, SC-004 |
+| 4 | Nouveau chat (+ ou ⌘T) deux fois de plus, puis un message dans chacun des 3 | 3 agents en parallèle, statuts et historiques distincts ; avertissement de dossier partagé visible | US2, FR-004, FR-005, SC-003 |
+| 5 | Regarder la sidebar et appuyer sur ⌘1–9 | une ligne « Chats du projet » épinglée en tête de chaque projet local, avec la branche extraite ; aucun workspace `repository` ordinaire ; ⌘1–9 ouvre la ligne (mode statut) ou le projet | FR-013 |
+| 6 | Redémarrer Claudette, ouvrir la ligne « Chats du projet » | les 3 chats et leur historique sont là | US1-3, FR-006, SC-004 |
 | 7 | Renommer un chat, archiver le dernier chat actif | nom changé ; chat archivé disparu, aucun « New chat » recréé ; fichiers et branches inchangés | US3, FR-007 |
 | 8 | Rollback d'un checkpoint avec « restaurer les fichiers » | avertissement « dossier partagé » ; « Annuler » ne change rien, « Confirmer » restaure | FR-014 |
 | 9 | Même chose pendant qu'un autre chat du projet tourne | avertissement supplémentaire avec le nombre de chats en cours | FR-017 |
@@ -52,4 +52,4 @@ cd src/ui-mobile && bunx tsc -b
 - Snapshot de référence : capturé avant le 1er tour, non élagué, restauré par `clear_conversation`.
 - Fork depuis `repository` : nom `<dépôt>-fork`.
 - `rename_workspace` refusé pour `repository` ; `open_project_chat` concurrent sans doublon.
-- Front : filtre sidebar, section « Chats » de la vue du projet, avertissements de `RollbackModal`.
+- Front : filtre sidebar, ligne « Chats du projet » (branche, ouverture, concurrence), avertissements de `RollbackModal`.
