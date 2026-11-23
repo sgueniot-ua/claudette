@@ -3,6 +3,7 @@ import type { editor as MonacoNs } from "monaco-editor";
 import { writeText as clipboardWriteText } from "@tauri-apps/plugin-clipboard-manager";
 import { useAppStore } from "../../../stores/useAppStore";
 import { fileBufferKey } from "../../../stores/slices/fileTreeSlice";
+import type { RightSidebarTab } from "../../../stores/slices/uiSlice";
 import { setAppSetting } from "../../../services/tauri";
 import {
   EDITOR_ZOOM_MAX,
@@ -53,7 +54,7 @@ export interface EditorActionsDeps {
   ) => void;
   rightSidebarVisible: boolean;
   showRightSidebar: () => void;
-  setRightSidebarTabForWorkspace: (workspaceId: string, tab: "files" | "changes" | "tasks") => void;
+  setRightSidebarTabForWorkspace: (workspaceId: string, tab: RightSidebarTab) => void;
 
   openCommandPaletteFileMode: () => void;
 

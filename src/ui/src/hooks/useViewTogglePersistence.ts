@@ -3,6 +3,7 @@ import type { AppState } from "../stores/useAppStore";
 import { useAppStore } from "../stores/useAppStore";
 import { getAppSetting, setAppSetting } from "../services/tauri";
 import { makeUnloadedBuffer, fileBufferKey } from "../stores/slices/fileTreeSlice";
+import { RIGHT_SIDEBAR_TABS, type RightSidebarTab } from "../stores/slices/uiSlice";
 import type { UnifiedTabEntry } from "../components/chat/sessionTabsLogic";
 import type { DiffFileTab, DiffLayer, TerminalPaneNode, Workspace } from "../types";
 import type { DiffSelection } from "../types/diff";
@@ -23,7 +24,6 @@ const LEGACY_KEYS = {
   sidebarShowArchived: "view:sidebar_show_archived",
 } as const;
 
-const RIGHT_SIDEBAR_TABS = ["files", "changes", "tasks"] as const;
 const SIDEBAR_GROUP_BYS = ["status", "repo"] as const;
 const DIFF_LAYERS = ["committed", "staged", "unstaged", "untracked"] as const;
 const STATUS_GROUP_KEYS = [
@@ -35,7 +35,6 @@ const STATUS_GROUP_KEYS = [
   "status:archived",
 ] as const;
 
-type RightSidebarTab = (typeof RIGHT_SIDEBAR_TABS)[number];
 type SidebarGroupBy = (typeof SIDEBAR_GROUP_BYS)[number];
 
 export interface PersistedViewStateV1 {

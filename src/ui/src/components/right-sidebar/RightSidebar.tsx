@@ -15,6 +15,7 @@ import {
 } from "../../utils/pollingIntervals";
 import { ChevronRight, Undo2, Trash2, Plus, Minus, FilePenLine } from "lucide-react";
 import { useAppStore, selectActiveSessionId } from "../../stores/useAppStore";
+import type { RightSidebarTab } from "../../stores/slices/uiSlice";
 import { isPendingPlaceholderWorkspace } from "../../utils/workspaceEnvironment";
 import { useWorkspaceTaskHistory } from "../../hooks/useWorkspaceTaskHistory";
 import {
@@ -114,7 +115,7 @@ export const RightSidebar = memo(function RightSidebar() {
   );
   const setRightSidebarTabForWorkspace = useAppStore((s) => s.setRightSidebarTabForWorkspace);
   const setActiveTab = useCallback(
-    (tab: "files" | "changes" | "tasks") => {
+    (tab: RightSidebarTab) => {
       if (selectedWorkspaceId) setRightSidebarTabForWorkspace(selectedWorkspaceId, tab);
     },
     [selectedWorkspaceId, setRightSidebarTabForWorkspace],

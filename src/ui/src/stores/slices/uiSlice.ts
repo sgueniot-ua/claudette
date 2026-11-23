@@ -6,6 +6,9 @@ import type {
 } from "../../types/plugins";
 import type { AppState } from "../useAppStore";
 
+export const RIGHT_SIDEBAR_TABS = ["files", "changes", "tasks"] as const;
+export type RightSidebarTab = (typeof RIGHT_SIDEBAR_TABS)[number];
+
 export interface ClaudeAuthFailureState {
   messageId: string | null;
   error: string;
@@ -30,7 +33,7 @@ export interface UiSlice {
   rightSidebarWidth: number;
   terminalHeight: number;
   composerHeight: number;
-  rightSidebarTabByWorkspace: Record<string, "files" | "changes" | "tasks">;
+  rightSidebarTabByWorkspace: Record<string, RightSidebarTab>;
   sidebarGroupBy: "status" | "repo";
   sidebarRepoFilter: string; // repo ID or "all"
   sidebarShowArchived: boolean;
@@ -43,7 +46,7 @@ export interface UiSlice {
   commandPaletteInitialMode: "file" | null;
   toggleSidebar: () => void;
   toggleRightSidebar: () => void;
-  setRightSidebarTabForWorkspace: (workspaceId: string, tab: "files" | "changes" | "tasks") => void;
+  setRightSidebarTabForWorkspace: (workspaceId: string, tab: RightSidebarTab) => void;
   setSidebarWidth: (w: number) => void;
   setRightSidebarWidth: (w: number) => void;
   setTerminalHeight: (h: number) => void;
