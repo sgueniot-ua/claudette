@@ -17,7 +17,7 @@ import { deriveScmCiState } from "./utils/scmChecks";
 import { KEYBINDING_SETTING_PREFIX } from "./hotkeys/bindings";
 import type { WorkspaceOrderModeByRepo } from "./utils/workspaceOrdering";
 import { useCiAutoFixSession } from "./hooks/useCiAutoFixSession";
-import { openProjectChatTarget } from "./hooks/useOpenProjectChat";
+import { findRepositoryWorkspace, openProjectChatTarget } from "./hooks/useOpenProjectChat";
 import { useMcpStatus } from "./hooks/useMcpStatus";
 import { useChatSessionCreatedEvent } from "./hooks/useChatSessionCreatedEvent";
 import { useRemoteConnectionLifecycle } from "./hooks/useRemoteConnectionLifecycle";
@@ -175,6 +175,7 @@ function App() {
           workspaces: localWorkspaces,
           defaultBranches: data.default_branches,
         });
+        useAppStore.getState().setRepositoryBranches(data.repository_branches ?? {});
         setManualWorkspaceOrderByRepo(
           workspaceOrderModesFromRepoIds(data.manual_workspace_order_repo_ids),
         );
@@ -646,19 +647,15 @@ function App() {
       }
     });
 
-    // Listen for tray workspace selection events.
-    const unlistenTray = listen<string>("tray-select-workspace", (event) => {
-      const wsId = event.payload;
+    // The Rust tray click handler already cleared backend `needs_attention`
+    // for every session in the workspace under a single agents-write-lock.
+    // Only mirror that into the local cache — do NOT fan out per-session
+    // `clearAttention` IPC calls. Those would (a) duplicate the backend work
+    // O(session_count) times and (b) race with any AskUserQuestion /
+    // ExitPlanMode that sets a fresh `needs_attention=true` between the menu
+    // click and the loop, which would silently swallow the new prompt.
+    const mirrorClearedAttention = (wsId: string) => {
       const store = useAppStore.getState();
-      store.selectWorkspace(wsId);
-      // The Rust tray click handler already cleared backend
-      // `needs_attention` for every session in this workspace under a
-      // single agents-write-lock. Only mirror that into the local cache —
-      // do NOT fan out per-session `clearAttention` IPC calls. Those would
-      // (a) duplicate the backend work O(session_count) times and (b) race
-      // with any AskUserQuestion / ExitPlanMode that sets a fresh
-      // `needs_attention=true` between the menu click and the loop, which
-      // would silently swallow the new prompt.
       const sessions = store.sessionsByWorkspace[wsId] ?? [];
       for (const s of sessions) {
         if (s.status !== "Active") continue;
@@ -668,12 +665,24 @@ function App() {
           attention_kind: null,
         });
       }
+    };
+
+    // Listen for tray workspace selection events.
+    const unlistenTray = listen<string>("tray-select-workspace", (event) => {
+      const wsId = event.payload;
+      useAppStore.getState().selectWorkspace(wsId);
+      mirrorClearedAttention(wsId);
     });
 
     // Tray "Project chats" item: open (or create) the repo's project chats.
     const unlistenTrayProjectChats = listen<string>(
       "tray-open-project-chats",
       (event) => {
+        const existing = findRepositoryWorkspace(
+          useAppStore.getState().workspaces,
+          event.payload,
+        );
+        if (existing) mirrorClearedAttention(existing.id);
         void openProjectChatTarget(event.payload);
       },
     );

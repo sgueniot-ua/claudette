@@ -113,12 +113,16 @@ pub async fn create_workspace(
 #[tauri::command]
 pub async fn open_project_chat(
     repository_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ops_workspace::ProjectChatOutput, String> {
     let mut db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
-    ops_workspace::open_project_chat(&mut db, &repository_id)
+    let output = ops_workspace::open_project_chat(&mut db, &repository_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // A newly created project workspace must show its status in the tray.
+    crate::tray::rebuild_tray(&app);
+    Ok(output)
 }
 
 /// Shared implementation of the GUI's `create_workspace` command.

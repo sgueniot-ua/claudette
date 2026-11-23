@@ -298,18 +298,24 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), String> {
                 let handle = app.clone();
                 let ws_id = ws_id.to_string();
                 tauri::async_runtime::spawn(async move {
-                    let cleared = {
-                        let app_state = handle.state::<AppState>();
-                        let mut agents = app_state.agents.write().await;
-                        clear_workspace_attention_in(&mut agents, &ws_id)
-                    };
-                    if cleared > 0 {
-                        rebuild_tray(&handle);
-                    }
+                    clear_attention_and_rebuild(&handle, &ws_id).await;
                 });
             } else if let Some(repo_id) = id.strip_prefix("projectchats:") {
                 show_and_focus(app);
                 let _ = app.emit("tray-open-project-chats", repo_id.to_string());
+                // Same as `ws:` for the repository workspace, when it exists:
+                // clicking the project chats item clears its attention badge.
+                let handle = app.clone();
+                let repo_id = repo_id.to_string();
+                tauri::async_runtime::spawn(async move {
+                    let ws_id = Database::open(&handle.state::<AppState>().db_path)
+                        .ok()
+                        .and_then(|db| db.find_repository_workspace(&repo_id).ok().flatten())
+                        .map(|w| w.id);
+                    if let Some(ws_id) = ws_id {
+                        clear_attention_and_rebuild(&handle, &ws_id).await;
+                    }
+                });
             } else if id == "open-settings" {
                 show_and_focus(app);
                 let _ = app.emit("open-settings", ());
@@ -552,6 +558,21 @@ pub fn has_running_agents(
     agents: &std::collections::HashMap<String, crate::state::AgentSessionState>,
 ) -> bool {
     agents.values().any(|s| s.active_pid.is_some())
+}
+
+/// Clear attention for a workspace's sessions under the agents write lock and
+/// rebuild the tray when something changed (so benign clicks don't churn the
+/// icon). Awaits the lock rather than `try_write`, which would silently no-op
+/// under contention and leave the badge stuck.
+async fn clear_attention_and_rebuild(handle: &AppHandle, ws_id: &str) {
+    let cleared = {
+        let app_state = handle.state::<AppState>();
+        let mut agents = app_state.agents.write().await;
+        clear_workspace_attention_in(&mut agents, ws_id)
+    };
+    if cleared > 0 {
+        rebuild_tray(handle);
+    }
 }
 
 /// Authoritatively clear `needs_attention` / `attention_kind` for every
@@ -978,7 +999,7 @@ mod tests {
     }
 
     #[test]
-    fn tray_skips_remote_repos() {
+    fn tray_ignores_archived_repository_workspace() {
         // FR-013: remote (paired-server) projects live in the frontend's
         // remote state, never in the local `repositories` table, so every repo
         // fed to the tray is local. An archived repository workspace is not
