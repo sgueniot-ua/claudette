@@ -15,6 +15,7 @@ export * from "./debug";
 export * from "./dialog";
 export * from "./files";
 export * from "./diff";
+export * from "./gitGraph";
 export * from "./fileMentions";
 export * from "./initialData";
 export * from "./metrics";
