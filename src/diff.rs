@@ -24,7 +24,7 @@ impl std::error::Error for DiffError {}
 
 /// Validate that a file path is safe for diff operations: no path traversal,
 /// no absolute paths, and no null bytes.
-fn validate_file_path(file_path: &str) -> Result<(), DiffError> {
+pub(crate) fn validate_file_path(file_path: &str) -> Result<(), DiffError> {
     if file_path.contains('\0') {
         return Err(DiffError::CommandFailed(
             "Invalid file path: contains null byte".into(),
