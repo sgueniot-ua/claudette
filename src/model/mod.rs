@@ -1,5 +1,6 @@
 mod agent_conclusion;
 mod attachment;
+mod branch_ref;
 pub mod cesp;
 mod chat_message;
 mod chat_session;
@@ -15,6 +16,7 @@ mod workspace;
 
 pub use agent_conclusion::AgentConclusion;
 pub use attachment::{Attachment, AttachmentOrigin};
+pub use branch_ref::{BranchRef, WorkspaceBranch};
 pub use cesp::{
     CespCategorySounds, CespManifest, CespSound, InstalledPack, InstalledPackMeta, RegistryIndex,
     RegistryPack,

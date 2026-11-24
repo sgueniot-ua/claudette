@@ -1,3 +1,4 @@
+use crate::model::{BranchRef, WorkspaceBranch};
 use serde::Serialize;
 use std::ffi::OsString;
 use std::fmt;
@@ -694,6 +695,161 @@ pub async fn restore_worktree(
     canonicalize_worktree_path(worktree_path)
 }
 
+/// List the branches a workspace can be based on or opened on: local branches
+/// plus remote-only branches (a remote `r/x` is omitted when local `x` exists).
+/// `checked_out_at` is filled for local branches from `git worktree list`.
+/// Sorted locals first, then by name.
+pub async fn list_workspace_branches(repo_path: &str) -> Result<Vec<WorkspaceBranch>, GitError> {
+    let remotes_out = run_git(repo_path, &["remote"]).await?;
+    let remotes: Vec<&str> = remotes_out.lines().collect();
+    let refs = run_git(
+        repo_path,
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/remotes",
+        ],
+    )
+    .await?;
+
+    let mut locals: Vec<String> = Vec::new();
+    let mut remote_refs: Vec<BranchRef> = Vec::new();
+    for line in refs.lines() {
+        if let Some(name) = line.strip_prefix("refs/heads/") {
+            locals.push(name.to_string());
+        } else if let Some(rest) = line.strip_prefix("refs/remotes/") {
+            // Remote names may contain '/', so match against the known list
+            // (longest first) instead of splitting on the first '/'.
+            let found = remotes
+                .iter()
+                .filter(|r| {
+                    rest.strip_prefix(**r)
+                        .is_some_and(|tail| tail.starts_with('/'))
+                })
+                .max_by_key(|r| r.len());
+            if let Some(remote) = found {
+                let name = &rest[remote.len() + 1..];
+                if name != "HEAD" {
+                    remote_refs.push(BranchRef {
+                        name: name.to_string(),
+                        remote: Some((*remote).to_string()),
+                    });
+                }
+            }
+        }
+    }
+
+    let worktrees = list_worktrees(repo_path).await?;
+    let mut result: Vec<WorkspaceBranch> = locals
+        .iter()
+        .map(|name| WorkspaceBranch {
+            branch: BranchRef {
+                name: name.clone(),
+                remote: None,
+            },
+            checked_out_at: worktrees
+                .iter()
+                .find(|w| w.branch.as_deref() == Some(name.as_str()))
+                .map(|w| w.path.clone()),
+        })
+        .collect();
+    result.sort_by(|a, b| a.branch.name.cmp(&b.branch.name));
+
+    let mut remote_only: Vec<WorkspaceBranch> = remote_refs
+        .into_iter()
+        .filter(|r| !locals.contains(&r.name))
+        .map(|branch| WorkspaceBranch {
+            branch,
+            checked_out_at: None,
+        })
+        .collect();
+    remote_only.sort_by(|a, b| {
+        a.branch
+            .name
+            .cmp(&b.branch.name)
+            .then_with(|| a.branch.remote.cmp(&b.branch.remote))
+    });
+    result.extend(remote_only);
+    Ok(result)
+}
+
+/// Check that `name` is a valid, unused local branch name for a new branch.
+pub async fn validate_new_branch_name(repo_path: &str, name: &str) -> Result<(), GitError> {
+    run_git(repo_path, &["check-ref-format", "--branch", name]).await?;
+    let ref_name = format!("refs/heads/{name}");
+    if run_git(repo_path, &["show-ref", "--verify", "--quiet", &ref_name])
+        .await
+        .is_ok()
+    {
+        return Err(GitError::CommandFailed(format!(
+            "Branch '{name}' already exists"
+        )));
+    }
+    Ok(())
+}
+
+/// Create a worktree on an existing branch. A local branch is checked out
+/// as-is; a remote-only branch gets a local tracking branch of the same name.
+/// Fails with `Branch '<name>' already checked out at <path>` when another
+/// worktree (or the main checkout) already has the local branch.
+pub async fn create_worktree_for_existing_branch(
+    repo_path: &str,
+    branch: &BranchRef,
+    worktree_path: &str,
+) -> Result<String, GitError> {
+    let name = branch.name.as_str();
+    let already_checked_out = |path: &str| {
+        GitError::CommandFailed(format!("Branch '{name}' is already checked out at {path}"))
+    };
+
+    if branch.remote.is_none()
+        && let Some(wt) = list_worktrees(repo_path)
+            .await?
+            .into_iter()
+            .find(|w| w.branch.as_deref() == Some(name))
+    {
+        return Err(already_checked_out(&wt.path));
+    }
+
+    let result = match branch.remote.as_deref() {
+        None => run_git(repo_path, &["worktree", "add", worktree_path, "--", name]).await,
+        Some(remote) => {
+            let _ = fetch_remote(repo_path, Some(remote)).await;
+            let upstream = format!("{remote}/{name}");
+            run_git(
+                repo_path,
+                &[
+                    "worktree",
+                    "add",
+                    "--track",
+                    "-b",
+                    name,
+                    worktree_path,
+                    &upstream,
+                ],
+            )
+            .await
+        }
+    };
+    if let Err(GitError::CommandFailed(msg)) = &result
+        && (msg.contains("is already checked out") || msg.contains("is already used by worktree"))
+    {
+        let path = list_worktrees(repo_path)
+            .await
+            .ok()
+            .and_then(|ws| {
+                ws.into_iter()
+                    .find(|w| w.branch.as_deref() == Some(name))
+                    .map(|w| w.path)
+            })
+            .unwrap_or_else(|| "another worktree".to_string());
+        return Err(already_checked_out(&path));
+    }
+    result?;
+    canonicalize_worktree_path(worktree_path)
+}
+
 /// Canonicalize a freshly-created worktree path and strip Windows verbatim
 /// `\\?\` prefixes so the result is a plain drive-letter path. The stored
 /// path is later passed to shells as a CWD; `cmd.exe` refuses verbatim
@@ -1030,6 +1186,145 @@ mod tests {
         run_git(path, &["commit", "-m", "initial"]).await.unwrap();
 
         dir
+    }
+
+    // --- list_workspace_branches / existing-branch worktrees ---
+
+    fn canon(p: &std::path::Path) -> String {
+        p.canonicalize().unwrap().to_string_lossy().to_string()
+    }
+
+    /// Bare "origin" repo named `upstream` with branch `feat/a`/`feat/r`, cloned
+    /// state is emulated by adding it as a remote of `repo` and fetching.
+    async fn add_upstream_remote(repo: &str, branches: &[&str]) -> tempfile::TempDir {
+        let remote = tempfile::tempdir().unwrap();
+        let rp = remote.path().to_str().unwrap();
+        run_git(rp, &["init", "--bare", "-b", "main"])
+            .await
+            .unwrap();
+        run_git(repo, &["remote", "add", "upstream", rp])
+            .await
+            .unwrap();
+        for b in branches {
+            run_git(repo, &["branch", b]).await.unwrap();
+            run_git(repo, &["push", "upstream", b]).await.unwrap();
+        }
+        run_git(repo, &["fetch", "upstream"]).await.unwrap();
+        remote
+    }
+
+    #[tokio::test]
+    async fn list_branches_marks_main_checkout() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let branches = list_workspace_branches(path).await.unwrap();
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].branch.name, "main");
+        assert_eq!(branches[0].checked_out_at, Some(canon(dir.path())));
+    }
+
+    #[tokio::test]
+    async fn list_branches_includes_remote_only_and_dedups() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let _remote = add_upstream_remote(path, &["feat/a", "both"]).await;
+        // `feat/a` becomes remote-only; `both` stays local + remote.
+        run_git(path, &["branch", "-D", "feat/a"]).await.unwrap();
+
+        let branches = list_workspace_branches(path).await.unwrap();
+        let refs: Vec<BranchRef> = branches.iter().map(|b| b.branch.clone()).collect();
+        assert!(refs.contains(&BranchRef {
+            name: "feat/a".into(),
+            remote: Some("upstream".into())
+        }));
+        assert_eq!(refs.iter().filter(|r| r.name == "both").count(), 1);
+        assert!(refs.contains(&BranchRef {
+            name: "both".into(),
+            remote: None
+        }));
+        // Locals first.
+        let first_remote = refs.iter().position(|r| r.remote.is_some()).unwrap();
+        assert!(refs[..first_remote].iter().all(|r| r.remote.is_none()));
+        assert!(refs[first_remote..].iter().all(|r| r.remote.is_some()));
+    }
+
+    #[tokio::test]
+    async fn list_branches_without_remote() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        run_git(path, &["branch", "feat/x"]).await.unwrap();
+        let branches = list_workspace_branches(path).await.unwrap();
+        let names: Vec<&str> = branches.iter().map(|b| b.branch.name.as_str()).collect();
+        assert_eq!(names, vec!["feat/x", "main"]);
+        assert!(branches.iter().all(|b| b.branch.remote.is_none()));
+    }
+
+    #[tokio::test]
+    async fn existing_local_branch_worktree() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        run_git(path, &["branch", "feat/x"]).await.unwrap();
+        let wt = dir.path().join("wt");
+        let branch = BranchRef {
+            name: "feat/x".into(),
+            remote: None,
+        };
+        let out = create_worktree_for_existing_branch(path, &branch, wt.to_str().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(out, canon(&wt));
+        let head = run_git(&out, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .await
+            .unwrap();
+        assert_eq!(head, "feat/x");
+    }
+
+    #[tokio::test]
+    async fn existing_remote_branch_worktree_tracks() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let _remote = add_upstream_remote(path, &["feat/r"]).await;
+        run_git(path, &["branch", "-D", "feat/r"]).await.unwrap();
+        let wt = dir.path().join("wt");
+        let branch = BranchRef {
+            name: "feat/r".into(),
+            remote: Some("upstream".into()),
+        };
+        let out = create_worktree_for_existing_branch(path, &branch, wt.to_str().unwrap())
+            .await
+            .unwrap();
+        let head = run_git(&out, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .await
+            .unwrap();
+        assert_eq!(head, "feat/r");
+        let upstream = run_git(&out, &["rev-parse", "--abbrev-ref", "feat/r@{upstream}"])
+            .await
+            .unwrap();
+        assert_eq!(upstream, "upstream/feat/r");
+    }
+
+    #[tokio::test]
+    async fn existing_branch_already_checked_out_errors() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let wt = dir.path().join("wt");
+        let branch = BranchRef {
+            name: "main".into(),
+            remote: None,
+        };
+        let err = create_worktree_for_existing_branch(path, &branch, wt.to_str().unwrap())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("already checked out"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn validate_new_branch_name_rejects_invalid_and_existing() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        assert!(validate_new_branch_name(path, "bad..name").await.is_err());
+        assert!(validate_new_branch_name(path, "main").await.is_err());
+        assert!(validate_new_branch_name(path, "feat/new").await.is_ok());
     }
 
     #[tokio::test]
