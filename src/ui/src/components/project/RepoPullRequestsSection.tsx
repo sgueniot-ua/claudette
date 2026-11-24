@@ -89,28 +89,32 @@ export const RepoPullRequestsSection = memo(function RepoPullRequestsSection({
 
   const handleCreateWorkspaceInRepo = async (pr: PullRequest) => {
     try {
-      const existing = workspaces.find(
-        (w) =>
-          w.repository_id === repoId &&
-          w.status === "Active" &&
-          w.branch_name === pr.branch,
-      );
-      if (existing) {
-        selectWorkspace(existing.id);
-        addToast(`Workspace already open on ${pr.branch}`);
-        return;
-      }
-      // Fork PRs have no branch in this repo: fetchWorkspaceBranch
-      // returns null and we keep the default-branch workspace.
-      const ref = await fetchWorkspaceBranch(repoId, pr.branch);
-      if (ref) {
-        const created = await createWorkspaceOrchestrated(repoId, {
-          source: { kind: "existing_branch", branch: ref },
-        });
-        if (created) {
-          addToast(`Workspace ready on ${pr.branch}`);
+      // A head named like the base (a fork's `main`) is not a branch of this
+      // repo, whatever exists locally: use the default-branch fallback.
+      if (pr.branch !== pr.base) {
+        const existing = workspaces.find(
+          (w) =>
+            w.repository_id === repoId &&
+            w.status === "Active" &&
+            w.branch_name === pr.branch,
+        );
+        if (existing) {
+          selectWorkspace(existing.id);
+          addToast(`Workspace already open on ${pr.branch}`);
+          return;
         }
-        return;
+        // Fork PRs have no branch in this repo: fetchWorkspaceBranch
+        // returns null and we keep the default-branch workspace.
+        const ref = await fetchWorkspaceBranch(repoId, pr.branch);
+        if (ref) {
+          const created = await createWorkspaceOrchestrated(repoId, {
+            source: { kind: "existing_branch", branch: ref },
+          });
+          if (created) {
+            addToast(`Workspace ready on ${pr.branch}`);
+          }
+          return;
+        }
       }
       const created = await createWorkspaceOrchestrated(repoId);
       if (created) {
@@ -364,7 +368,7 @@ function PullRequestRow({
     { label: "Open in browser", onSelect: () => onOpen(pr.url) },
     { label: "Copy URL", onSelect: () => onCopyUrl(pr.url) },
     {
-      label: "New workspace in this repo",
+      label: "Open PR branch in a workspace",
       onSelect: () => onCreateWorkspaceForBranch(pr),
     },
     { type: "separator" },

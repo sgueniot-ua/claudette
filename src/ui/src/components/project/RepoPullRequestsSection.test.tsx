@@ -144,7 +144,7 @@ describe("RepoPullRequestsSection error/cache handling", () => {
     );
   });
 
-  it("renders the honest 'New workspace in this repo' context-menu label", () => {
+  it("renders the honest 'Open PR branch in a workspace' context-menu label", () => {
     mockedHook.mockReturnValue({
       payload: makePayload({ pull_requests: [makePr(10)] }),
       isStale: false,
@@ -163,9 +163,8 @@ describe("RepoPullRequestsSection error/cache handling", () => {
       );
     });
     const menuText = document.body.textContent ?? "";
-    // The action no longer claims to check out the PR branch — it only
-    // creates a workspace on the repo's default branch.
-    expect(menuText).toContain("New workspace in this repo");
+    expect(menuText).toContain("Open PR branch in a workspace");
+    expect(menuText).not.toContain("New workspace in this repo");
     expect(menuText).not.toContain("Create workspace for this branch");
   });
 });
@@ -201,7 +200,7 @@ describe("RepoPullRequestsSection create workspace from a PR", () => {
     });
     const item = Array.from(
       document.body.querySelectorAll('[role="menuitem"]'),
-    ).find((el) => el.textContent?.includes("New workspace in this repo"));
+    ).find((el) => el.textContent?.includes("Open PR branch in a workspace"));
     await act(async () => {
       (item as HTMLElement | undefined)?.click();
     });
@@ -270,6 +269,36 @@ describe("RepoPullRequestsSection create workspace from a PR", () => {
     expect(createWorkspaceOrchestrated).toHaveBeenCalledWith("repo-1");
     expect(addToast).toHaveBeenCalledWith(
       "Workspace ready (default branch). PR head: feat/10",
+    );
+  });
+
+  it("treats a head named like the base as a fork (default-branch fallback)", async () => {
+    mockedHook.mockReturnValue({
+      payload: makePayload({
+        pull_requests: [{ ...makePr(10), branch: "main", base: "main" }],
+      }),
+      isStale: false,
+      loading: false,
+      refresh: vi.fn(),
+    });
+    // A workspace already sits on `main`: it must not be selected for the PR.
+    useAppStore.setState({
+      workspaces: [makeWorkspace({ id: "ws-main", branch_name: "main" })],
+    });
+    vi.mocked(createWorkspaceOrchestrated).mockResolvedValue({
+      workspaceId: "ws-new",
+      sessionId: "sess-new",
+    });
+    const container = render();
+    expand(container);
+
+    await createFromPr(container);
+
+    expect(fetchWorkspaceBranch).not.toHaveBeenCalled();
+    expect(selectWorkspace).not.toHaveBeenCalled();
+    expect(createWorkspaceOrchestrated).toHaveBeenCalledWith("repo-1");
+    expect(addToast).toHaveBeenCalledWith(
+      "Workspace ready (default branch). PR head: main",
     );
   });
 });
