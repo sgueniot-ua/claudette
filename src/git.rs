@@ -478,10 +478,53 @@ pub async fn default_branch(
 }
 
 /// Fetch a single branch from `remote` so its remote-tracking ref exists.
+///
+/// Same 15-second timeout and `kill_on_drop` as [`fetch_remote`], but failures
+/// are returned so callers can decide whether to ignore them.
 pub async fn fetch_branch(repo_path: &str, remote: &str, branch: &str) -> Result<(), GitError> {
-    run_git(repo_path, &["fetch", remote, branch])
+    let mut child = crate::process::command(crate::git::resolve_git_path_blocking())
+        .args(["-C", repo_path, "fetch", "--", remote, branch])
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| GitError::CommandFailed(format!("failed to spawn fetch: {e}")))?;
+    match tokio::time::timeout(std::time::Duration::from_secs(15), child.wait()).await {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        Ok(Ok(status)) => Err(GitError::CommandFailed(format!("fetch failed: {status}"))),
+        Ok(Err(e)) => Err(GitError::CommandFailed(format!("fetch failed: {e}"))),
+        Err(_) => Err(GitError::CommandFailed("fetch timed out".into())),
+    }
+}
+
+/// Fetch `branch` from `remote`, then return a ref to open it on — only when
+/// the branch really exists on that remote (`refs/remotes/<remote>/<branch>`).
+/// The local branch of the same name is preferred when there is one. `None`
+/// means the branch is not on the remote (e.g. a fork PR head).
+pub async fn fetch_and_resolve_branch(
+    repo_path: &str,
+    remote: &str,
+    branch: &str,
+) -> Result<Option<BranchRef>, GitError> {
+    let _ = fetch_branch(repo_path, remote, branch).await;
+    let remote_ref = format!("refs/remotes/{remote}/{branch}");
+    if run_git(
+        repo_path,
+        &["rev-parse", "--verify", "--quiet", &remote_ref],
+    )
+    .await
+    .is_err()
+    {
+        return Ok(None);
+    }
+    let local_ref = format!("refs/heads/{branch}");
+    let has_local = run_git(repo_path, &["rev-parse", "--verify", "--quiet", &local_ref])
         .await
-        .map(|_| ())
+        .is_ok();
+    Ok(Some(BranchRef {
+        name: branch.to_string(),
+        remote: (!has_local).then(|| remote.to_string()),
+    }))
 }
 
 /// Fetch from the primary remote (best-effort).
@@ -707,6 +750,9 @@ pub async fn restore_worktree(
 /// `checked_out_at` is filled for local branches from `git worktree list`.
 /// Sorted locals first, then by name.
 pub async fn list_workspace_branches(repo_path: &str) -> Result<Vec<WorkspaceBranch>, GitError> {
+    // Drop registrations of worktrees deleted by hand, or their branch would
+    // stay "checked out" forever.
+    let _ = run_git(repo_path, &["worktree", "prune"]).await;
     let remotes_out = run_git(repo_path, &["remote"]).await?;
     let remotes: Vec<&str> = remotes_out.lines().collect();
     let refs = run_git(
@@ -806,6 +852,7 @@ pub async fn create_worktree_for_existing_branch(
     worktree_path: &str,
 ) -> Result<String, GitError> {
     let name = branch.name.as_str();
+    let _ = run_git(repo_path, &["worktree", "prune"]).await;
     let already_checked_out = |path: &str| {
         GitError::CommandFailed(format!("Branch '{name}' is already checked out at {path}"))
     };
@@ -1323,6 +1370,85 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("already checked out"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn resolve_branch_none_when_not_on_remote() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let _remote = add_upstream_remote(path, &["feat/a"]).await;
+        // `main` exists locally but was never pushed (fork PR head named like
+        // a local branch).
+        let got = fetch_and_resolve_branch(path, "upstream", "main")
+            .await
+            .unwrap();
+        assert_eq!(got, None);
+        let got = fetch_and_resolve_branch(path, "upstream", "nope")
+            .await
+            .unwrap();
+        assert_eq!(got, None);
+    }
+
+    #[tokio::test]
+    async fn resolve_branch_remote_only_and_local_preferred() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let _remote = add_upstream_remote(path, &["feat/a", "both"]).await;
+        run_git(path, &["branch", "-D", "feat/a"]).await.unwrap();
+        let got = fetch_and_resolve_branch(path, "upstream", "feat/a")
+            .await
+            .unwrap();
+        assert_eq!(
+            got,
+            Some(BranchRef {
+                name: "feat/a".into(),
+                remote: Some("upstream".into())
+            })
+        );
+        let got = fetch_and_resolve_branch(path, "upstream", "both")
+            .await
+            .unwrap();
+        assert_eq!(
+            got,
+            Some(BranchRef {
+                name: "both".into(),
+                remote: None
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_branch_errors_on_missing_branch() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        let _remote = add_upstream_remote(path, &["feat/a"]).await;
+        assert!(fetch_branch(path, "upstream", "feat/a").await.is_ok());
+        assert!(fetch_branch(path, "upstream", "nope").await.is_err());
+        // A leading dash is a refspec, not an option.
+        assert!(fetch_branch(path, "upstream", "--all").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn manually_deleted_worktree_does_not_block_branch() {
+        let dir = setup_temp_repo().await;
+        let path = dir.path().to_str().unwrap();
+        run_git(path, &["branch", "feat/x"]).await.unwrap();
+        let wt = dir.path().join("wt");
+        let branch = BranchRef {
+            name: "feat/x".into(),
+            remote: None,
+        };
+        create_worktree_for_existing_branch(path, &branch, wt.to_str().unwrap())
+            .await
+            .unwrap();
+        std::fs::remove_dir_all(&wt).unwrap();
+
+        let listed = list_workspace_branches(path).await.unwrap();
+        let x = listed.iter().find(|b| b.branch.name == "feat/x").unwrap();
+        assert_eq!(x.checked_out_at, None);
+        create_worktree_for_existing_branch(path, &branch, wt.to_str().unwrap())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
