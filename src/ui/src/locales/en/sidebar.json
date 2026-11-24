@@ -22,6 +22,7 @@
   "status_closed": "Closed",
   "status_archived": "Archived",
   "new_workspace": "New workspace",
+  "new_workspace_from_branch": "New workspace from a branch…",
   "settings": "Settings",
   "help_open_docs": "Open Claudette documentation",
   "help_menu_trigger": "Help & resources",

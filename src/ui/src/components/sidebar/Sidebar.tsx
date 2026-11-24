@@ -1243,8 +1243,23 @@ export const Sidebar = memo(function Sidebar() {
                         handleCreateWorkspace(repo.id);
                       }}
                       title={t("new_workspace")}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openModal("newWorkspace", { repoId: repo.id });
+                      }}
                     >
                       +
+                    </button>
+                    <button
+                      className={styles.iconBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openModal("newWorkspace", { repoId: repo.id });
+                      }}
+                      title={t("new_workspace_from_branch")}
+                    >
+                      <ChevronDown size={12} />
                     </button>
                     <button
                       className={styles.iconBtn}

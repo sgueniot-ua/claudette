@@ -22,6 +22,7 @@
   "status_closed": "已关闭",
   "status_archived": "已归档",
   "new_workspace": "新建工作区",
+  "new_workspace_from_branch": "从分支新建工作区…",
   "settings": "设置",
   "help_menu_trigger": "帮助和资源",
   "jump_to_project": "跳转到项目 {{number}}",

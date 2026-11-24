@@ -19,6 +19,15 @@ When you create a workspace in Claudette:
 
 When you archive a workspace, the worktree and its directory are cleaned up automatically.
 
+## Creating from a Branch
+
+The **+** button next to a repository creates a workspace on a fresh, randomly named branch. To choose the branch yourself, click the **▾** button beside it (or right-click **+**) to open the **New workspace** dialog. It has two tabs:
+
+- **New branch** — pick a base branch (defaults to the repository's base branch; remote branches show as `remote/name`), type a name for the new branch, and click **Create**. The workspace is named after the branch.
+- **Existing branch** — search the branch list and select one to check it out in the new worktree. Branches already checked out in another worktree are greyed out and marked *already open*.
+
+The list appears immediately from local data, then refreshes in the background after fetching remotes. Claudette only deletes branches it created itself, so archiving a workspace opened on an existing branch never removes that branch.
+
 ## Discovering Existing Worktrees
 
 Worktrees created outside Claudette — `git worktree add` from a terminal, teammate tooling, or other agent runners like Conductor — aren't tracked as workspaces until you import them. Run discovery to scan the repository for those worktrees:

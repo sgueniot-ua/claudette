@@ -5,6 +5,11 @@ import type { Workspace } from "../../types";
 import type { CreateWorkspaceResult, SetupResult } from "../../types/repository";
 import type { WorkspaceEnvTrustNeededPayload } from "../../types/env";
 import type { RepositoryInputValues } from "../../types/repositoryInput";
+import type {
+  BranchRef,
+  WorkspaceBranch,
+  WorkspaceSource,
+} from "../../types/workspace";
 
 export function createWorkspace(
   repoId: string,
@@ -13,13 +18,32 @@ export function createWorkspace(
   /** Values for the repo's declared `required_inputs`. Omit when the repo
    *  has no schema (the backend ignores the field in that case). */
   inputValues?: RepositoryInputValues | null,
+  /** Where the branch comes from. Omit for the default (fresh random branch). */
+  source?: WorkspaceSource,
 ): Promise<CreateWorkspaceResult> {
   return invoke("create_workspace", {
     repoId,
     name,
     skipSetup: skipSetup ?? false,
     inputValues: inputValues ?? null,
+    source,
   });
+}
+
+/** Branches selectable for a new workspace. `fetch` refreshes remotes first. */
+export function listWorkspaceBranches(
+  repoId: string,
+  fetch: boolean,
+): Promise<WorkspaceBranch[]> {
+  return invoke("list_workspace_branches", { repoId, fetch });
+}
+
+/** Fetch one branch from the remote; resolves to its ref, or null if absent. */
+export function fetchWorkspaceBranch(
+  repoId: string,
+  branch: string,
+): Promise<BranchRef | null> {
+  return invoke("fetch_workspace_branch", { repoId, branch });
 }
 
 export interface ForkWorkspaceResult {

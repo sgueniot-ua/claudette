@@ -8,7 +8,7 @@ import {
 } from "../services/tauri";
 import { runAndRecordSetupScript } from "../utils/setupScriptMessage";
 import { makeChatMessage } from "../utils/chatMessage";
-import type { Workspace } from "../types/workspace";
+import type { Workspace, WorkspaceSource } from "../types/workspace";
 import { promptRequiredInputsIfDeclared } from "./promptRequiredInputs";
 
 /** Build the optimistic-placeholder Workspace inserted at the start
@@ -80,6 +80,10 @@ export interface CreateWorkspaceOptions {
   /** Called only when `idempotencyKey` is already in flight. Other `null`
    *  outcomes, such as a backend in-flight rejection, do not call this. */
   onIdempotencyDuplicate?: () => void;
+  /** Branch source for the new workspace. Omitted or `default` keeps the
+   *  generated-name flow; otherwise the backend derives the workspace name
+   *  from the branch and no name is generated. */
+  source?: WorkspaceSource;
 }
 
 // Module-level queue/idempotency state. Lives outside the hook so the
@@ -198,7 +202,26 @@ async function runCreateWorkspaceOrchestrated(
       modalStillOpen = false;
     };
 
-    const generated = await generateWorkspaceName();
+    const source =
+      options.source && options.source.kind !== "default"
+        ? options.source
+        : undefined;
+    // With an explicit branch the backend derives the name; the slug here
+    // only labels the optimistic placeholder (last branch segment).
+    const generated = source
+      ? {
+          slug: (
+            (source.kind === "new_branch"
+              ? source.branch
+              : source.branch.name
+            )
+              .split("/")
+              .filter(Boolean)
+              .pop() ?? "workspace"
+          ),
+          message: null,
+        }
+      : await generateWorkspaceName();
     // Clear the pre-slug indicator the moment we have a slug, even on
     // the no-placeholder (`selectOnCreate: false`) path. Otherwise the
     // backend's early `workspaces-changed (Created)` emit lands the
@@ -225,6 +248,9 @@ async function runCreateWorkspaceOrchestrated(
       generated.slug,
       true,
       inputValues,
+      // Omit the argument entirely for the default flow so its call shape
+      // is unchanged.
+      ...(source ? [source] : []),
     );
 
     // The Rust `Workspace` model doesn't serialize the UI-only

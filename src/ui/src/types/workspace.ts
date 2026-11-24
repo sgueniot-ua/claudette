@@ -27,3 +27,24 @@ export interface Workspace {
   /** Non-null when this workspace belongs to a remote connection. */
   remote_connection_id: string | null;
 }
+
+/** A branch reference; `remote` is null for a local branch. Mirrors the Rust
+ *  `BranchRef` (a remote entry's `name` excludes the remote prefix). */
+export interface BranchRef {
+  name: string;
+  remote: string | null;
+}
+
+/** A selectable branch plus where it is already checked out, if anywhere.
+ *  Mirrors the Rust `WorkspaceBranch`. */
+export interface WorkspaceBranch {
+  branch: BranchRef;
+  checked_out_at: string | null;
+}
+
+/** Where a new workspace's branch comes from. Mirrors the Rust
+ *  `WorkspaceSource` (snake_case `kind` tag). */
+export type WorkspaceSource =
+  | { kind: "default" }
+  | { kind: "new_branch"; base: BranchRef; branch: string }
+  | { kind: "existing_branch"; branch: BranchRef };

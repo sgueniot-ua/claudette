@@ -97,5 +97,17 @@
   "pair_remote_confirm": "配对",
   "share_reset": "重置配对",
   "share_reset_hint": "重置配对会生成新的连接字符串并断开所有已配对设备；每台设备都需要重新配对。",
-  "share_reset_done": "配对已重置——已断开所有已配对设备"
+  "share_reset_done": "配对已重置——已断开所有已配对设备",
+  "new_workspace_title": "新建工作区",
+  "new_workspace_tab_new": "新建分支",
+  "new_workspace_tab_existing": "现有分支",
+  "new_workspace_base": "基础分支",
+  "new_workspace_branch_name": "新分支名称",
+  "new_workspace_branch_placeholder": "例如 feat/my-change",
+  "new_workspace_search": "搜索分支",
+  "new_workspace_loading": "正在加载分支…",
+  "new_workspace_no_branches": "未找到分支",
+  "new_workspace_already_open": "已打开",
+  "new_workspace_create": "创建",
+  "new_workspace_failed": "创建工作区失败：{{error}}"
 }

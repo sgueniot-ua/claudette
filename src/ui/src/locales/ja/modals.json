@@ -97,5 +97,17 @@
   "pair_remote_confirm": "ペアリング",
   "share_reset": "ペアリングをリセット",
   "share_reset_hint": "ペアリングをリセットすると新しい接続文字列が発行され、ペアリング済みのすべてのデバイスが切断されます。各デバイスで再ペアリングが必要です。",
-  "share_reset_done": "ペアリングをリセットしました。ペアリング済みのデバイスは切断されました"
+  "share_reset_done": "ペアリングをリセットしました。ペアリング済みのデバイスは切断されました",
+  "new_workspace_title": "新規ワークスペース",
+  "new_workspace_tab_new": "新しいブランチ",
+  "new_workspace_tab_existing": "既存のブランチ",
+  "new_workspace_base": "ベースブランチ",
+  "new_workspace_branch_name": "新しいブランチ名",
+  "new_workspace_branch_placeholder": "例: feat/my-change",
+  "new_workspace_search": "ブランチを検索",
+  "new_workspace_loading": "ブランチを読み込み中…",
+  "new_workspace_no_branches": "ブランチが見つかりません",
+  "new_workspace_already_open": "既に開いています",
+  "new_workspace_create": "作成",
+  "new_workspace_failed": "ワークスペースを作成できませんでした: {{error}}"
 }

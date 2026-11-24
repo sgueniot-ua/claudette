@@ -156,5 +156,17 @@
   "pair_remote_confirm": "Pair",
   "share_reset": "Reset pairing",
   "share_reset_hint": "Reset pairing issues a new connection string and disconnects every paired device; each must pair again.",
-  "share_reset_done": "Pairing reset — paired devices were disconnected"
+  "share_reset_done": "Pairing reset — paired devices were disconnected",
+  "new_workspace_title": "New workspace",
+  "new_workspace_tab_new": "New branch",
+  "new_workspace_tab_existing": "Existing branch",
+  "new_workspace_base": "Base branch",
+  "new_workspace_branch_name": "New branch name",
+  "new_workspace_branch_placeholder": "e.g. feat/my-change",
+  "new_workspace_search": "Search branches",
+  "new_workspace_loading": "Loading branches…",
+  "new_workspace_no_branches": "No branches found",
+  "new_workspace_already_open": "already open",
+  "new_workspace_create": "Create",
+  "new_workspace_failed": "Failed to create workspace: {{error}}"
 }

@@ -18,6 +18,7 @@ import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { EnvTrustModal } from "./EnvTrustModal";
 import { RequiredInputsModal } from "./RequiredInputsModal";
 import { CreateScheduledTaskModal } from "./CreateScheduledTaskModal";
+import { NewWorkspaceModal } from "./NewWorkspaceModal";
 
 export function ModalRouter() {
   const activeModal = useAppStore((s) => s.activeModal);
@@ -61,6 +62,8 @@ export function ModalRouter() {
       return <RequiredInputsModal />;
     case "createScheduledTask":
       return <CreateScheduledTaskModal />;
+    case "newWorkspace":
+      return <NewWorkspaceModal />;
     default:
       return null;
   }

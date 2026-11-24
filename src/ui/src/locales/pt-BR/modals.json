@@ -97,5 +97,17 @@
   "pair_remote_confirm": "Emparelhar",
   "share_reset": "Redefinir emparelhamento",
   "share_reset_hint": "Redefinir emparelhamento gera uma nova string de conexão e desconecta todos os dispositivos emparelhados; cada um precisa emparelhar de novo.",
-  "share_reset_done": "Emparelhamento redefinido — os dispositivos emparelhados foram desconectados"
+  "share_reset_done": "Emparelhamento redefinido — os dispositivos emparelhados foram desconectados",
+  "new_workspace_title": "Novo workspace",
+  "new_workspace_tab_new": "Nova branch",
+  "new_workspace_tab_existing": "Branch existente",
+  "new_workspace_base": "Branch base",
+  "new_workspace_branch_name": "Nome da nova branch",
+  "new_workspace_branch_placeholder": "ex.: feat/minha-mudanca",
+  "new_workspace_search": "Buscar branches",
+  "new_workspace_loading": "Carregando branches…",
+  "new_workspace_no_branches": "Nenhuma branch encontrada",
+  "new_workspace_already_open": "já aberta",
+  "new_workspace_create": "Criar",
+  "new_workspace_failed": "Falha ao criar o workspace: {{error}}"
 }

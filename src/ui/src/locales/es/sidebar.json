@@ -22,6 +22,7 @@
   "status_closed": "Cerrado",
   "status_archived": "Archivado",
   "new_workspace": "Nuevo espacio de trabajo",
+  "new_workspace_from_branch": "Nuevo espacio de trabajo desde una rama…",
   "settings": "Configuración",
   "help_menu_trigger": "Ayuda y recursos",
   "jump_to_project": "Ir al proyecto {{number}}",

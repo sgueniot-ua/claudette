@@ -97,5 +97,17 @@
   "pair_remote_confirm": "Emparejar",
   "share_reset": "Restablecer emparejamiento",
   "share_reset_hint": "Restablecer emparejamiento genera una cadena de conexión nueva y desconecta todos los dispositivos emparejados; cada uno debe volver a emparejarse.",
-  "share_reset_done": "Emparejamiento restablecido: se desconectaron los dispositivos emparejados"
+  "share_reset_done": "Emparejamiento restablecido: se desconectaron los dispositivos emparejados",
+  "new_workspace_title": "Nuevo espacio de trabajo",
+  "new_workspace_tab_new": "Rama nueva",
+  "new_workspace_tab_existing": "Rama existente",
+  "new_workspace_base": "Rama base",
+  "new_workspace_branch_name": "Nombre de la rama nueva",
+  "new_workspace_branch_placeholder": "p. ej. feat/mi-cambio",
+  "new_workspace_search": "Buscar ramas",
+  "new_workspace_loading": "Cargando ramas…",
+  "new_workspace_no_branches": "No se encontraron ramas",
+  "new_workspace_already_open": "ya abierta",
+  "new_workspace_create": "Crear",
+  "new_workspace_failed": "No se pudo crear el espacio de trabajo: {{error}}"
 }

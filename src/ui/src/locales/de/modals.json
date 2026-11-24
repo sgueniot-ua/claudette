@@ -156,5 +156,17 @@
   "pair_remote_confirm": "Koppeln",
   "share_reset": "Kopplung zurücksetzen",
   "share_reset_hint": "„Kopplung zurücksetzen“ erzeugt eine neue Verbindungszeichenfolge und trennt alle gekoppelten Geräte; jedes muss neu gekoppelt werden.",
-  "share_reset_done": "Kopplung zurückgesetzt – gekoppelte Geräte wurden getrennt"
+  "share_reset_done": "Kopplung zurückgesetzt – gekoppelte Geräte wurden getrennt",
+  "new_workspace_title": "Neuer Workspace",
+  "new_workspace_tab_new": "Neuer Branch",
+  "new_workspace_tab_existing": "Vorhandener Branch",
+  "new_workspace_base": "Basis-Branch",
+  "new_workspace_branch_name": "Name des neuen Branches",
+  "new_workspace_branch_placeholder": "z. B. feat/meine-aenderung",
+  "new_workspace_search": "Branches suchen",
+  "new_workspace_loading": "Branches werden geladen…",
+  "new_workspace_no_branches": "Keine Branches gefunden",
+  "new_workspace_already_open": "bereits geöffnet",
+  "new_workspace_create": "Erstellen",
+  "new_workspace_failed": "Workspace konnte nicht erstellt werden: {{error}}"
 }

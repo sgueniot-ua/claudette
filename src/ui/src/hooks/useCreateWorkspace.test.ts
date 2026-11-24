@@ -97,6 +97,30 @@ afterEach(() => {
 });
 
 describe("createWorkspaceOrchestrated", () => {
+  it("passes source and skips name generation", async () => {
+    mockCreateWorkspace.mockResolvedValue({
+      workspace: makeWorkspace("w1"),
+      default_session_id: "s1",
+      setup_result: null,
+    });
+    mockGetRepoConfig.mockRejectedValue(new Error("no config"));
+    const source = {
+      kind: "existing_branch" as const,
+      branch: { name: "feat/OMS-1", remote: null },
+    };
+
+    await createWorkspaceOrchestrated("repo-1", { source });
+
+    expect(mockGenerateWorkspaceName).not.toHaveBeenCalled();
+    expect(mockCreateWorkspace).toHaveBeenCalledWith(
+      "repo-1",
+      "OMS-1",
+      true,
+      null,
+      source,
+    );
+  });
+
   it("publishes creatingWorkspaceRepoId immediately and clears it on resolve", async () => {
     mockGenerateWorkspaceName.mockResolvedValue({
       slug: "calm-protea",
