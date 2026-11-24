@@ -957,7 +957,10 @@ pub async fn archive(
         let _ = git::remove_worktree(&repo_path, wt_path, false).await;
     }
 
-    let branch_deleted = if params.delete_branch {
+    // Never delete a branch Claudette did not create (opened via
+    // `WorkspaceSource::ExistingBranch`); the worktree and row still go.
+    let branch_owned = db.workspace_branch_owned(&workspace_id)?;
+    let branch_deleted = if params.delete_branch && branch_owned {
         git::branch_delete(&repo_path, &branch_name).await.is_ok()
     } else {
         false
@@ -1684,6 +1687,81 @@ mod tests {
     /// IPC flow: when the row is hard-deleted, the hook must announce
     /// `Deleted` (not `Archived`) so the frontend can `removeWorkspace`
     /// instead of marking a row that no longer exists as archived.
+    #[tokio::test]
+    async fn archive_keeps_unowned_branch_even_with_delete_branch() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        run_git_in(repo_dir.path(), &["branch", "feat/OMS-1"]).await;
+        let base = tempfile::tempdir().unwrap();
+        let created = create_with_source(
+            &mut db,
+            &repo,
+            base.path(),
+            WorkspaceSource::ExistingBranch {
+                branch: BranchRef {
+                    name: "feat/OMS-1".into(),
+                    remote: None,
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+        let out = archive(
+            &mut db,
+            &RecordingHooks::default(),
+            ArchiveParams {
+                workspace_id: &created.workspace.id,
+                delete_branch: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!out.branch_deleted);
+        run_git_in(repo_dir.path(), &["rev-parse", "--verify", "feat/OMS-1"]).await;
+    }
+
+    #[tokio::test]
+    async fn archive_still_deletes_owned_branch() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let base = tempfile::tempdir().unwrap();
+        let created = create(
+            &mut db,
+            &RecordingHooks::default(),
+            base.path(),
+            CreateParams {
+                repo_id: &repo.id,
+                name: "feature",
+                branch_prefix: "test/",
+                input_values: None,
+                source: WorkspaceSource::Default,
+            },
+        )
+        .await
+        .unwrap();
+        let branch = created.workspace.branch_name.clone();
+
+        let out = archive(
+            &mut db,
+            &RecordingHooks::default(),
+            ArchiveParams {
+                workspace_id: &created.workspace.id,
+                delete_branch: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(out.branch_deleted);
+        let status = crate::process::command("git")
+            .args(["rev-parse", "--verify", &branch])
+            .current_dir(repo_dir.path())
+            .status()
+            .await
+            .unwrap();
+        assert!(!status.success(), "owned branch should be deleted");
+    }
+
     #[tokio::test]
     async fn archive_emits_deleted_when_branch_deleted() {
         let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;

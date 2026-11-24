@@ -2358,7 +2358,8 @@ async fn auto_archive_workspace(
             .ok()
             .flatten()
             .as_deref()
-            == Some("true");
+            == Some("true")
+            && crate::commands::workspace::should_delete_branch(&db, &ws.id);
 
         let resolved = crate::tray::resolve_notification(
             &db,

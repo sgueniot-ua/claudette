@@ -982,6 +982,13 @@ pub async fn restore_workspace(
     Ok(actual_path)
 }
 
+/// Whether deleting a workspace should also delete its git branch. A branch
+/// Claudette did not create (workspace opened on an existing branch) is never
+/// deleted. A DB error falls back to `true`, the historical behavior.
+pub(crate) fn should_delete_branch(db: &Database, workspace_id: &str) -> bool {
+    db.workspace_branch_owned(workspace_id).unwrap_or(true)
+}
+
 #[tauri::command]
 #[tracing::instrument(
     target = "claudette::workspace",
@@ -1036,7 +1043,9 @@ pub async fn delete_workspace(
         }
 
         // Best-effort branch delete. Force-deletes even if unmerged commits exist.
-        let _ = git::branch_delete(&repo.path, &ws.branch_name).await;
+        if should_delete_branch(&db, &id) {
+            let _ = git::branch_delete(&repo.path, &ws.branch_name).await;
+        }
     }
 
     // Drop any env-provider watch + cache entry rooted at this
@@ -1269,6 +1278,7 @@ async fn delete_workspaces_bulk_body(
         worktree_path: Option<String>,
         branch_name: String,
         repo_path: Option<String>,
+        delete_branch: bool,
     }
     let target_meta: std::collections::HashMap<String, TargetMeta> = targets
         .iter()
@@ -1283,6 +1293,7 @@ async fn delete_workspaces_bulk_body(
                     worktree_path: ws.worktree_path.clone(),
                     branch_name: ws.branch_name.clone(),
                     repo_path,
+                    delete_branch: should_delete_branch(&db, &ws.id),
                 },
             )
         })
@@ -1430,7 +1441,9 @@ async fn delete_workspaces_bulk_body(
                     let _ = git::remove_worktree(repo_path, wt_path, true).await;
                     env_cleanup_paths.push(wt_path.clone());
                 }
-                let _ = git::branch_delete(repo_path, &meta.branch_name).await;
+                if meta.delete_branch {
+                    let _ = git::branch_delete(repo_path, &meta.branch_name).await;
+                }
             }
         }
 
