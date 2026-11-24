@@ -470,6 +470,16 @@ fn app_state(app: &AppHandle) -> Result<State<'_, AppState>, String> {
         .ok_or_else(|| "AppState not initialised".to_string())
 }
 
+/// Optional `"source"` param; absent means `WorkspaceSource::Default`.
+fn parse_workspace_source(
+    params: &serde_json::Value,
+) -> Result<claudette::model::WorkspaceSource, String> {
+    match params.get("source") {
+        None | Some(serde_json::Value::Null) => Ok(Default::default()),
+        Some(v) => serde_json::from_value(v.clone()).map_err(|e| format!("invalid source: {e}")),
+    }
+}
+
 /// Delegates to the shared `commands::workspace::create_workspace_inner`
 /// helper so CLI- and remote-driven creates run the same setup-script +
 /// env-provider pipeline as the GUI button. Without that, batch runs
@@ -507,6 +517,7 @@ async fn handle_create_workspace(
     let input_values: Option<std::collections::HashMap<String, String>> = params
         .get("input_values")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
+    let source = parse_workspace_source(params)?;
 
     let result = crate::commands::workspace::create_workspace_inner(
         repo_id,
@@ -514,6 +525,7 @@ async fn handle_create_workspace(
         skip_setup,
         preserve_supplied_name,
         input_values,
+        source,
         app,
         &state,
     )
@@ -1935,6 +1947,27 @@ mod tests {
         }))
         .expect("must parse");
         assert_eq!(parsed.session_id, "sess-2");
+    }
+
+    #[test]
+    fn ipc_create_workspace_parses_source() {
+        use claudette::model::WorkspaceSource;
+        assert_eq!(
+            parse_workspace_source(&json!({})).unwrap(),
+            WorkspaceSource::Default
+        );
+        assert_eq!(
+            parse_workspace_source(&json!({"source": {"kind": "existing_branch", "branch": {"name": "x", "remote": null}}}))
+                .unwrap(),
+            WorkspaceSource::ExistingBranch {
+                branch: claudette::model::BranchRef {
+                    name: "x".into(),
+                    remote: None
+                }
+            }
+        );
+        let err = parse_workspace_source(&json!({"source": {"kind": "bogus"}})).unwrap_err();
+        assert!(err.starts_with("invalid source: "), "{err}");
     }
 
     #[test]

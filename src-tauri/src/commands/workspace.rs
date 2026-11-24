@@ -10,7 +10,10 @@ use claudette::db::{Database, PostDeleteHousekeeping};
 use claudette::fork::{self, ForkInputs};
 use claudette::git;
 use claudette::mcp_supervisor::McpSupervisor;
-use claudette::model::{AgentStatus, ChatMessage, ChatRole, Workspace, WorkspaceStatus};
+use claudette::model::{
+    AgentStatus, BranchRef, ChatMessage, ChatRole, Workspace, WorkspaceBranch, WorkspaceSource,
+    WorkspaceStatus,
+};
 use claudette::names::NameGenerator;
 use claudette::ops::workspace::{self as ops_workspace, CreateParams, SetupResult};
 use claudette::ops::{NoopHooks, NotificationEvent, OpsHooks, WorkspaceChangeKind};
@@ -77,6 +80,8 @@ pub async fn create_workspace(
     // no schema this is ignored; when it does, every declared key must be
     // present and each value must pass its type's coercion.
     input_values: Option<std::collections::HashMap<String, String>>,
+    // Where the branch comes from; `None` keeps the default behaviour.
+    source: Option<WorkspaceSource>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CreateWorkspaceResult, String> {
@@ -102,6 +107,7 @@ pub async fn create_workspace(
         skip_setup.unwrap_or(false),
         false,
         input_values,
+        source.unwrap_or_default(),
         &app,
         &state,
     )
@@ -116,12 +122,14 @@ pub async fn create_workspace(
 /// this, `claudette workspace create` (and `claudette batch run`)
 /// would dispatch agent prompts into worktrees that haven't had their
 /// `.claudette.json` setup script run.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn create_workspace_inner(
     repo_id: &str,
     name: &str,
     skip_setup: bool,
     preserve_supplied_name: bool,
     input_values: Option<std::collections::HashMap<String, String>>,
+    source: WorkspaceSource,
     app: &AppHandle,
     state: &AppState,
 ) -> Result<CreateWorkspaceResult, String> {
@@ -142,7 +150,7 @@ pub(crate) async fn create_workspace_inner(
         // server — share the same enforcement that way; we no longer have
         // to repeat the validate-then-persist dance per caller.
         input_values: input_values.as_ref(),
-        source: claudette::model::WorkspaceSource::Default,
+        source,
     };
     let out = if preserve_supplied_name {
         ops_workspace::create_preserving_supplied_name(
@@ -1664,6 +1672,60 @@ pub(super) fn directory_size_bytes(root: &Path) -> u64 {
 /// Validate a workspace name: ASCII alphanumeric + hyphens, no leading/trailing hyphens.
 fn is_valid_workspace_name(name: &str) -> bool {
     claudette::workspace_alloc::is_valid_workspace_name(name)
+}
+
+/// List the branches a new workspace can be based on or check out. With
+/// `fetch`, refresh remote refs first (best-effort; failures are ignored).
+#[tauri::command]
+pub async fn list_workspace_branches(
+    repo_id: String,
+    fetch: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<WorkspaceBranch>, String> {
+    let repo = find_repository(&state, &repo_id)?;
+    if fetch {
+        let _ = git::fetch_remote(&repo.path, repo.default_remote.as_deref()).await;
+    }
+    git::list_workspace_branches(&repo.path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Fetch one branch from the repo's default remote (error ignored), then
+/// return the matching entry from the branch list, local preferred.
+#[tauri::command]
+pub async fn fetch_workspace_branch(
+    repo_id: String,
+    branch: String,
+    state: State<'_, AppState>,
+) -> Result<Option<BranchRef>, String> {
+    let repo = find_repository(&state, &repo_id)?;
+    let remote = repo.default_remote.as_deref().unwrap_or("origin");
+    let _ = git::fetch_branch(&repo.path, remote, &branch).await;
+    let branches = git::list_workspace_branches(&repo.path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut matches = branches
+        .into_iter()
+        .map(|b| b.branch)
+        .filter(|b| b.name == branch);
+    let first = matches.next();
+    Ok(match first {
+        Some(b) if b.remote.is_some() => matches.find(|m| m.remote.is_none()).or(Some(b)),
+        other => other,
+    })
+}
+
+fn find_repository(
+    state: &State<'_, AppState>,
+    repo_id: &str,
+) -> Result<claudette::model::Repository, String> {
+    let db = Database::open(&state.db_path).map_err(|e| e.to_string())?;
+    db.list_repositories()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|r| r.id == repo_id)
+        .ok_or_else(|| "Repository not found".to_string())
 }
 
 /// Discover existing git worktrees for a repository that are not yet tracked in Claudette.

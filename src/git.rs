@@ -477,6 +477,13 @@ pub async fn default_branch(
     ))
 }
 
+/// Fetch a single branch from `remote` so its remote-tracking ref exists.
+pub async fn fetch_branch(repo_path: &str, remote: &str, branch: &str) -> Result<(), GitError> {
+    run_git(repo_path, &["fetch", remote, branch])
+        .await
+        .map(|_| ())
+}
+
 /// Fetch from the primary remote (best-effort).
 ///
 /// Resolves the first configured remote and runs `git fetch` with a 15-second

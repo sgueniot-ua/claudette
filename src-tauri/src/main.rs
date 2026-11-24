@@ -1161,6 +1161,8 @@ fn main() {
             commands::workspace::refresh_branches,
             commands::workspace::refresh_workspace_branch,
             commands::workspace::discover_worktrees,
+            commands::workspace::list_workspace_branches,
+            commands::workspace::fetch_workspace_branch,
             commands::workspace::import_worktrees,
             commands::workspace::purge_stray_worktree,
             commands::storage::compute_storage_stats,
