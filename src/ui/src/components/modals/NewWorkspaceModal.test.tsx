@@ -88,7 +88,7 @@ async function click(el: HTMLElement) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  const repo = { id: "repo-1", base_branch: "main" } as Repository;
+  const repo = { id: "repo-1", base_branch: "origin/main" } as Repository;
   useAppStore.setState({
     repositories: [repo],
     activeModal: "newWorkspace",
@@ -101,6 +101,7 @@ beforeEach(() => {
     branch("feat/OMS-1"),
     branch("busy", null, "/tmp/busy"),
     branch("dev", "origin"),
+    branch("main", "origin"),
   ]);
 });
 
@@ -120,6 +121,8 @@ describe("NewWorkspaceModal", () => {
       false,
     );
     expect(document.body.textContent).toContain("origin/dev");
+    // The remote twin of local `main` is only offered as a base.
+    expect(document.body.textContent).not.toContain("origin/main");
   });
 
   it("creates from existing branch", async () => {
@@ -139,7 +142,8 @@ describe("NewWorkspaceModal", () => {
   it("creates new branch from chosen base", async () => {
     await render();
     const select = document.querySelector("select") as HTMLSelectElement;
-    expect(select.value).toBe("local:main");
+    // base_branch is `origin/main`: the remote entry wins over the local twin.
+    expect(select.value).toBe("origin:main");
     act(() => {
       select.value = "origin:dev";
       select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -216,9 +220,9 @@ describe("NewWorkspaceModal", () => {
     const options = () => Array.from(select.options).map((o) => o.value);
     expect(options()).toContain("origin:dev");
     setValue(textInput("Search branches"), "dev");
-    expect(options()).toEqual(["local:main", "origin:dev"]);
+    expect(options()).toEqual(["origin:dev", "origin:main"]);
     setValue(textInput("Search branches"), "oms");
-    expect(options()).toEqual(["local:main", "local:feat/OMS-1"]);
+    expect(options()).toEqual(["local:feat/OMS-1", "origin:main"]);
   });
 
   it("prefills the new branch name with the configured prefix", async () => {

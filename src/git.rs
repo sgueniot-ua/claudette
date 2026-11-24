@@ -746,7 +746,8 @@ pub async fn restore_worktree(
 }
 
 /// List the branches a workspace can be based on or opened on: local branches
-/// plus remote-only branches (a remote `r/x` is omitted when local `x` exists).
+/// plus every remote branch (`*/HEAD` excluded), including remote twins of
+/// local branches so a fresh `origin/x` can be chosen over a stale local `x`.
 /// `checked_out_at` is filled for local branches from `git worktree list`.
 /// Sorted locals first, then by name.
 pub async fn list_workspace_branches(repo_path: &str) -> Result<Vec<WorkspaceBranch>, GitError> {
@@ -811,7 +812,6 @@ pub async fn list_workspace_branches(repo_path: &str) -> Result<Vec<WorkspaceBra
 
     let mut remote_only: Vec<WorkspaceBranch> = remote_refs
         .into_iter()
-        .filter(|r| !locals.contains(&r.name))
         .map(|branch| WorkspaceBranch {
             branch,
             checked_out_at: None,
@@ -1278,11 +1278,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_branches_includes_remote_only_and_dedups() {
+    async fn list_branches_includes_remote_only_and_remote_twins() {
         let dir = setup_temp_repo().await;
         let path = dir.path().to_str().unwrap();
         let _remote = add_upstream_remote(path, &["feat/a", "both"]).await;
-        // `feat/a` becomes remote-only; `both` stays local + remote.
+        // `feat/a` becomes remote-only; `both` stays local + remote twin.
         run_git(path, &["branch", "-D", "feat/a"]).await.unwrap();
 
         let branches = list_workspace_branches(path).await.unwrap();
@@ -1291,7 +1291,10 @@ mod tests {
             name: "feat/a".into(),
             remote: Some("upstream".into())
         }));
-        assert_eq!(refs.iter().filter(|r| r.name == "both").count(), 1);
+        assert!(refs.contains(&BranchRef {
+            name: "both".into(),
+            remote: Some("upstream".into())
+        }));
         assert!(refs.contains(&BranchRef {
             name: "both".into(),
             remote: None

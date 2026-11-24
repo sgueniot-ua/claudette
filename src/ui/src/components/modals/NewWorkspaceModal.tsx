@@ -113,8 +113,14 @@ export function NewWorkspaceModal() {
   const base = branches.find((b) => key(b.branch) === effectiveBaseKey);
 
   const needle = search.trim().toLowerCase();
+  // A remote twin of a local branch is only offered as a base, not here.
+  const localNames = new Set(
+    branches.filter((b) => !b.branch.remote).map((b) => b.branch.name),
+  );
   const visible = branches.filter(
-    (b) => !needle || label(b.branch).toLowerCase().includes(needle),
+    (b) =>
+      !(b.branch.remote && localNames.has(b.branch.name)) &&
+      (!needle || label(b.branch).toLowerCase().includes(needle)),
   );
   const selected = branches.find(
     (b) => key(b.branch) === selectedKey && !b.checked_out_at,
