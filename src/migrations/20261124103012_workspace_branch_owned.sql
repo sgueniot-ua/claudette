@@ -1,0 +1,1 @@
+ALTER TABLE workspaces ADD COLUMN branch_owned INTEGER NOT NULL DEFAULT 1;

@@ -760,6 +760,34 @@ impl Database {
         Ok(())
     }
 
+    /// Record whether Claudette created the workspace's branch (`true`) or
+    /// attached to a pre-existing one (`false`). Only `false` rows must never
+    /// have their branch deleted or renamed.
+    pub fn set_workspace_branch_owned(&self, id: &str, owned: bool) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE workspaces SET branch_owned = ?1 WHERE id = ?2",
+            params![owned as i64, id],
+        )?;
+        Ok(())
+    }
+
+    /// Whether Claudette owns the workspace's branch. Returns `true` for
+    /// nonexistent workspaces (the historical behavior).
+    pub fn workspace_branch_owned(&self, id: &str) -> Result<bool, rusqlite::Error> {
+        match self.conn.query_row(
+            "SELECT branch_owned FROM workspaces WHERE id = ?1",
+            params![id],
+            |row| {
+                let v: i64 = row.get(0)?;
+                Ok(v != 0)
+            },
+        ) {
+            Ok(v) => Ok(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(true),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn update_workspace_name(&self, id: &str, new_name: &str) -> Result<(), rusqlite::Error> {
         let rows_affected = self.conn.execute(
             "UPDATE workspaces SET name = ?1 WHERE id = ?2",
@@ -1003,6 +1031,27 @@ mod tests {
         // Second claim is rejected — this is the property that prevents a
         // session restart from re-triggering rename.
         assert!(!db.claim_branch_auto_rename("w1").unwrap());
+    }
+
+    #[test]
+    fn branch_owned_defaults_to_true() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspace(&make_workspace("w1", "r1", "fresh"))
+            .unwrap();
+        assert!(db.workspace_branch_owned("w1").unwrap());
+    }
+
+    #[test]
+    fn set_branch_owned_false_round_trips() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))
+            .unwrap();
+        db.insert_workspace(&make_workspace("w1", "r1", "imported"))
+            .unwrap();
+        db.set_workspace_branch_owned("w1", false).unwrap();
+        assert!(!db.workspace_branch_owned("w1").unwrap());
     }
 
     #[test]

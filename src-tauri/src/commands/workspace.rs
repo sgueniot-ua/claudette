@@ -1972,6 +1972,12 @@ pub async fn import_worktrees(
     // Atomic batch insert — all or nothing.
     db.insert_workspaces_batch(&created)
         .map_err(|e| e.to_string())?;
+    // Imported workspaces attach to branches the user already had, so
+    // Claudette must never delete or rename them.
+    for ws in &created {
+        db.set_workspace_branch_owned(&ws.id, false)
+            .map_err(|e| e.to_string())?;
+    }
     // Patch each row's sort_order to the value the DB assigned so the
     // workspaces this command returns to the UI render at the bottom of
     // their repo groups immediately (Codex P2). One readback query per
