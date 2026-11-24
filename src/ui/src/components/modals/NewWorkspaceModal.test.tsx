@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../i18n";
 import { NewWorkspaceModal } from "./NewWorkspaceModal";
-import { listWorkspaceBranches } from "../../services/tauri";
+import {
+  getAppSetting,
+  getGitUsername,
+  listWorkspaceBranches,
+} from "../../services/tauri";
 import { createWorkspaceOrchestrated } from "../../hooks/useCreateWorkspace";
 import { useAppStore } from "../../stores/useAppStore";
 import type { Repository } from "../../types/repository";
@@ -16,6 +20,8 @@ import type { WorkspaceBranch } from "../../types/workspace";
 
 vi.mock("../../services/tauri", () => ({
   listWorkspaceBranches: vi.fn(),
+  getAppSetting: vi.fn(),
+  getGitUsername: vi.fn(),
 }));
 vi.mock("../../hooks/useCreateWorkspace", () => ({
   createWorkspaceOrchestrated: vi.fn().mockResolvedValue(null),
@@ -23,6 +29,16 @@ vi.mock("../../hooks/useCreateWorkspace", () => ({
 
 const mockedList = vi.mocked(listWorkspaceBranches);
 const mockedCreate = vi.mocked(createWorkspaceOrchestrated);
+const mockedSetting = vi.mocked(getAppSetting);
+const mockedUsername = vi.mocked(getGitUsername);
+
+function textInput(placeholder: string): HTMLInputElement {
+  const el = Array.from(
+    document.querySelectorAll<HTMLInputElement>("input[type=text]"),
+  ).find((i) => i.placeholder.includes(placeholder));
+  if (!el) throw new Error(`no input with placeholder "${placeholder}"`);
+  return el;
+}
 
 function branch(
   name: string,
@@ -78,6 +94,8 @@ beforeEach(() => {
     activeModal: "newWorkspace",
     modalData: { repoId: "repo-1" },
   });
+  mockedSetting.mockResolvedValue(null);
+  mockedUsername.mockResolvedValue(null);
   mockedList.mockResolvedValue([
     branch("main"),
     branch("feat/OMS-1"),
@@ -128,10 +146,7 @@ describe("NewWorkspaceModal", () => {
     });
     const create = byText("button", "Create") as HTMLButtonElement;
     expect(create.disabled).toBe(true);
-    setValue(
-      document.querySelector("input[type=text]") as HTMLInputElement,
-      "feat/x",
-    );
+    setValue(textInput("feat/my-change"), "feat/x");
     await click(create);
     expect(mockedCreate).toHaveBeenCalledWith("repo-1", {
       source: {
@@ -177,5 +192,50 @@ describe("NewWorkspaceModal", () => {
       releaseLocal([branch("main")]);
     });
     expect(document.body.textContent).toContain("origin/fresh");
+  });
+
+  it("does not flag an error when the local pass fails after the fetched list", async () => {
+    let rejectLocal!: (e: unknown) => void;
+    mockedList.mockReset();
+    mockedList.mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectLocal = reject;
+      }),
+    );
+    mockedList.mockResolvedValueOnce([branch("main")]);
+    await render();
+    await act(async () => {
+      rejectLocal(new Error("boom"));
+    });
+    expect(document.body.textContent).not.toContain("boom");
+  });
+
+  it("filters base options with the search box and keeps the chosen base", async () => {
+    await render();
+    const select = document.querySelector("select") as HTMLSelectElement;
+    const options = () => Array.from(select.options).map((o) => o.value);
+    expect(options()).toContain("origin:dev");
+    setValue(textInput("Search branches"), "dev");
+    expect(options()).toEqual(["local:main", "origin:dev"]);
+    setValue(textInput("Search branches"), "oms");
+    expect(options()).toEqual(["local:main", "local:feat/OMS-1"]);
+  });
+
+  it("prefills the new branch name with the configured prefix", async () => {
+    mockedSetting.mockImplementation(async (k: string) =>
+      k === "git_branch_prefix_mode" ? "custom" : "Team",
+    );
+    await render();
+    const input = textInput("feat/my-change");
+    expect(input.value).toBe("team/");
+    expect((byText("button", "Create") as HTMLButtonElement).disabled).toBe(true);
+    setValue(input, "team/x");
+    expect((byText("button", "Create") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("prefills with the git username by default", async () => {
+    mockedUsername.mockResolvedValue("Jane Doe");
+    await render();
+    expect(textInput("feat/my-change").value).toBe("jane-doe/");
   });
 });

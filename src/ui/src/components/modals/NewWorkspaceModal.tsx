@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/useAppStore";
-import { listWorkspaceBranches } from "../../services/tauri";
+import {
+  getAppSetting,
+  getGitUsername,
+  listWorkspaceBranches,
+} from "../../services/tauri";
+import { resolveBranchPrefix } from "../../utils/branchPrefix";
 import { createWorkspaceOrchestrated } from "../../hooks/useCreateWorkspace";
 import type { BranchRef, WorkspaceBranch } from "../../types/workspace";
 import { Modal } from "./Modal";
@@ -37,9 +42,10 @@ export function NewWorkspaceModal() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [baseKey, setBaseKey] = useState<string | null>(null);
-  // The settings branch prefix is not exposed to the frontend, so the
-  // new-branch name starts empty.
+  const [baseSearch, setBaseSearch] = useState("");
+  // Prefilled with the configured branch prefix (see the effect below).
   const [newName, setNewName] = useState("");
+  const [prefix, setPrefix] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,7 +62,9 @@ export function NewWorkspaceModal() {
         if (!cancelled && !fetchedLanded) setBranches(list);
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e));
+        // Same guard as `then`: a failed local pass must not flag an error
+        // once the fetched list is on screen.
+        if (!cancelled && !fetchedLanded) setError(String(e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -75,6 +83,23 @@ export function NewWorkspaceModal() {
       cancelled = true;
     };
   }, [repoId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getAppSetting("git_branch_prefix_mode").catch(() => null),
+      getAppSetting("git_branch_prefix_custom").catch(() => null),
+      getGitUsername().catch(() => null),
+    ]).then(([mode, custom, username]) => {
+      if (cancelled) return;
+      const resolved = resolveBranchPrefix(mode, custom, username);
+      setPrefix(resolved);
+      setNewName((current) => (current === "" ? resolved : current));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const defaultBaseKey = useMemo(() => {
     const match =
@@ -95,9 +120,21 @@ export function NewWorkspaceModal() {
     (b) => key(b.branch) === selectedKey && !b.checked_out_at,
   );
 
+  const baseNeedle = baseSearch.trim().toLowerCase();
+  // The chosen base stays listed even when the search filters it out.
+  const baseOptions = branches.filter(
+    (b) =>
+      !baseNeedle ||
+      label(b.branch).toLowerCase().includes(baseNeedle) ||
+      key(b.branch) === effectiveBaseKey,
+  );
+
   const trimmedName = newName.trim();
+  // The bare prefix is not a branch name yet.
   const canCreate =
-    tab === "new" ? trimmedName !== "" && !!base : selected !== undefined;
+    tab === "new"
+      ? trimmedName !== "" && trimmedName !== prefix.trim() && !!base
+      : selected !== undefined;
 
   const handleCreate = () => {
     const source =
@@ -143,12 +180,19 @@ export function NewWorkspaceModal() {
         <>
           <div className={shared.field}>
             <label className={shared.label}>{t("new_workspace_base")}</label>
+            <input
+              type="text"
+              className={shared.input}
+              value={baseSearch}
+              onChange={(e) => setBaseSearch(e.target.value)}
+              placeholder={t("new_workspace_search")}
+            />
             <select
               className={shared.input}
               value={effectiveBaseKey ?? ""}
               onChange={(e) => setBaseKey(e.target.value)}
             >
-              {branches.map((b) => (
+              {baseOptions.map((b) => (
                 <option key={key(b.branch)} value={key(b.branch)}>
                   {label(b.branch)}
                 </option>
