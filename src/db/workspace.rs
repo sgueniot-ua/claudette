@@ -1044,6 +1044,12 @@ mod tests {
     }
 
     #[test]
+    fn branch_owned_missing_row_is_true() {
+        let db = Database::open_in_memory().unwrap();
+        assert!(db.workspace_branch_owned("nope").unwrap());
+    }
+
+    #[test]
     fn set_branch_owned_false_round_trips() {
         let db = Database::open_in_memory().unwrap();
         db.insert_repository(&make_repo("r1", "/tmp/repo1", "repo1"))

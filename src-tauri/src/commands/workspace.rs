@@ -1975,8 +1975,15 @@ pub async fn import_worktrees(
     // Imported workspaces attach to branches the user already had, so
     // Claudette must never delete or rename them.
     for ws in &created {
-        db.set_workspace_branch_owned(&ws.id, false)
-            .map_err(|e| e.to_string())?;
+        if let Err(e) = db.set_workspace_branch_owned(&ws.id, false) {
+            // Roll back the rows just inserted: a row left at the default
+            // `branch_owned = 1` would let Claudette delete a branch it
+            // did not create. The worktrees on disk pre-existed, so they stay.
+            for inserted in &created {
+                let _ = db.delete_workspace(&inserted.id);
+            }
+            return Err(e.to_string());
+        }
     }
     // Patch each row's sort_order to the value the DB assigned so the
     // workspaces this command returns to the UI render at the bottom of
