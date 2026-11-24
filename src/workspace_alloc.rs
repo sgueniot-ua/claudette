@@ -108,6 +108,81 @@ pub async fn allocate_workspace_name(
     Err(WorkspaceAllocationError::Exhausted)
 }
 
+/// Derive a workspace name from a branch name: last `/` segment, characters
+/// outside `[A-Za-z0-9-]` replaced by `-`, runs of `-` merged, edge hyphens
+/// trimmed. Falls back to `"workspace"` when nothing is left.
+pub fn workspace_name_from_branch(branch: &str) -> String {
+    let segment = branch.rsplit('/').next().unwrap_or(branch);
+    let mut name = String::with_capacity(segment.len());
+    for c in segment.chars() {
+        let c = if c.is_ascii_alphanumeric() { c } else { '-' };
+        if c != '-' || !name.ends_with('-') {
+            name.push(c);
+        }
+    }
+    let name = name.trim_matches('-');
+    if name.is_empty() {
+        "workspace".to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+/// Like [`allocate_workspace_name`], but the branch is imposed by the caller
+/// (`branch_name`) and never checked against existing branches. Only the
+/// workspace name and worktree path are de-duplicated (`OMS-1`, `OMS-1-2`).
+pub async fn allocate_workspace_for_branch(
+    repo: &Repository,
+    workspaces: &[Workspace],
+    requested_name: &str,
+    branch_name: &str,
+    worktree_base: &Path,
+) -> Result<WorkspaceAllocation, WorkspaceAllocationError> {
+    let existing_workspace_names: std::collections::HashSet<String> = workspaces
+        .iter()
+        .filter(|w| w.repository_id == repo.id)
+        .map(|w| w.name.clone())
+        .collect();
+    let existing_workspace_paths: std::collections::HashSet<String> = workspaces
+        .iter()
+        .filter(|w| w.repository_id == repo.id)
+        .filter_map(|w| w.worktree_path.as_deref())
+        .map(path_key)
+        .collect();
+    let existing_git_worktree_paths: std::collections::HashSet<String> =
+        crate::git::list_worktrees(&repo.path)
+            .await?
+            .into_iter()
+            .map(|wt| path_key(&wt.path))
+            .collect();
+
+    for attempt in 0..MAX_ALLOCATION_ATTEMPTS {
+        let name = if attempt == 0 {
+            requested_name.to_string()
+        } else {
+            format!("{requested_name}-{}", attempt + 1)
+        };
+        let worktree_path = worktree_base.join(&repo.path_slug).join(&name);
+        let worktree_key = path_key(&worktree_path);
+
+        if existing_workspace_names.contains(&name)
+            || existing_workspace_paths.contains(&worktree_key)
+            || existing_git_worktree_paths.contains(&worktree_key)
+            || worktree_path.exists()
+        {
+            continue;
+        }
+
+        return Ok(WorkspaceAllocation {
+            name,
+            branch_name: branch_name.to_string(),
+            worktree_path,
+        });
+    }
+
+    Err(WorkspaceAllocationError::Exhausted)
+}
+
 fn path_key(path: impl AsRef<Path>) -> String {
     let path = path.as_ref();
     path.canonicalize()

@@ -142,6 +142,7 @@ pub(crate) async fn create_workspace_inner(
         // server — share the same enforcement that way; we no longer have
         // to repeat the validate-then-persist dance per caller.
         input_values: input_values.as_ref(),
+        source: claudette::model::WorkspaceSource::Default,
     };
     let out = if preserve_supplied_name {
         ops_workspace::create_preserving_supplied_name(

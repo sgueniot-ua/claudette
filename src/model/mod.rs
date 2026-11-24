@@ -16,7 +16,7 @@ mod workspace;
 
 pub use agent_conclusion::AgentConclusion;
 pub use attachment::{Attachment, AttachmentOrigin};
-pub use branch_ref::{BranchRef, WorkspaceBranch};
+pub use branch_ref::{BranchRef, WorkspaceBranch, WorkspaceSource};
 pub use cesp::{
     CespCategorySounds, CespManifest, CespSound, InstalledPack, InstalledPackMeta, RegistryIndex,
     RegistryPack,

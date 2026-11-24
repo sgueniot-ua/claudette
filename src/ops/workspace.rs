@@ -31,8 +31,13 @@ use crate::db::Database;
 use crate::env::{WorkspaceEnv, enriched_path};
 use crate::env_provider::ResolvedEnv;
 use crate::git;
-use crate::model::{AgentStatus, Repository, Workspace, WorkspaceStatus, coerce_input_value};
-use crate::workspace_alloc::{allocate_workspace_name, is_valid_workspace_name};
+use crate::model::{
+    AgentStatus, Repository, Workspace, WorkspaceSource, WorkspaceStatus, coerce_input_value,
+};
+use crate::workspace_alloc::{
+    allocate_workspace_for_branch, allocate_workspace_name, is_valid_workspace_name,
+    workspace_name_from_branch,
+};
 
 use super::{NotificationEvent, OpsError, OpsHooks, WorkspaceChangeKind};
 
@@ -74,6 +79,11 @@ pub struct CreateParams<'a> {
     /// so every call site — GUI, IPC, WS server, future callers — enforces
     /// the invariant uniformly.
     pub input_values: Option<&'a HashMap<String, String>>,
+    /// Where the branch comes from. For anything but
+    /// [`WorkspaceSource::Default`], `name` is ignored (the workspace name is
+    /// derived from the branch) and the supplied name is preserved after the
+    /// first prompt.
+    pub source: WorkspaceSource,
 }
 
 /// Validate a repository's declared input schema against a supplied value
@@ -183,12 +193,14 @@ async fn create_inner(
     params: CreateParams<'_>,
     preserve_supplied_name: bool,
 ) -> Result<CreateOutput, OpsError> {
-    if !is_valid_workspace_name(params.name) {
+    if matches!(params.source, WorkspaceSource::Default) && !is_valid_workspace_name(params.name) {
         return Err(OpsError::Validation(format!(
             "Invalid workspace name: '{}'",
             params.name
         )));
     }
+    // Claudette only deletes branches it created itself.
+    let owns_branch = !matches!(params.source, WorkspaceSource::ExistingBranch { .. });
 
     let repos = db.list_repositories()?;
     let repo = repos
@@ -204,50 +216,98 @@ async fn create_inner(
 
     let repo_path = repo.path.clone();
 
-    let (allocation, actual_path) = {
-        let mut last_collision: Option<git::GitError> = None;
-        let mut created = None;
+    let (allocation, actual_path) = match &params.source {
+        WorkspaceSource::Default => {
+            let mut last_collision: Option<git::GitError> = None;
+            let mut created = None;
 
-        for _ in 0..CREATE_WORKTREE_ALLOCATION_ATTEMPTS {
+            for _ in 0..CREATE_WORKTREE_ALLOCATION_ATTEMPTS {
+                let workspaces = db.list_workspaces()?;
+                let allocation = allocate_workspace_name(
+                    repo,
+                    &workspaces,
+                    params.name,
+                    params.branch_prefix,
+                    worktree_base,
+                )
+                .await
+                .map_err(|e| OpsError::Repo(e.to_string()))?;
+                let worktree_path_str = allocation.worktree_path.to_string_lossy().to_string();
+
+                match git::create_worktree(
+                    &repo_path,
+                    &allocation.branch_name,
+                    &worktree_path_str,
+                    repo.base_branch.as_deref(),
+                    repo.default_remote.as_deref(),
+                )
+                .await
+                {
+                    Ok(actual_path) => {
+                        created = Some((allocation, actual_path));
+                        break;
+                    }
+                    Err(err) if git::is_worktree_create_collision_error(&err) => {
+                        last_collision = Some(err);
+                    }
+                    Err(err) => return Err(OpsError::Git(err)),
+                }
+            }
+
+            created.ok_or_else(|| {
+                OpsError::Repo(
+                    last_collision
+                        .map(|err| err.to_string())
+                        .unwrap_or_else(|| {
+                            "Could not allocate a unique workspace name".to_string()
+                        }),
+                )
+            })?
+        }
+        WorkspaceSource::NewBranch { base, branch } => {
+            git::validate_new_branch_name(&repo_path, branch).await?;
             let workspaces = db.list_workspaces()?;
-            let allocation = allocate_workspace_name(
+            let allocation = allocate_workspace_for_branch(
                 repo,
                 &workspaces,
-                params.name,
-                params.branch_prefix,
+                &workspace_name_from_branch(branch),
+                branch,
                 worktree_base,
             )
             .await
             .map_err(|e| OpsError::Repo(e.to_string()))?;
             let worktree_path_str = allocation.worktree_path.to_string_lossy().to_string();
-
-            match git::create_worktree(
+            let base_ref = match &base.remote {
+                Some(remote) => format!("{remote}/{}", base.name),
+                None => base.name.clone(),
+            };
+            let actual_path = git::create_worktree(
                 &repo_path,
-                &allocation.branch_name,
+                branch,
                 &worktree_path_str,
-                repo.base_branch.as_deref(),
+                Some(&base_ref),
                 repo.default_remote.as_deref(),
             )
-            .await
-            {
-                Ok(actual_path) => {
-                    created = Some((allocation, actual_path));
-                    break;
-                }
-                Err(err) if git::is_worktree_create_collision_error(&err) => {
-                    last_collision = Some(err);
-                }
-                Err(err) => return Err(OpsError::Git(err)),
-            }
+            .await?;
+            (allocation, actual_path)
         }
-
-        created.ok_or_else(|| {
-            OpsError::Repo(
-                last_collision
-                    .map(|err| err.to_string())
-                    .unwrap_or_else(|| "Could not allocate a unique workspace name".to_string()),
+        WorkspaceSource::ExistingBranch { branch } => {
+            let workspaces = db.list_workspaces()?;
+            let allocation = allocate_workspace_for_branch(
+                repo,
+                &workspaces,
+                &workspace_name_from_branch(&branch.name),
+                &branch.name,
+                worktree_base,
             )
-        })?
+            .await
+            .map_err(|e| OpsError::Repo(e.to_string()))?;
+            let worktree_path_str = allocation.worktree_path.to_string_lossy().to_string();
+            let actual_path =
+                git::create_worktree_for_existing_branch(&repo_path, branch, &worktree_path_str)
+                    .await?;
+            (allocation, actual_path)
+        }
     };
 
     let mut ws = Workspace {
@@ -269,7 +329,14 @@ async fn create_inner(
 
     if let Err(e) = db.insert_workspace(&ws) {
         let _ = git::remove_worktree(&repo_path, &actual_path, true).await;
-        let _ = git::branch_delete(&repo_path, &ws.branch_name).await;
+        if owns_branch {
+            let _ = git::branch_delete(&repo_path, &ws.branch_name).await;
+        }
+        return Err(OpsError::Db(e));
+    }
+    if !owns_branch && let Err(e) = db.set_workspace_branch_owned(&ws.id, false) {
+        let _ = db.delete_workspace(&ws.id);
+        let _ = git::remove_worktree(&repo_path, &actual_path, true).await;
         return Err(OpsError::Db(e));
     }
     // Persist any declared input values to the dedicated column. The
@@ -284,7 +351,9 @@ async fn create_inner(
     {
         let _ = db.delete_workspace(&ws.id);
         let _ = git::remove_worktree(&repo_path, &actual_path, true).await;
-        let _ = git::branch_delete(&repo_path, &ws.branch_name).await;
+        if owns_branch {
+            let _ = git::branch_delete(&repo_path, &ws.branch_name).await;
+        }
         return Err(OpsError::Db(e));
     }
     ws.input_values = validated_inputs;
@@ -295,7 +364,7 @@ async fn create_inner(
         ws.sort_order = o;
     }
 
-    if preserve_supplied_name {
+    if preserve_supplied_name || !matches!(params.source, WorkspaceSource::Default) {
         db.claim_branch_auto_rename(&ws.id)?;
     }
 
@@ -1190,7 +1259,7 @@ fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Repository;
+    use crate::model::{BranchRef, Repository};
     use std::sync::Mutex;
 
     /// Hook impl that records every change so tests can assert the
@@ -1265,6 +1334,175 @@ mod tests {
         (repo_dir, db_dir, db, repo)
     }
 
+    #[test]
+    fn workspace_name_from_branch_sanitizes() {
+        assert_eq!(
+            workspace_name_from_branch("feat/OMS-1234_ui"),
+            "OMS-1234-ui"
+        );
+        assert_eq!(workspace_name_from_branch("main"), "main");
+        assert_eq!(workspace_name_from_branch("feat/é"), "workspace");
+    }
+
+    async fn create_with_source(
+        db: &mut Database,
+        repo: &Repository,
+        base: &Path,
+        source: WorkspaceSource,
+    ) -> Result<CreateOutput, OpsError> {
+        create(
+            db,
+            &RecordingHooks::default(),
+            base,
+            CreateParams {
+                repo_id: &repo.id,
+                name: "ignored name!",
+                branch_prefix: "test/",
+                input_values: None,
+                source,
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn default_source_unchanged() {
+        let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let base = tempfile::tempdir().unwrap();
+        let created = create_with_source(&mut db, &repo, base.path(), WorkspaceSource::Default)
+            .await
+            .map(|c| c.workspace);
+        // "ignored name!" is invalid under Default; a valid name still works.
+        assert!(matches!(created, Err(OpsError::Validation(_))));
+        let created = create(
+            &mut db,
+            &RecordingHooks::default(),
+            base.path(),
+            CreateParams {
+                repo_id: &repo.id,
+                name: "scratch",
+                branch_prefix: "test/",
+                input_values: None,
+                source: WorkspaceSource::Default,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(created.workspace.branch_name, "test/scratch");
+        assert!(db.workspace_branch_owned(&created.workspace.id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn create_new_branch_from_chosen_base() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        run_git_in(repo_dir.path(), &["checkout", "-b", "feat/base"]).await;
+        std::fs::write(repo_dir.path().join("base.txt"), "base").unwrap();
+        run_git_in(repo_dir.path(), &["add", "-A"]).await;
+        run_git_in(repo_dir.path(), &["commit", "-m", "base commit"]).await;
+        run_git_in(repo_dir.path(), &["checkout", "main"]).await;
+        let base = tempfile::tempdir().unwrap();
+
+        let created = create_with_source(
+            &mut db,
+            &repo,
+            base.path(),
+            WorkspaceSource::NewBranch {
+                base: BranchRef {
+                    name: "feat/base".into(),
+                    remote: None,
+                },
+                branch: "feat/new".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.workspace.branch_name, "feat/new");
+        assert_eq!(created.workspace.name, "new");
+        assert!(Path::new(&created.worktree_path).join("base.txt").exists());
+        assert!(db.workspace_branch_owned(&created.workspace.id).unwrap());
+        assert!(!db.claim_branch_auto_rename(&created.workspace.id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn create_new_branch_rejects_existing_name() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        run_git_in(repo_dir.path(), &["branch", "feat/base"]).await;
+        let base = tempfile::tempdir().unwrap();
+
+        let result = create_with_source(
+            &mut db,
+            &repo,
+            base.path(),
+            WorkspaceSource::NewBranch {
+                base: BranchRef {
+                    name: "main".into(),
+                    remote: None,
+                },
+                branch: "feat/base".into(),
+            },
+        )
+        .await;
+
+        assert!(matches!(result, Err(OpsError::Git(_))));
+        assert!(!base.path().join(&repo.path_slug).join("base").exists());
+        assert!(db.list_workspaces().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_existing_branch_opens_it() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        run_git_in(repo_dir.path(), &["branch", "feat/OMS-1"]).await;
+        let base = tempfile::tempdir().unwrap();
+
+        let created = create_with_source(
+            &mut db,
+            &repo,
+            base.path(),
+            WorkspaceSource::ExistingBranch {
+                branch: BranchRef {
+                    name: "feat/OMS-1".into(),
+                    remote: None,
+                },
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.workspace.branch_name, "feat/OMS-1");
+        assert_eq!(created.workspace.name, "OMS-1");
+        assert!(!db.workspace_branch_owned(&created.workspace.id).unwrap());
+        assert!(!db.claim_branch_auto_rename(&created.workspace.id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn create_existing_branch_dedups_workspace_name() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        run_git_in(repo_dir.path(), &["branch", "feat/OMS-1"]).await;
+        run_git_in(repo_dir.path(), &["branch", "fix/OMS-1"]).await;
+        let base = tempfile::tempdir().unwrap();
+
+        let mut names = Vec::new();
+        for branch in ["feat/OMS-1", "fix/OMS-1"] {
+            let created = create_with_source(
+                &mut db,
+                &repo,
+                base.path(),
+                WorkspaceSource::ExistingBranch {
+                    branch: BranchRef {
+                        name: branch.into(),
+                        remote: None,
+                    },
+                },
+            )
+            .await
+            .unwrap();
+            names.push(created.workspace.name);
+        }
+
+        assert_eq!(names, ["OMS-1", "OMS-1-2"]);
+    }
+
     #[tokio::test]
     async fn create_leaves_auto_rename_available_by_default() {
         let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
@@ -1280,6 +1518,7 @@ mod tests {
                 name: "scratch",
                 branch_prefix: "test/",
                 input_values: None,
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1307,6 +1546,7 @@ mod tests {
                 name: "agent-pipeline",
                 branch_prefix: "test/",
                 input_values: None,
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1356,6 +1596,7 @@ mod tests {
                 name: "feature",
                 branch_prefix: "test/",
                 input_values: None, // caller doesn't yet support inputs
+                source: WorkspaceSource::Default,
             },
         )
         .await;
@@ -1413,6 +1654,7 @@ mod tests {
                 name: "feature",
                 branch_prefix: "test/",
                 input_values: Some(&supplied),
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1457,6 +1699,7 @@ mod tests {
                 name: "feature",
                 branch_prefix: "test/",
                 input_values: None,
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1505,6 +1748,7 @@ mod tests {
                 name: "feature",
                 branch_prefix: "test/",
                 input_values: None,
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1555,6 +1799,7 @@ mod tests {
                 name: "feature",
                 branch_prefix: "test/",
                 input_values: None,
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1640,6 +1885,7 @@ mod tests {
                     name,
                     branch_prefix: "test/",
                     input_values: None,
+                    source: WorkspaceSource::Default,
                 },
             )
             .await
@@ -1702,6 +1948,7 @@ mod tests {
                 name: "archived",
                 branch_prefix: "test/",
                 input_values: None,
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1715,6 +1962,7 @@ mod tests {
                 name: "active",
                 branch_prefix: "test/",
                 input_values: None,
+                source: WorkspaceSource::Default,
             },
         )
         .await
@@ -1784,6 +2032,7 @@ mod tests {
                     name,
                     branch_prefix: "test/",
                     input_values: None,
+                    source: WorkspaceSource::Default,
                 },
             )
             .await

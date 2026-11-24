@@ -1604,6 +1604,7 @@ async fn handle_create_workspace(
         branch_prefix: &branch_prefix,
         // Validated against the repo's declared inputs inside the op.
         input_values: input_values.as_ref(),
+        source: claudette::model::WorkspaceSource::Default,
     };
     let out = if preserve_supplied_name {
         ops_workspace::create_preserving_supplied_name(

@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use claudette::db::Database;
 use claudette::model::Repository;
+use claudette::model::WorkspaceSource;
 use claudette::ops::NoopHooks;
 use claudette::ops::workspace::{self as ops_workspace, ArchiveParams, CreateParams};
 use claudette::plugin_runtime::PluginRegistry;
@@ -107,6 +108,7 @@ async fn restore_workspace_recreates_worktree_for_archived() {
             name: "feature",
             branch_prefix: "test/",
             input_values: None,
+            source: WorkspaceSource::Default,
         },
     )
     .await
@@ -191,6 +193,7 @@ async fn restore_workspace_errors_when_workspace_already_active() {
             name: "feature",
             branch_prefix: "test/",
             input_values: None,
+            source: WorkspaceSource::Default,
         },
     )
     .await

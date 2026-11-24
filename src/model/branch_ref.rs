@@ -18,3 +18,17 @@ pub struct WorkspaceBranch {
     /// branch checked out. Always `None` for remote-only branches.
     pub checked_out_at: Option<String>,
 }
+
+/// Where a new workspace's branch comes from.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceSource {
+    /// Claudette picks the branch name (`<prefix><name>`) from the repo's
+    /// default base.
+    #[default]
+    Default,
+    /// Create the user-named `branch` off `base`. Claudette owns the branch.
+    NewBranch { base: BranchRef, branch: String },
+    /// Open a worktree on an existing branch. Claudette does not own it.
+    ExistingBranch { branch: BranchRef },
+}
