@@ -990,11 +990,37 @@ pub async fn restore_workspace(
     Ok(actual_path)
 }
 
+/// Flag freshly imported workspaces as not owning their branch. On failure the
+/// inserted rows are rolled back: a row left at the default `branch_owned = 1`
+/// would let Claudette delete a branch it did not create. The worktrees on
+/// disk pre-existed, so they stay.
+fn mark_imported_unowned(db: &Database, created: &[Workspace]) -> Result<(), String> {
+    for ws in created {
+        if let Err(e) = db.set_workspace_branch_owned(&ws.id, false) {
+            for inserted in created {
+                let _ = db.delete_workspace(&inserted.id);
+            }
+            return Err(e.to_string());
+        }
+    }
+    Ok(())
+}
+
 /// Whether deleting a workspace should also delete its git branch. A branch
 /// Claudette did not create (workspace opened on an existing branch) is never
 /// deleted. A DB error keeps the branch (fail safe).
 pub(crate) fn should_delete_branch(db: &Database, workspace_id: &str) -> bool {
-    db.workspace_branch_owned(workspace_id).unwrap_or(false)
+    branch_is_owned(db, workspace_id)
+}
+
+/// Whether Claudette owns the workspace's branch (may delete or rename it).
+/// A DB error answers `false` (fail safe).
+pub(crate) fn branch_is_owned(db: &Database, workspace_id: &str) -> bool {
+    branch_deletable(db.workspace_branch_owned(workspace_id))
+}
+
+fn branch_deletable<E>(ownership_lookup: Result<bool, E>) -> bool {
+    ownership_lookup.unwrap_or(false)
 }
 
 #[tauri::command]
@@ -1692,7 +1718,8 @@ pub async fn list_workspace_branches(
 }
 
 /// Fetch one branch from the repo's default remote (error ignored), then
-/// return the matching entry from the branch list, local preferred.
+/// return a ref to open it on. `None` when the branch is not on that remote
+/// (e.g. a fork PR head): a same-named local branch alone does not count.
 #[tauri::command]
 pub async fn fetch_workspace_branch(
     repo_id: String,
@@ -1701,19 +1728,9 @@ pub async fn fetch_workspace_branch(
 ) -> Result<Option<BranchRef>, String> {
     let repo = find_repository(&state, &repo_id)?;
     let remote = repo.default_remote.as_deref().unwrap_or("origin");
-    let _ = git::fetch_branch(&repo.path, remote, &branch).await;
-    let branches = git::list_workspace_branches(&repo.path)
+    git::fetch_and_resolve_branch(&repo.path, remote, &branch)
         .await
-        .map_err(|e| e.to_string())?;
-    let mut matches = branches
-        .into_iter()
-        .map(|b| b.branch)
-        .filter(|b| b.name == branch);
-    let first = matches.next();
-    Ok(match first {
-        Some(b) if b.remote.is_some() => matches.find(|m| m.remote.is_none()).or(Some(b)),
-        other => other,
-    })
+        .map_err(|e| e.to_string())
 }
 
 fn find_repository(
@@ -2050,17 +2067,7 @@ pub async fn import_worktrees(
         .map_err(|e| e.to_string())?;
     // Imported workspaces attach to branches the user already had, so
     // Claudette must never delete or rename them.
-    for ws in &created {
-        if let Err(e) = db.set_workspace_branch_owned(&ws.id, false) {
-            // Roll back the rows just inserted: a row left at the default
-            // `branch_owned = 1` would let Claudette delete a branch it
-            // did not create. The worktrees on disk pre-existed, so they stay.
-            for inserted in &created {
-                let _ = db.delete_workspace(&inserted.id);
-            }
-            return Err(e.to_string());
-        }
-    }
+    mark_imported_unowned(&db, &created)?;
     // Patch each row's sort_order to the value the DB assigned so the
     // workspaces this command returns to the UI render at the bottom of
     // their repo groups immediately (Codex P2). One readback query per
@@ -2306,7 +2313,10 @@ pub async fn notify_workspace_selected(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_fork_prelude, validate_purge_target};
+    use super::{
+        apply_fork_prelude, branch_deletable, mark_imported_unowned, should_delete_branch,
+        validate_purge_target,
+    };
     use crate::state::{AgentSessionState, ClaudeRemoteControlStatus};
     use claudette::git::WorktreeInfo;
     use claudette::model::{ChatMessage, ChatRole};
@@ -2320,6 +2330,76 @@ mod tests {
             branch: Some(branch.to_string()),
             is_bare: false,
         }
+    }
+
+    fn test_db_with_workspaces(
+        ids: &[&str],
+    ) -> (claudette::db::Database, Vec<claudette::model::Workspace>) {
+        use claudette::model::{AgentStatus, Repository, Workspace, WorkspaceStatus};
+        let db = claudette::db::Database::open_in_memory().unwrap();
+        db.insert_repository(&Repository {
+            id: "r1".into(),
+            path: "/tmp/repo1".into(),
+            name: "repo1".into(),
+            path_slug: "repo1".into(),
+            icon: None,
+            created_at: String::new(),
+            setup_script: None,
+            custom_instructions: None,
+            sort_order: 0,
+            branch_rename_preferences: None,
+            setup_script_auto_run: false,
+            archive_script: None,
+            archive_script_auto_run: false,
+            base_branch: None,
+            default_remote: None,
+            required_inputs: None,
+            path_valid: true,
+        })
+        .unwrap();
+        let workspaces: Vec<Workspace> = ids
+            .iter()
+            .map(|id| Workspace {
+                id: (*id).into(),
+                repository_id: "r1".into(),
+                name: (*id).into(),
+                branch_name: format!("feat/{id}"),
+                worktree_path: None,
+                status: WorkspaceStatus::Active,
+                agent_status: AgentStatus::Idle,
+                status_line: String::new(),
+                created_at: String::new(),
+                sort_order: 0,
+                input_values: None,
+            })
+            .collect();
+        for w in &workspaces {
+            db.insert_workspace(w).unwrap();
+        }
+        (db, workspaces)
+    }
+
+    #[test]
+    fn should_delete_branch_only_when_owned() {
+        let (db, _) = test_db_with_workspaces(&["owned", "unowned"]);
+        db.set_workspace_branch_owned("unowned", false).unwrap();
+        assert!(should_delete_branch(&db, "owned"));
+        assert!(!should_delete_branch(&db, "unowned"));
+    }
+
+    #[test]
+    fn branch_deletable_fails_safe_on_lookup_error() {
+        assert!(branch_deletable::<()>(Ok(true)));
+        assert!(!branch_deletable::<()>(Ok(false)));
+        assert!(!branch_deletable(Err("db error")));
+    }
+
+    #[test]
+    fn import_marks_every_workspace_unowned() {
+        let (db, created) = test_db_with_workspaces(&["a", "b"]);
+        mark_imported_unowned(&db, &created).unwrap();
+        assert!(!should_delete_branch(&db, "a"));
+        assert!(!should_delete_branch(&db, "b"));
     }
 
     #[test]

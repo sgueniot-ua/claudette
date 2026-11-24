@@ -2445,7 +2445,12 @@ pub async fn send_chat_message(
     // early exit) can't re-trigger a rename on a later prompt because the
     // claim has already been taken. The flag tracks the claim, not the
     // outcome: a Haiku/git failure below intentionally does not release it.
-    let claimed_rename = if has_repo && should_run_auto_naming(remote_control_active_for_turn) {
+    // A branch Claudette did not create (opened on an existing branch, or an
+    // imported worktree) is never renamed, whatever the claim flag says.
+    let claimed_rename = if has_repo
+        && should_run_auto_naming(remote_control_active_for_turn)
+        && crate::commands::workspace::branch_is_owned(&db, &workspace_id)
+    {
         match db.claim_branch_auto_rename(&workspace_id) {
             Ok(claimed) => claimed,
             Err(e) => {

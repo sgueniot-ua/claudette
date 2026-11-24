@@ -186,6 +186,15 @@ pub async fn create_preserving_supplied_name(
     create_inner(db, hooks, worktree_base, params, true).await
 }
 
+/// Undo a freshly created worktree after a later step failed. The branch is
+/// deleted only when Claudette created it (`owns_branch`).
+async fn rollback_worktree(repo_path: &str, worktree_path: &str, branch: &str, owns_branch: bool) {
+    let _ = git::remove_worktree(repo_path, worktree_path, true).await;
+    if owns_branch {
+        let _ = git::branch_delete(repo_path, branch).await;
+    }
+}
+
 async fn create_inner(
     db: &mut Database,
     hooks: &dyn OpsHooks,
@@ -277,18 +286,18 @@ async fn create_inner(
             .await
             .map_err(|e| OpsError::Repo(e.to_string()))?;
             let worktree_path_str = allocation.worktree_path.to_string_lossy().to_string();
+            // The base's remote is explicit: `create_worktree` would re-split a
+            // flattened local base like `feat/base` on '/' and fetch "feat".
             let base_ref = match &base.remote {
-                Some(remote) => format!("{remote}/{}", base.name),
+                Some(remote) => {
+                    let _ = git::fetch_remote(&repo_path, Some(remote)).await;
+                    format!("{remote}/{}", base.name)
+                }
                 None => base.name.clone(),
             };
-            let actual_path = git::create_worktree(
-                &repo_path,
-                branch,
-                &worktree_path_str,
-                Some(&base_ref),
-                repo.default_remote.as_deref(),
-            )
-            .await?;
+            let actual_path =
+                git::create_worktree_from_ref(&repo_path, branch, &worktree_path_str, &base_ref)
+                    .await?;
             (allocation, actual_path)
         }
         WorkspaceSource::ExistingBranch { branch } => {
@@ -328,15 +337,12 @@ async fn create_inner(
     };
 
     if let Err(e) = db.insert_workspace(&ws) {
-        let _ = git::remove_worktree(&repo_path, &actual_path, true).await;
-        if owns_branch {
-            let _ = git::branch_delete(&repo_path, &ws.branch_name).await;
-        }
+        rollback_worktree(&repo_path, &actual_path, &ws.branch_name, owns_branch).await;
         return Err(OpsError::Db(e));
     }
     if !owns_branch && let Err(e) = db.set_workspace_branch_owned(&ws.id, false) {
         let _ = db.delete_workspace(&ws.id);
-        let _ = git::remove_worktree(&repo_path, &actual_path, true).await;
+        rollback_worktree(&repo_path, &actual_path, &ws.branch_name, owns_branch).await;
         return Err(OpsError::Db(e));
     }
     // Persist any declared input values to the dedicated column. The
@@ -350,10 +356,7 @@ async fn create_inner(
         && let Err(e) = db.set_workspace_input_values(&ws.id, Some(values))
     {
         let _ = db.delete_workspace(&ws.id);
-        let _ = git::remove_worktree(&repo_path, &actual_path, true).await;
-        if owns_branch {
-            let _ = git::branch_delete(&repo_path, &ws.branch_name).await;
-        }
+        rollback_worktree(&repo_path, &actual_path, &ws.branch_name, owns_branch).await;
         return Err(OpsError::Db(e));
     }
     ws.input_values = validated_inputs;
@@ -1427,6 +1430,72 @@ mod tests {
         assert!(Path::new(&created.worktree_path).join("base.txt").exists());
         assert!(db.workspace_branch_owned(&created.workspace.id).unwrap());
         assert!(!db.claim_branch_auto_rename(&created.workspace.id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn create_new_branch_from_remote_base() {
+        let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
+        let remote = tempfile::tempdir().unwrap();
+        let rp = remote.path().to_str().unwrap();
+        run_git_in(remote.path(), &["init", "--bare", "-b", "main"]).await;
+        run_git_in(repo_dir.path(), &["remote", "add", "upstream", rp]).await;
+        run_git_in(repo_dir.path(), &["checkout", "-b", "feat/r"]).await;
+        std::fs::write(repo_dir.path().join("r.txt"), "r").unwrap();
+        run_git_in(repo_dir.path(), &["add", "-A"]).await;
+        run_git_in(repo_dir.path(), &["commit", "-m", "remote commit"]).await;
+        run_git_in(repo_dir.path(), &["push", "upstream", "feat/r"]).await;
+        run_git_in(repo_dir.path(), &["checkout", "main"]).await;
+        run_git_in(repo_dir.path(), &["branch", "-D", "feat/r"]).await;
+        let base = tempfile::tempdir().unwrap();
+
+        let created = create_with_source(
+            &mut db,
+            &repo,
+            base.path(),
+            WorkspaceSource::NewBranch {
+                base: BranchRef {
+                    name: "feat/r".into(),
+                    remote: Some("upstream".into()),
+                },
+                branch: "feat/from-remote".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(created.workspace.branch_name, "feat/from-remote");
+        assert!(Path::new(&created.worktree_path).join("r.txt").exists());
+        assert!(db.workspace_branch_owned(&created.workspace.id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn rollback_keeps_unowned_branch_and_deletes_owned() {
+        let (repo_dir, _db_dir, _db, repo) = setup_repo_and_db().await;
+        let base = tempfile::tempdir().unwrap();
+        run_git_in(repo_dir.path(), &["branch", "feat/keep"]).await;
+        run_git_in(repo_dir.path(), &["branch", "feat/own"]).await;
+        let keep_wt = base.path().join("keep");
+        let own_wt = base.path().join("own");
+        for (b, wt) in [("feat/keep", &keep_wt), ("feat/own", &own_wt)] {
+            run_git_in(
+                repo_dir.path(),
+                &["worktree", "add", wt.to_str().unwrap(), b],
+            )
+            .await;
+        }
+
+        rollback_worktree(&repo.path, keep_wt.to_str().unwrap(), "feat/keep", false).await;
+        rollback_worktree(&repo.path, own_wt.to_str().unwrap(), "feat/own", true).await;
+
+        assert!(!keep_wt.exists() && !own_wt.exists());
+        run_git_in(repo_dir.path(), &["rev-parse", "--verify", "feat/keep"]).await;
+        let status = crate::process::command("git")
+            .args(["rev-parse", "--verify", "feat/own"])
+            .current_dir(repo_dir.path())
+            .status()
+            .await
+            .unwrap();
+        assert!(!status.success(), "owned branch should be deleted");
     }
 
     #[tokio::test]
