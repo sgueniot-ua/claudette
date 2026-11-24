@@ -8,7 +8,7 @@ import {
   GitPullRequestDraft,
   RefreshCw,
 } from "lucide-react";
-import { openUrl } from "../../services/tauri";
+import { fetchWorkspaceBranch, openUrl } from "../../services/tauri";
 import { useAppStore } from "../../stores/useAppStore";
 import { useRepoOpenPullRequests } from "../../hooks/useRepoOpenPullRequests";
 import { createWorkspaceOrchestrated } from "../../hooks/useCreateWorkspace";
@@ -52,6 +52,7 @@ export const RepoPullRequestsSection = memo(function RepoPullRequestsSection({
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const addToast = useAppStore((s) => s.addToast);
+  const selectWorkspace = useAppStore((s) => s.selectWorkspace);
 
   const prs = useMemo(
     () => payload?.pull_requests ?? [],
@@ -87,12 +88,30 @@ export const RepoPullRequestsSection = memo(function RepoPullRequestsSection({
   };
 
   const handleCreateWorkspaceInRepo = async (pr: PullRequest) => {
-    // The workspace is created on the repo's default base — the
-    // create_workspace Tauri command doesn't yet accept a branch arg, so
-    // we can't pre-check out pr.branch here (tracked as an issue-890
-    // follow-up). Surface the PR branch in the toast so the user knows
-    // the manual `git checkout` is on them.
     try {
+      const existing = workspaces.find(
+        (w) =>
+          w.repository_id === repoId &&
+          w.status === "Active" &&
+          w.branch_name === pr.branch,
+      );
+      if (existing) {
+        selectWorkspace(existing.id);
+        addToast(`Workspace already open on ${pr.branch}`);
+        return;
+      }
+      // Fork PRs have no branch in this repo: fetchWorkspaceBranch
+      // returns null and we keep the default-branch workspace.
+      const ref = await fetchWorkspaceBranch(repoId, pr.branch);
+      if (ref) {
+        const created = await createWorkspaceOrchestrated(repoId, {
+          source: { kind: "existing_branch", branch: ref },
+        });
+        if (created) {
+          addToast(`Workspace ready on ${pr.branch}`);
+        }
+        return;
+      }
       const created = await createWorkspaceOrchestrated(repoId);
       if (created) {
         addToast(`Workspace ready (default branch). PR head: ${pr.branch}`);
@@ -345,9 +364,6 @@ function PullRequestRow({
     { label: "Open in browser", onSelect: () => onOpen(pr.url) },
     { label: "Copy URL", onSelect: () => onCopyUrl(pr.url) },
     {
-      // Honest label: this creates a workspace on the repo's default
-      // branch, NOT the PR head — see handleCreateWorkspaceInRepo in
-      // the parent component for the follow-up tracker.
       label: "New workspace in this repo",
       onSelect: () => onCreateWorkspaceForBranch(pr),
     },
