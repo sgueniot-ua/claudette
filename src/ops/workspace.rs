@@ -953,13 +953,15 @@ pub async fn archive(
     let workspace_id = ws.id.clone();
     let repo_path = repo.path.clone();
 
+    // Fail safe: if the ownership lookup errors, keep the branch.
+    let branch_owned = db.workspace_branch_owned(&workspace_id).unwrap_or(false);
+
     if let Some(ref wt_path) = worktree_path {
         let _ = git::remove_worktree(&repo_path, wt_path, false).await;
     }
 
     // Never delete a branch Claudette did not create (opened via
     // `WorkspaceSource::ExistingBranch`); the worktree and row still go.
-    let branch_owned = db.workspace_branch_owned(&workspace_id)?;
     let branch_deleted = if params.delete_branch && branch_owned {
         git::branch_delete(&repo_path, &branch_name).await.is_ok()
     } else {
@@ -1683,10 +1685,6 @@ mod tests {
         assert_eq!(from_db.get("TICKET_ID"), Some(&"PROJ-42".to_string()));
     }
 
-    /// Regression for the `claudette workspace archive --delete-branch`
-    /// IPC flow: when the row is hard-deleted, the hook must announce
-    /// `Deleted` (not `Archived`) so the frontend can `removeWorkspace`
-    /// instead of marking a row that no longer exists as archived.
     #[tokio::test]
     async fn archive_keeps_unowned_branch_even_with_delete_branch() {
         let (repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;
@@ -1762,6 +1760,10 @@ mod tests {
         assert!(!status.success(), "owned branch should be deleted");
     }
 
+    /// Regression for the `claudette workspace archive --delete-branch`
+    /// IPC flow: when the row is hard-deleted, the hook must announce
+    /// `Deleted` (not `Archived`) so the frontend can `removeWorkspace`
+    /// instead of marking a row that no longer exists as archived.
     #[tokio::test]
     async fn archive_emits_deleted_when_branch_deleted() {
         let (_repo_dir, _db_dir, mut db, repo) = setup_repo_and_db().await;

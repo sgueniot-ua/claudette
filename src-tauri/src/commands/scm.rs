@@ -2328,6 +2328,7 @@ async fn auto_archive_workspace(
         worktree_path: Option<String>,
         repo_path: Option<String>,
         delete_record: bool,
+        delete_branch: bool,
         resolved: crate::tray::ResolvedSound,
     }
     let archive_info: Option<ArchiveInfo> = {
@@ -2358,8 +2359,9 @@ async fn auto_archive_workspace(
             .ok()
             .flatten()
             .as_deref()
-            == Some("true")
-            && crate::commands::workspace::should_delete_branch(&db, &ws.id);
+            == Some("true");
+        let delete_branch =
+            delete_record && crate::commands::workspace::should_delete_branch(&db, &ws.id);
 
         let resolved = crate::tray::resolve_notification(
             &db,
@@ -2375,6 +2377,7 @@ async fn auto_archive_workspace(
             worktree_path: ws.worktree_path.clone(),
             repo_path,
             delete_record,
+            delete_branch,
             resolved,
         })
     };
@@ -2387,6 +2390,7 @@ async fn auto_archive_workspace(
         worktree_path: wt_path,
         repo_path,
         delete_record,
+        delete_branch,
         resolved,
     }) = archive_info
     else {
@@ -2399,7 +2403,7 @@ async fn auto_archive_workspace(
     }
 
     // Delete the local branch when the setting is enabled.
-    if delete_record && let Some(repo_path) = &repo_path {
+    if delete_branch && let Some(repo_path) = &repo_path {
         let _ = claudette::git::branch_delete(repo_path, &branch_name).await;
     }
 

@@ -984,9 +984,9 @@ pub async fn restore_workspace(
 
 /// Whether deleting a workspace should also delete its git branch. A branch
 /// Claudette did not create (workspace opened on an existing branch) is never
-/// deleted. A DB error falls back to `true`, the historical behavior.
+/// deleted. A DB error keeps the branch (fail safe).
 pub(crate) fn should_delete_branch(db: &Database, workspace_id: &str) -> bool {
-    db.workspace_branch_owned(workspace_id).unwrap_or(true)
+    db.workspace_branch_owned(workspace_id).unwrap_or(false)
 }
 
 #[tauri::command]
