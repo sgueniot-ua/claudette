@@ -1258,6 +1258,7 @@ export const Sidebar = memo(function Sidebar() {
                         openModal("newWorkspace", { repoId: repo.id });
                       }}
                       title={t("new_workspace_from_branch")}
+                      aria-label={t("new_workspace_from_branch")}
                     >
                       <ChevronDown size={12} />
                     </button>

@@ -161,4 +161,21 @@ describe("NewWorkspaceModal", () => {
     expect(mockedList).toHaveBeenNthCalledWith(2, "repo-1", true);
     expect(document.body.textContent).toContain("origin/fresh-branch");
   });
+
+  it("keeps the fetched list when it resolves before the local one", async () => {
+    let releaseLocal!: (v: WorkspaceBranch[]) => void;
+    mockedList.mockReset();
+    mockedList.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseLocal = resolve;
+      }),
+    );
+    mockedList.mockResolvedValueOnce([branch("main"), branch("fresh", "origin")]);
+    await render();
+    await click(byText("button", "Existing branch"));
+    await act(async () => {
+      releaseLocal([branch("main")]);
+    });
+    expect(document.body.textContent).toContain("origin/fresh");
+  });
 });

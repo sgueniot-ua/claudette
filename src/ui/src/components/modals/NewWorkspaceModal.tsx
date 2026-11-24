@@ -43,12 +43,17 @@ export function NewWorkspaceModal() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!repoId) return;
+    if (!repoId) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
+    let fetchedLanded = false;
     // Fast local listing first, then a fetching pass that replaces it.
     listWorkspaceBranches(repoId, false)
       .then((list) => {
-        if (!cancelled) setBranches(list);
+        // The fetched list may already have landed; never overwrite it.
+        if (!cancelled && !fetchedLanded) setBranches(list);
       })
       .catch((e) => {
         if (!cancelled) setError(String(e));
@@ -58,7 +63,10 @@ export function NewWorkspaceModal() {
       });
     listWorkspaceBranches(repoId, true)
       .then((list) => {
-        if (!cancelled) setBranches(list);
+        if (cancelled) return;
+        fetchedLanded = true;
+        setBranches(list);
+        setLoading(false);
       })
       .catch(() => {
         // Offline or no remote: keep the local list.
