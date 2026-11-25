@@ -25,10 +25,11 @@ export interface PlanApproval {
   planContent?: string | null;
 }
 
-export type AgentApprovalKind = "commandExecution" | "fileChange" | "permissions";
+export type AgentApprovalKind = "commandExecution" | "fileChange" | "permissions" | "toolUse";
 
 export interface AgentApprovalDetail {
   labelKey:
+    | "tool"
     | "command"
     | "cwd"
     | "path"

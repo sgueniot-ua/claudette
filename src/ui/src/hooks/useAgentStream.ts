@@ -62,6 +62,7 @@ const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 const CODEX_COMMAND_APPROVAL_TOOL = "CodexCommandApproval";
 const CODEX_FILE_CHANGE_APPROVAL_TOOL = "CodexFileChangeApproval";
 const CODEX_PERMISSIONS_APPROVAL_TOOL = "CodexPermissionsApproval";
+const CLAUDE_PERMISSION_APPROVAL_TOOL = "ClaudePermissionApproval";
 
 /**
  * Resolve every workflow a session's CLI process was still running when it
@@ -418,6 +419,21 @@ export function applyAgentPermissionPrompt(
       needs_attention: true,
       attention_kind: "Plan",
     });
+  } else if (toolName === CLAUDE_PERMISSION_APPROVAL_TOOL) {
+    if (input && typeof input === "object") {
+      const approval = parseClaudePermissionApproval(
+        sessionId,
+        toolUseId,
+        input as Record<string, unknown>,
+      );
+      if (approval) {
+        setAgentApproval(approval);
+        updateChatSession(sessionId, {
+          needs_attention: true,
+          attention_kind: "Ask",
+        });
+      }
+    }
   } else if (isCodexApprovalTool(toolName)) {
     if (input && typeof input === "object") {
       const approval = parseCodexApproval(
@@ -529,6 +545,38 @@ export function parseCodexApproval(
   }
 
   return null;
+}
+
+// Exported only for unit tests. Parses the wrapped input the backend sends
+// when a Claude Code ask rule or hook requests permission in full mode.
+export function parseClaudePermissionApproval(
+  sessionId: string,
+  toolUseId: string,
+  input: Record<string, unknown>,
+): AgentApproval | null {
+  const toolName = stringField(input, "toolName");
+  if (!toolName) return null;
+  const toolInput =
+    input.toolInput && typeof input.toolInput === "object"
+      ? (input.toolInput as Record<string, unknown>)
+      : {};
+  const details: AgentApproval["details"] = [];
+  addDetail(details, "tool", toolName);
+  addDetail(details, "command", toolInput.command);
+  addDetail(
+    details,
+    "path",
+    firstApprovalDetailString(toolInput, ["file_path", "path"]),
+  );
+  addDetail(details, "reason", toolInput.description);
+  return {
+    sessionId,
+    toolUseId,
+    kind: "toolUse",
+    details,
+    supportsDenyReason: true,
+    agentLabel: "Claude",
+  };
 }
 
 function stringFromUnknown(value: unknown): string | undefined {
