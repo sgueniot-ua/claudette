@@ -114,6 +114,16 @@ From the [CLI](/claudette/features/cli-client/):
 claudette chat steer <session-id> "Also update the integration tests"
 ```
 
+## Ask rules in full mode
+
+In the **full** permission level, Claude Code normally approves every permission request on its own, including requests raised by `ask` rules in your Claude Code settings and by hooks (for example, a `git push --force` that a rule marks as `ask`).
+
+Turn on **Settings > General > Ask on permission rules in full mode** to make Claudette show an approval card for those requests instead. You then approve or deny each one in the chat, as with other permission prompts.
+
+- **Default**: Off.
+- **MCP and Skills prompts** stay auto-approved, whatever the setting.
+- **Standard and readonly** permission levels are unchanged.
+
 ## Claude CLI Flags
 
 The **Settings > Claude CLI flags** panel lets you configure which flags Claudette passes to the `claude` CLI on every turn. Flags are discovered at startup by parsing `claude --help`; flags that Claudette already controls internally (model, session ID, etc.) are filtered out so you can't accidentally double-set them.

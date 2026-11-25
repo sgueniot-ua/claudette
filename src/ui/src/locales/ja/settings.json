@@ -56,6 +56,8 @@
   "general_worktree_placeholder": "~/.claudette/workspaces",
   "general_archive_on_merge": "マージ時にアーカイブ",
   "general_archive_on_merge_desc": "プルリクエストがマージされたときにワークスペースを自動的にアーカイブします。",
+  "general_full_mode_honor_ask_rules": "フルモードで許可ルールを確認する",
+  "general_full_mode_honor_ask_rules_desc": "フルパーミッションモードでは、Claude Code の ask ルールまたはフックが許可を求めた場合（例: `git push --force`）、自動承認せずに承認カードを表示します。",
   "general_system_tray": "システムトレイ",
   "general_system_tray_desc": "Claudette をシステムトレイに表示します。有効にすると、ウィンドウを閉じてもトレイに最小化されます。",
   "general_tray_icon_style": "トレイアイコンのスタイル",
