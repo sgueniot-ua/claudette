@@ -63,7 +63,7 @@ export function PendingControlCards({
             const toolUseId = pendingQuestion.toolUseId;
             try {
               await submitAgentAnswer(sid, toolUseId, answers);
-              clearAgentQuestion(sid);
+              clearAgentQuestion(sid, toolUseId);
             } catch (e) {
               console.error("Failed to submit agent answer:", e);
               setError(String(e));
@@ -84,7 +84,7 @@ export function PendingControlCards({
             const codexPlanApproval = pendingPlan.source === "codex";
             try {
               await submitPlanApproval(sid, toolUseId, approved, reason);
-              clearPlanApproval(sid);
+              clearPlanApproval(sid, toolUseId);
               if (codexPlanApproval) {
                 if (approved) {
                   await setPlanModeAndPersist(sid, false);
@@ -115,7 +115,7 @@ export function PendingControlCards({
             const toolUseId = pendingApproval.toolUseId;
             try {
               await submitAgentApproval(sid, toolUseId, approved, reason);
-              clearAgentApproval(sid);
+              clearAgentApproval(sid, toolUseId);
             } catch (e) {
               console.error("Failed to submit agent approval:", e);
               setError(String(e));

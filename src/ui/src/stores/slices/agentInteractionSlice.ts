@@ -31,6 +31,10 @@ export interface AgentApprovalDetail {
   labelKey:
     | "tool"
     | "command"
+    | "url"
+    | "pattern"
+    | "description"
+    | "input"
     | "cwd"
     | "path"
     | "permissions"
@@ -133,15 +137,15 @@ export function syncSessionAttention(
 export interface AgentInteractionSlice {
   agentQuestions: Record<string, AgentQuestion>;
   setAgentQuestion: (q: AgentQuestion) => void;
-  clearAgentQuestion: (sessionId: string) => void;
+  clearAgentQuestion: (sessionId: string, toolUseId?: string) => void;
 
   planApprovals: Record<string, PlanApproval>;
   setPlanApproval: (p: PlanApproval) => void;
-  clearPlanApproval: (sessionId: string) => void;
+  clearPlanApproval: (sessionId: string, toolUseId?: string) => void;
 
   agentApprovals: Record<string, AgentApproval>;
   setAgentApproval: (approval: AgentApproval) => void;
-  clearAgentApproval: (sessionId: string) => void;
+  clearAgentApproval: (sessionId: string, toolUseId?: string) => void;
 
   chatSearch: Record<string, ChatSearchState>;
   openChatSearch: (wsId: string) => void;
@@ -187,8 +191,11 @@ export const createAgentInteractionSlice: StateCreator<
     set((s) => ({
       agentQuestions: { ...s.agentQuestions, [q.sessionId]: q },
     })),
-  clearAgentQuestion: (sessionId) =>
+  clearAgentQuestion: (sessionId, toolUseId) =>
     set((s) => {
+      // A newer prompt for this session may already have replaced the one
+      // that was answered; only clear the card for `toolUseId`.
+      if (toolUseId && s.agentQuestions[sessionId]?.toolUseId !== toolUseId) return s;
       const { [sessionId]: _, ...rest } = s.agentQuestions;
       const nextSessions = syncSessionAttention(s, sessionId, {
         agentQuestions: rest,
@@ -201,8 +208,11 @@ export const createAgentInteractionSlice: StateCreator<
     set((s) => ({
       planApprovals: { ...s.planApprovals, [p.sessionId]: p },
     })),
-  clearPlanApproval: (sessionId) =>
+  clearPlanApproval: (sessionId, toolUseId) =>
     set((s) => {
+      // A newer prompt for this session may already have replaced the one
+      // that was answered; only clear the card for `toolUseId`.
+      if (toolUseId && s.planApprovals[sessionId]?.toolUseId !== toolUseId) return s;
       const { [sessionId]: _, ...rest } = s.planApprovals;
       const nextSessions = syncSessionAttention(s, sessionId, {
         planApprovals: rest,
@@ -215,8 +225,11 @@ export const createAgentInteractionSlice: StateCreator<
     set((s) => ({
       agentApprovals: { ...s.agentApprovals, [approval.sessionId]: approval },
     })),
-  clearAgentApproval: (sessionId) =>
+  clearAgentApproval: (sessionId, toolUseId) =>
     set((s) => {
+      // A newer prompt for this session may already have replaced the one
+      // that was answered; only clear the card for `toolUseId`.
+      if (toolUseId && s.agentApprovals[sessionId]?.toolUseId !== toolUseId) return s;
       const { [sessionId]: _, ...rest } = s.agentApprovals;
       const nextSessions = syncSessionAttention(s, sessionId, {
         agentApprovals: rest,
