@@ -63,6 +63,7 @@ const CODEX_COMMAND_APPROVAL_TOOL = "CodexCommandApproval";
 const CODEX_FILE_CHANGE_APPROVAL_TOOL = "CodexFileChangeApproval";
 const CODEX_PERMISSIONS_APPROVAL_TOOL = "CodexPermissionsApproval";
 const CLAUDE_PERMISSION_APPROVAL_TOOL = "ClaudePermissionApproval";
+const APPROVAL_INPUT_MAX_CHARS = 2000;
 
 /**
  * Resolve every workflow a session's CLI process was still running when it
@@ -563,12 +564,32 @@ export function parseClaudePermissionApproval(
   const details: AgentApproval["details"] = [];
   addDetail(details, "tool", toolName);
   addDetail(details, "command", toolInput.command);
+  addDetail(details, "url", toolInput.url);
+  addDetail(details, "pattern", toolInput.pattern);
   addDetail(
     details,
     "path",
     firstApprovalDetailString(toolInput, ["file_path", "path"]),
   );
-  addDetail(details, "reason", toolInput.description);
+  // Edit replaces `old_string` with `new_string`; Write only has `content`.
+  addDetail(details, "oldText", toolInput.old_string);
+  addDetail(
+    details,
+    "newText",
+    firstApprovalDetailString(toolInput, ["new_string", "content"]),
+  );
+  addDetail(details, "description", toolInput.description);
+  // Unknown tool (MCP, …): show the raw arguments so the user can audit them.
+  if (details.length === 1 && Object.keys(toolInput).length > 0) {
+    const json = JSON.stringify(toolInput, null, 2);
+    addDetail(
+      details,
+      "input",
+      json.length > APPROVAL_INPUT_MAX_CHARS
+        ? `${json.slice(0, APPROVAL_INPUT_MAX_CHARS)}…`
+        : json,
+    );
+  }
   return {
     sessionId,
     toolUseId,
