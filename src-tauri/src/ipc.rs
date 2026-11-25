@@ -1263,6 +1263,7 @@ async fn handle_submit_agent_answer(
         tool_use_id,
         answers,
         annotations,
+        app.clone(),
         state,
     )
     .await?;
@@ -1294,6 +1295,7 @@ async fn handle_submit_plan_approval(
         tool_use_id,
         approved,
         reason,
+        app.clone(),
         state,
     )
     .await?;

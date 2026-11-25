@@ -16,17 +16,16 @@ use claudette::agent::{
 use claudette::agent_backend::AgentBackendRuntimeHarness;
 use claudette::base64_decode;
 use claudette::chat::{
-    BuildAssistantArgs, CLAUDE_PERMISSION_APPROVAL_TOOL, CheckpointArgs, RequestedFlags,
-    SessionFlags, assistant_usage_fields_from_result, build_assistant_chat_message,
-    build_compaction_sentinel, build_permission_response, bypass_permission_needs_user,
-    create_turn_checkpoint, extract_assistant_text, extract_event_thinking,
-    persistent_session_flags_drifted,
+    BuildAssistantArgs, CheckpointArgs, RequestedFlags, SessionFlags,
+    assistant_usage_fields_from_result, build_assistant_chat_message, build_compaction_sentinel,
+    build_permission_response, create_turn_checkpoint, extract_assistant_text,
+    extract_event_thinking, persistent_session_flags_drifted,
 };
 use claudette::db::Database;
 use claudette::env::WorkspaceEnv;
 use claudette::mcp_supervisor::McpSupervisor;
 use claudette::model::{ChatMessage, ChatRole};
-use claudette::permissions::{is_bypass_tools, tools_for_level};
+use claudette::permissions::tools_for_level;
 
 use crate::state::{
     AgentSessionState, AppState, ClaudeRemoteControlLifecycle, ClaudeRemoteControlStatus,
@@ -35,6 +34,7 @@ use crate::state::{
 
 use super::interaction::{deny_drained_permissions, drain_pending_permissions};
 use super::naming::{try_auto_rename, try_generate_session_name};
+use super::permission_approval::{self, queue_bypass_permission_approval};
 use super::{
     ATTENTION_NOTIFY_DELAY_MS, AgentStreamPayload, AttachmentInput, AttachmentResponse,
     ChatHistoryPage, build_agent_hook_bridge, fire_completion_notification, now_iso,
@@ -107,7 +107,7 @@ fn has_env_trust_warning(messages: &[ChatMessage]) -> bool {
     messages.iter().any(is_env_trust_warning_message)
 }
 
-fn control_prompt_attention_kind(tool_name: &str) -> crate::state::AttentionKind {
+pub(super) fn control_prompt_attention_kind(tool_name: &str) -> crate::state::AttentionKind {
     if tool_name == "ExitPlanMode" {
         crate::state::AttentionKind::Plan
     } else {
@@ -115,7 +115,7 @@ fn control_prompt_attention_kind(tool_name: &str) -> crate::state::AttentionKind
     }
 }
 
-fn queue_control_prompt(
+pub(super) fn queue_control_prompt(
     session: &mut AgentSessionState,
     request_id: String,
     tool_name: String,
@@ -140,21 +140,6 @@ fn queue_control_prompt(
     kind
 }
 
-/// Envelope for a bypass-mode permission request queued for the user. Shared
-/// by the pending entry and the `agent-permission-prompt` event so live and
-/// snapshot views are identical.
-fn wrap_permission_approval_input(
-    tool_name: &str,
-    input: &serde_json::Value,
-    decision_reason_type: Option<&str>,
-) -> serde_json::Value {
-    serde_json::json!({
-        "toolName": tool_name,
-        "toolInput": input,
-        "decisionReasonType": decision_reason_type,
-    })
-}
-
 #[derive(Debug, PartialEq)]
 enum ControlRequestSessionRoute {
     Interactive { kind: crate::state::AttentionKind },
@@ -170,20 +155,15 @@ fn route_control_request_session_state(
     decision_reason_type: Option<&str>,
     honor_ask_rules: bool,
 ) -> ControlRequestSessionRoute {
-    let bypass_active = is_bypass_tools(&session.session_allowed_tools)
-        && (!session.session_plan_mode || session.session_exited_plan);
-    if bypass_active
-        && !matches!(tool_name, "AskUserQuestion" | "ExitPlanMode")
-        && !is_codex_approval_tool_name(tool_name)
-        && bypass_permission_needs_user(honor_ask_rules, decision_reason_type)
-    {
-        let kind = queue_control_prompt(
-            session,
-            request_id.to_string(),
-            CLAUDE_PERMISSION_APPROVAL_TOOL.to_string(),
-            tool_use_id.to_string(),
-            wrap_permission_approval_input(tool_name, input, decision_reason_type),
-        );
+    if let Some(kind) = queue_bypass_permission_approval(
+        session,
+        request_id,
+        tool_name,
+        tool_use_id,
+        input,
+        decision_reason_type,
+        honor_ask_rules,
+    ) {
         ControlRequestSessionRoute::Interactive { kind }
     } else if matches!(tool_name, "AskUserQuestion" | "ExitPlanMode")
         || is_codex_approval_tool_name(tool_name)
@@ -240,15 +220,16 @@ pub(super) async fn route_process_control_request(
     };
 
     let app_state = app.state::<AppState>();
-    // Read before taking the `agents` lock; any error means "off".
-    let honor_ask_rules = claudette::db::Database::open(&app_state.db_path)
-        .ok()
-        .and_then(|db| {
-            db.get_app_setting("full_mode_honor_ask_rules")
-                .ok()
-                .flatten()
-        })
-        .is_some_and(|v| v == "true");
+    // Read the setting (DB I/O) only when it could matter, and before taking
+    // the `agents` write lock.
+    let setting_matters = app_state
+        .agents
+        .read()
+        .await
+        .get(chat_session_id)
+        .is_some_and(|s| permission_approval::setting_matters(s, tool_name));
+    let honor_ask_rules =
+        setting_matters && permission_approval::read_honor_ask_rules(&app_state.db_path);
     let mut agents = app_state.agents.write().await;
     if let Some(owner) = owner_pid
         && agents
@@ -3488,6 +3469,7 @@ pub async fn send_chat_message(
 
 #[cfg(test)]
 mod tests {
+    use super::permission_approval;
     use super::{
         ControlRequestSessionRoute, auth_failure_message_from_assistant_text,
         auth_failure_message_from_stderr, env_provider_drifted_parts, has_env_trust_warning,
@@ -3711,6 +3693,36 @@ mod tests {
         let mut session = test_agent_session_state();
         session.session_allowed_tools = vec!["*".to_string()];
         session
+    }
+
+    #[test]
+    fn settle_attention_keeps_next_pending_prompt_in_attention() {
+        let mut session = bypass_session();
+        for (id, tool) in [("tool-b", "Bash"), ("tool-a", "Edit")] {
+            route_control_request_session_state(
+                &mut session,
+                id,
+                tool,
+                id,
+                &serde_json::json!({}),
+                Some("rule"),
+                true,
+            );
+        }
+        session.pending_permissions.remove("tool-a");
+        session.attention_notification_sent = true;
+
+        let next = permission_approval::settle_attention_after_answer(&mut session).unwrap();
+        assert_eq!(next.tool_use_id, "tool-b");
+        assert_eq!(next.tool_name, "ClaudePermissionApproval");
+        assert!(session.needs_attention);
+        assert_eq!(session.attention_kind, Some(AttentionKind::Ask));
+
+        session.pending_permissions.clear();
+        assert!(permission_approval::settle_attention_after_answer(&mut session).is_none());
+        assert!(!session.needs_attention);
+        assert_eq!(session.attention_kind, None);
+        assert!(!session.attention_notification_sent);
     }
 
     #[test]

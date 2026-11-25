@@ -10,6 +10,9 @@ use claudette::agent::{
 };
 use claudette::chat::CLAUDE_PERMISSION_APPROVAL_TOOL;
 
+use super::permission_approval::{
+    NextPrompt, cancelled_permission_response, emit_next_prompt, settle_attention_after_answer,
+};
 use crate::state::{AgentSessionState, AppState, PendingPermission};
 
 #[tauri::command]
@@ -55,6 +58,7 @@ pub async fn submit_agent_answer(
     tool_use_id: String,
     answers: std::collections::HashMap<String, String>,
     annotations: Option<serde_json::Value>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // MCP-origin branch: when the question came from the `ask_user` MCP tool
@@ -77,7 +81,7 @@ pub async fn submit_agent_answer(
     // Validate everything BEFORE removing the pending entry: if the session
     // has been torn down or the entry maps to the wrong tool, the entry must
     // stay so the user (or the correct submit_* command) can still see it.
-    let (pending, ps) = {
+    let (pending, ps, next) = {
         let mut agents = state.agents.write().await;
         let session = agents.get_mut(&session_id).ok_or("Session not found")?;
         // 1. Persistent session must be alive — otherwise nobody is reading
@@ -108,9 +112,10 @@ pub async fn submit_agent_answer(
             .pending_permissions
             .remove(&tool_use_id)
             .expect("checked above");
-        session.refresh_pending_attention();
-        (pending, ps)
+        let next = settle_attention_after_answer(session);
+        (pending, ps, next)
     };
+    show_next_prompt(&app, &session_id, next);
 
     // Layer answers (and annotations, if any) onto the original input.
     let mut updated_input = pending.original_input.clone();
@@ -259,6 +264,14 @@ fn is_synthetic_codex_plan_approval(pending: &PendingPermission) -> bool {
             .unwrap_or(false)
 }
 
+/// The UI shows one card per session: after an answer, show the next
+/// still-pending control (if any) instead of leaving it hidden forever.
+fn show_next_prompt(app: &tauri::AppHandle, session_id: &str, next: Option<NextPrompt>) {
+    if let Some(next) = next {
+        emit_next_prompt(app, session_id, &next);
+    }
+}
+
 /// Resolve a pending approval-style `can_use_tool` request.
 /// `approved=true` → allow with the model's original input (the CLI's
 /// `call()` will save the plan and emit the real tool_result for Claude plan
@@ -269,6 +282,7 @@ async fn submit_approval_response(
     tool_use_id: String,
     approved: bool,
     reason: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // MCP-origin branch: a `request_review` verdict routes to the awaiting
@@ -296,7 +310,7 @@ async fn submit_approval_response(
 
     // Same validate-before-remove pattern as submit_agent_answer — see that
     // function for the rationale.
-    let (pending, ps) = {
+    let (pending, ps, next) = {
         let mut agents = state.agents.write().await;
         let session = agents.get_mut(&session_id).ok_or("Session not found")?;
         match session.pending_permissions.get(&tool_use_id) {
@@ -319,7 +333,7 @@ async fn submit_approval_response(
             .pending_permissions
             .remove(&tool_use_id)
             .expect("checked above");
-        session.refresh_pending_attention();
+        let next = settle_attention_after_answer(session);
         let ps = if is_synthetic_codex_plan_approval(&pending) {
             None
         } else {
@@ -330,8 +344,9 @@ async fn submit_approval_response(
                     .ok_or("Agent session is not active")?,
             )
         };
-        (pending, ps)
+        (pending, ps, next)
     };
+    show_next_prompt(&app, &session_id, next);
 
     if is_synthetic_codex_plan_approval(&pending) {
         return Ok(());
@@ -354,9 +369,10 @@ pub async fn submit_plan_approval(
     tool_use_id: String,
     approved: bool,
     reason: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    submit_approval_response(session_id, tool_use_id, approved, reason, state).await
+    submit_approval_response(session_id, tool_use_id, approved, reason, app, state).await
 }
 
 #[tauri::command]
@@ -370,9 +386,10 @@ pub async fn submit_agent_approval(
     tool_use_id: String,
     approved: bool,
     reason: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    submit_approval_response(session_id, tool_use_id, approved, reason, state).await
+    submit_approval_response(session_id, tool_use_id, approved, reason, app, state).await
 }
 
 /// A new parent prompt does not cancel concurrently running child work.
@@ -424,13 +441,16 @@ pub(crate) async fn deny_drained_permissions(
     reason: &str,
 ) {
     for pending in drained {
-        let deny = build_attention_response(&pending, false, Some(reason.to_string()))
-            .unwrap_or_else(|_| {
-                serde_json::json!({
-                    "behavior": "deny",
-                    "message": reason,
-                })
-            });
+        let deny = cancelled_permission_response(&pending, reason).unwrap_or_else(|| {
+            build_attention_response(&pending, false, Some(reason.to_string())).unwrap_or_else(
+                |_| {
+                    serde_json::json!({
+                        "behavior": "deny",
+                        "message": reason,
+                    })
+                },
+            )
+        });
         if let Err(e) = ps.send_control_response(&pending.request_id, deny).await {
             tracing::warn!(
                 target: "claudette::chat",

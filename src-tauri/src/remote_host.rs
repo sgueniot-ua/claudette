@@ -216,6 +216,7 @@ impl RpcHost for TauriRpcHost {
                         .get("reason")
                         .and_then(|v| v.as_str())
                         .map(String::from),
+                    app.clone(),
                     self.state(),
                 )
                 .await?;
