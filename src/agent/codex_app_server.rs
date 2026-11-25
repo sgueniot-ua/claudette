@@ -1535,6 +1535,7 @@ pub fn codex_server_request_to_control_event(
             tool_name: tool_name.to_string(),
             tool_use_id,
             input: Value::Object(input),
+            decision_reason_type: None,
         },
     })))
 }
@@ -2975,6 +2976,7 @@ fn map_codex_plan_item_to_agent_events(item: &Value) -> Vec<AgentEvent> {
                     "codexPlanContent": plan_text,
                     "allowedPrompts": [],
                 }),
+                decision_reason_type: None,
             },
         }),
     ]
@@ -3506,6 +3508,7 @@ mod tests {
                     tool_name,
                     tool_use_id,
                     input,
+                    ..
                 },
             ..
         }) = event
@@ -5001,6 +5004,7 @@ mod tests {
                     tool_name,
                     tool_use_id,
                     input,
+                    ..
                 },
         }) = &events[1]
         else {
@@ -5797,6 +5801,7 @@ mod tests {
                     tool_name,
                     tool_use_id,
                     input,
+                    ..
                 },
         }) = rx.recv().await.expect("control event")
         else {

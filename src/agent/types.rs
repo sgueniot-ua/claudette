@@ -344,6 +344,9 @@ pub enum ControlRequestInner {
         tool_use_id: String,
         #[serde(default)]
         input: serde_json::Value,
+        /// Why the CLI is asking (`rule`, `hook`, `mode`, ...). Absent on older CLIs and Codex.
+        #[serde(default)]
+        decision_reason_type: Option<String>,
     },
 
     #[serde(other)]
@@ -930,6 +933,7 @@ mod tests {
                         tool_name,
                         tool_use_id,
                         input,
+                        ..
                     } => {
                         assert_eq!(tool_name, "AskUserQuestion");
                         assert_eq!(tool_use_id, "toolu_xyz");

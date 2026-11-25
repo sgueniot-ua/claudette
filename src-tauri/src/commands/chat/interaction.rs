@@ -8,6 +8,7 @@ use claudette::agent::{
     build_codex_user_input_response_payload, is_antigravity_acp_control_input,
     is_codex_approval_tool_name,
 };
+use claudette::chat::CLAUDE_PERMISSION_APPROVAL_TOOL;
 
 use crate::state::{AgentSessionState, AppState, PendingPermission};
 
@@ -204,6 +205,28 @@ fn build_attention_response(
         );
     }
 
+    if pending.tool_name == CLAUDE_PERMISSION_APPROVAL_TOOL {
+        return Ok(if approved {
+            serde_json::json!({
+                "behavior": "allow",
+                "updatedInput": pending.original_input["toolInput"],
+            })
+        } else {
+            let tool_name = pending.original_input["toolName"]
+                .as_str()
+                .unwrap_or("the tool");
+            let mut message = format!("The user denied {tool_name}.");
+            if let Some(reason) = reason.as_deref().filter(|r| !r.trim().is_empty()) {
+                message.push_str(" Reason: ");
+                message.push_str(reason);
+            }
+            serde_json::json!({
+                "behavior": "deny",
+                "message": message,
+            })
+        });
+    }
+
     if approved {
         Ok(serde_json::json!({
             "behavior": "allow",
@@ -222,7 +245,9 @@ fn build_attention_response(
 }
 
 fn is_user_approval_tool(tool_name: &str) -> bool {
-    tool_name == "ExitPlanMode" || is_codex_approval_tool_name(tool_name)
+    tool_name == "ExitPlanMode"
+        || tool_name == CLAUDE_PERMISSION_APPROVAL_TOOL
+        || is_codex_approval_tool_name(tool_name)
 }
 
 fn is_synthetic_codex_plan_approval(pending: &PendingPermission) -> bool {
@@ -415,5 +440,57 @@ pub(crate) async fn deny_drained_permissions(
                 "failed to deny pending tool on cleanup"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_attention_response, is_user_approval_tool};
+    use crate::state::PendingPermission;
+
+    fn permission_approval() -> PendingPermission {
+        PendingPermission {
+            request_id: "request-1".to_string(),
+            tool_name: "ClaudePermissionApproval".to_string(),
+            original_input: serde_json::json!({
+                "toolName": "Bash",
+                "toolInput": {"command": "git push --force"},
+                "decisionReasonType": "rule",
+            }),
+        }
+    }
+
+    #[test]
+    fn attention_response_allows_permission_approval_with_inner_input() {
+        let response = build_attention_response(&permission_approval(), true, None).unwrap();
+        assert_eq!(response["behavior"], "allow");
+        assert_eq!(
+            response["updatedInput"],
+            serde_json::json!({"command": "git push --force"})
+        );
+    }
+
+    #[test]
+    fn attention_response_denies_permission_approval_with_tool_name() {
+        let pending = permission_approval();
+
+        let response = build_attention_response(&pending, false, None).unwrap();
+        assert_eq!(response["behavior"], "deny");
+        assert_eq!(response["message"], "The user denied Bash.");
+
+        let response =
+            build_attention_response(&pending, false, Some("not now".to_string())).unwrap();
+        assert_eq!(response["message"], "The user denied Bash. Reason: not now");
+        assert!(
+            !response["message"]
+                .as_str()
+                .unwrap()
+                .contains("Revise the plan")
+        );
+    }
+
+    #[test]
+    fn permission_approval_is_user_approval_tool() {
+        assert!(is_user_approval_tool("ClaudePermissionApproval"));
     }
 }

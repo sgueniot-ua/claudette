@@ -16,16 +16,17 @@ use claudette::agent::{
 use claudette::agent_backend::AgentBackendRuntimeHarness;
 use claudette::base64_decode;
 use claudette::chat::{
-    BuildAssistantArgs, CheckpointArgs, RequestedFlags, SessionFlags,
-    assistant_usage_fields_from_result, build_assistant_chat_message, build_compaction_sentinel,
-    build_permission_response, create_turn_checkpoint, extract_assistant_text,
-    extract_event_thinking, persistent_session_flags_drifted,
+    BuildAssistantArgs, CLAUDE_PERMISSION_APPROVAL_TOOL, CheckpointArgs, RequestedFlags,
+    SessionFlags, assistant_usage_fields_from_result, build_assistant_chat_message,
+    build_compaction_sentinel, build_permission_response, bypass_permission_needs_user,
+    create_turn_checkpoint, extract_assistant_text, extract_event_thinking,
+    persistent_session_flags_drifted,
 };
 use claudette::db::Database;
 use claudette::env::WorkspaceEnv;
 use claudette::mcp_supervisor::McpSupervisor;
 use claudette::model::{ChatMessage, ChatRole};
-use claudette::permissions::tools_for_level;
+use claudette::permissions::{is_bypass_tools, tools_for_level};
 
 use crate::state::{
     AgentSessionState, AppState, ClaudeRemoteControlLifecycle, ClaudeRemoteControlStatus,
@@ -139,6 +140,21 @@ fn queue_control_prompt(
     kind
 }
 
+/// Envelope for a bypass-mode permission request queued for the user. Shared
+/// by the pending entry and the `agent-permission-prompt` event so live and
+/// snapshot views are identical.
+fn wrap_permission_approval_input(
+    tool_name: &str,
+    input: &serde_json::Value,
+    decision_reason_type: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "toolName": tool_name,
+        "toolInput": input,
+        "decisionReasonType": decision_reason_type,
+    })
+}
+
 #[derive(Debug, PartialEq)]
 enum ControlRequestSessionRoute {
     Interactive { kind: crate::state::AttentionKind },
@@ -151,8 +167,25 @@ fn route_control_request_session_state(
     tool_name: &str,
     tool_use_id: &str,
     input: &serde_json::Value,
+    decision_reason_type: Option<&str>,
+    honor_ask_rules: bool,
 ) -> ControlRequestSessionRoute {
-    if matches!(tool_name, "AskUserQuestion" | "ExitPlanMode")
+    let bypass_active = is_bypass_tools(&session.session_allowed_tools)
+        && (!session.session_plan_mode || session.session_exited_plan);
+    if bypass_active
+        && !matches!(tool_name, "AskUserQuestion" | "ExitPlanMode")
+        && !is_codex_approval_tool_name(tool_name)
+        && bypass_permission_needs_user(honor_ask_rules, decision_reason_type)
+    {
+        let kind = queue_control_prompt(
+            session,
+            request_id.to_string(),
+            CLAUDE_PERMISSION_APPROVAL_TOOL.to_string(),
+            tool_use_id.to_string(),
+            wrap_permission_approval_input(tool_name, input, decision_reason_type),
+        );
+        ControlRequestSessionRoute::Interactive { kind }
+    } else if matches!(tool_name, "AskUserQuestion" | "ExitPlanMode")
         || is_codex_approval_tool_name(tool_name)
     {
         let kind = queue_control_prompt(
@@ -199,6 +232,7 @@ pub(super) async fn route_process_control_request(
                 tool_name,
                 tool_use_id,
                 input,
+                decision_reason_type,
             },
     }) = event
     else {
@@ -206,6 +240,15 @@ pub(super) async fn route_process_control_request(
     };
 
     let app_state = app.state::<AppState>();
+    // Read before taking the `agents` lock; any error means "off".
+    let honor_ask_rules = claudette::db::Database::open(&app_state.db_path)
+        .ok()
+        .and_then(|db| {
+            db.get_app_setting("full_mode_honor_ask_rules")
+                .ok()
+                .flatten()
+        })
+        .is_some_and(|v| v == "true");
     let mut agents = app_state.agents.write().await;
     if let Some(owner) = owner_pid
         && agents
@@ -216,6 +259,8 @@ pub(super) async fn route_process_control_request(
         return false;
     }
     let mut permission_response = None;
+    let mut prompt_tool_name = tool_name.clone();
+    let mut prompt_input = input.clone();
     let kind = if let Some(session) = agents.get_mut(chat_session_id) {
         match route_control_request_session_state(
             session,
@@ -223,11 +268,16 @@ pub(super) async fn route_process_control_request(
             tool_name,
             tool_use_id,
             input,
+            decision_reason_type.as_deref(),
+            honor_ask_rules,
         ) {
             ControlRequestSessionRoute::Interactive { kind } => {
                 // Only the process-owned subagent listener supplies owner_pid.
                 if let Some(pending) = session.pending_permissions.get_mut(tool_use_id) {
                     pending.child_owned = owner_pid.is_some();
+                    // Emit exactly what was queued (the envelope for bypass asks).
+                    prompt_tool_name = pending.tool_name.clone();
+                    prompt_input = pending.original_input.clone();
                 }
                 Some(kind)
             }
@@ -251,8 +301,8 @@ pub(super) async fn route_process_control_request(
             "chat_session_id": chat_session_id,
             "tool_use_id": tool_use_id,
             "child_owned": owner_pid.is_some(),
-            "tool_name": tool_name,
-            "input": input,
+            "tool_name": prompt_tool_name,
+            "input": prompt_input,
         });
         let _ = app.emit("agent-permission-prompt", &payload);
 
@@ -264,7 +314,7 @@ pub(super) async fn route_process_control_request(
         let session_id_for_notify = chat_session_id.to_string();
         let tool_use_id_for_notify = tool_use_id.clone();
         let request_id_for_notify = request_id.clone();
-        let tool_name_for_notify = tool_name.clone();
+        let tool_name_for_notify = prompt_tool_name.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(ATTENTION_NOTIFY_DELAY_MS)).await;
 
@@ -3586,6 +3636,8 @@ mod tests {
             "AskUserQuestion",
             "tool-3",
             &serde_json::json!({"question": "Ship it?"}),
+            None,
+            false,
         );
 
         assert_eq!(
@@ -3613,6 +3665,8 @@ mod tests {
             "Write",
             "tool-4",
             &serde_json::json!({"file_path": "README.md"}),
+            None,
+            false,
         );
 
         let ControlRequestSessionRoute::PermissionResponse { response } = route else {
@@ -3636,6 +3690,8 @@ mod tests {
             "Write",
             "tool-5",
             &serde_json::json!({"file_path": "README.md"}),
+            None,
+            false,
         );
 
         let ControlRequestSessionRoute::PermissionResponse { response } = route else {
@@ -3649,6 +3705,107 @@ mod tests {
         );
         assert!(session.pending_permissions.is_empty());
         assert!(!session.needs_attention);
+    }
+
+    fn bypass_session() -> AgentSessionState {
+        let mut session = test_agent_session_state();
+        session.session_allowed_tools = vec!["*".to_string()];
+        session
+    }
+
+    #[test]
+    fn control_request_route_queues_rule_ask_in_bypass_when_enabled() {
+        let mut session = bypass_session();
+
+        let route = route_control_request_session_state(
+            &mut session,
+            "request-6",
+            "Bash",
+            "tool-6",
+            &serde_json::json!({"command": "git push --force"}),
+            Some("rule"),
+            true,
+        );
+
+        assert_eq!(
+            route,
+            ControlRequestSessionRoute::Interactive {
+                kind: AttentionKind::Ask
+            }
+        );
+        let pending = session.pending_permissions.get("tool-6").unwrap();
+        assert_eq!(pending.tool_name, "ClaudePermissionApproval");
+        assert_eq!(pending.original_input["toolName"], "Bash");
+        assert_eq!(
+            pending.original_input["toolInput"]["command"],
+            "git push --force"
+        );
+        assert_eq!(pending.original_input["decisionReasonType"], "rule");
+    }
+
+    #[test]
+    fn control_request_route_auto_allows_rule_ask_when_disabled() {
+        let mut session = bypass_session();
+
+        let route = route_control_request_session_state(
+            &mut session,
+            "request-7",
+            "Bash",
+            "tool-7",
+            &serde_json::json!({"command": "git push --force"}),
+            Some("rule"),
+            false,
+        );
+
+        let ControlRequestSessionRoute::PermissionResponse { response } = route else {
+            panic!("expected permission response");
+        };
+        assert_eq!(response["behavior"], "allow");
+        assert!(session.pending_permissions.is_empty());
+    }
+
+    #[test]
+    fn control_request_route_keeps_denying_in_standard_mode() {
+        let mut session = test_agent_session_state();
+        session.session_allowed_tools = vec!["Read".to_string()];
+
+        let route = route_control_request_session_state(
+            &mut session,
+            "request-8",
+            "Bash",
+            "tool-8",
+            &serde_json::json!({"command": "ls"}),
+            Some("rule"),
+            true,
+        );
+
+        let ControlRequestSessionRoute::PermissionResponse { response } = route else {
+            panic!("expected permission response");
+        };
+        assert_eq!(response["behavior"], "deny");
+        assert!(session.pending_permissions.is_empty());
+    }
+
+    #[test]
+    fn control_request_route_plan_mode_still_denies() {
+        let mut session = bypass_session();
+        session.session_plan_mode = true;
+
+        let route = route_control_request_session_state(
+            &mut session,
+            "request-9",
+            "Bash",
+            "tool-9",
+            &serde_json::json!({"command": "ls"}),
+            Some("rule"),
+            true,
+        );
+
+        let ControlRequestSessionRoute::PermissionResponse { response } = route else {
+            panic!("expected permission response");
+        };
+        assert_eq!(response["behavior"], "deny");
+        assert!(session.pending_permissions.is_empty());
     }
 
     #[test]

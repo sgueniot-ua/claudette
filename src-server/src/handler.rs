@@ -1077,6 +1077,7 @@ pub fn spawn_turn_event_bridge(
                     tool_name,
                     tool_use_id,
                     input,
+                    ..
                 } = request
             {
                 let mut agents = state.agents.write().await;

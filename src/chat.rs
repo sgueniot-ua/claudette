@@ -128,6 +128,24 @@ pub fn build_permission_response(
     }
 }
 
+/// Synthetic tool name for a `can_use_tool` request that Claudette queues for
+/// the user in full (bypass) mode instead of auto-allowing.
+pub const CLAUDE_PERMISSION_APPROVAL_TOOL: &str = "ClaudePermissionApproval";
+
+/// In full (bypass) mode, decide whether a `can_use_tool` request must be put
+/// in front of the user rather than auto-allowed.
+///
+/// Only when `honor_ask_rules` is on, and the CLI's `decision_reason_type` is
+/// not one of the known non-rule reasons (`mode`, `classifier`, `other`).
+/// That field is `@internal` on the CLI side, so a missing or unrecognised
+/// value falls back to asking the user (the safe default).
+pub fn bypass_permission_needs_user(
+    honor_ask_rules: bool,
+    decision_reason_type: Option<&str>,
+) -> bool {
+    honor_ask_rules && !matches!(decision_reason_type, Some("mode" | "classifier" | "other"))
+}
+
 // ---------------------------------------------------------------------------
 // Assistant message extraction
 // ---------------------------------------------------------------------------
@@ -422,6 +440,40 @@ mod tests {
 
     fn s(values: &[&str]) -> Vec<String> {
         values.iter().map(|v| (*v).to_string()).collect()
+    }
+
+    #[test]
+    fn bypass_needs_user_only_when_setting_on() {
+        assert!(!bypass_permission_needs_user(false, Some("rule")));
+        assert!(bypass_permission_needs_user(true, Some("rule")));
+        assert!(bypass_permission_needs_user(true, Some("hook")));
+    }
+
+    #[test]
+    fn bypass_needs_user_auto_allows_known_noise() {
+        for t in ["mode", "classifier", "other"] {
+            assert!(!bypass_permission_needs_user(true, Some(t)), "{t}");
+        }
+    }
+
+    #[test]
+    fn bypass_needs_user_falls_back_to_asking() {
+        assert!(bypass_permission_needs_user(true, None));
+        assert!(bypass_permission_needs_user(true, Some("something_new")));
+    }
+
+    #[test]
+    fn can_use_tool_parses_decision_reason_type() {
+        let v = serde_json::json!({"subtype":"can_use_tool","tool_name":"Bash","tool_use_id":"t1",
+            "input":{"command":"git push --force"},"decision_reason_type":"rule"});
+        let crate::agent::ControlRequestInner::CanUseTool {
+            decision_reason_type,
+            ..
+        } = serde_json::from_value(v).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(decision_reason_type.as_deref(), Some("rule"));
     }
 
     async fn make_test_db() -> (tempfile::TempDir, PathBuf) {
