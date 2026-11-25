@@ -57,7 +57,7 @@
   "general_archive_on_merge": "合并时归档",
   "general_archive_on_merge_desc": "当工作区的拉取请求被合并时，自动归档该工作区。",
   "general_full_mode_honor_ask_rules": "完全模式下询问权限规则",
-  "general_full_mode_honor_ask_rules_desc": "在完全权限模式下，当 Claude Code 的 ask 规则或钩子请求权限时（例如 `git push --force`），显示审批卡片，而不是自动批准。",
+  "general_full_mode_honor_ask_rules_desc": "在完全权限模式下，当 Claude Code 的 ask 规则或钩子请求权限时（例如 git push --force），显示审批卡片，而不是自动批准。",
   "general_system_tray": "系统托盘",
   "general_system_tray_desc": "在系统托盘中显示 Claudette。启用后，关闭窗口将最小化到托盘。",
   "general_tray_icon_style": "托盘图标样式",

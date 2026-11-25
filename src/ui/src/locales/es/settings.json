@@ -57,7 +57,7 @@
   "general_archive_on_merge": "Archivar al fusionar",
   "general_archive_on_merge_desc": "Archiva automáticamente un espacio de trabajo cuando su pull request se fusiona.",
   "general_full_mode_honor_ask_rules": "Preguntar por reglas de permiso en modo completo",
-  "general_full_mode_honor_ask_rules_desc": "En el modo de permisos completo, muestra una tarjeta de aprobación cuando una regla ask o un hook de Claude Code solicita permiso (por ejemplo `git push --force`), en lugar de aprobarlo automáticamente.",
+  "general_full_mode_honor_ask_rules_desc": "En el modo de permisos completo, muestra una tarjeta de aprobación cuando una regla ask o un hook de Claude Code solicita permiso (por ejemplo git push --force), en lugar de aprobarlo automáticamente.",
   "general_system_tray": "Bandeja del sistema",
   "general_system_tray_desc": "Muestra Claudette en la bandeja del sistema. Al cerrar la ventana se minimizará a la bandeja cuando esté activado.",
   "general_tray_icon_style": "Estilo del icono de la bandeja",

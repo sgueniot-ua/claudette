@@ -75,7 +75,7 @@
   "general_archive_on_merge": "Bei Merge archivieren",
   "general_archive_on_merge_desc": "Workspace automatisch archivieren, wenn sein Pull Request gemerged wird.",
   "general_full_mode_honor_ask_rules": "Bei Berechtigungsregeln im Vollzugriff nachfragen",
-  "general_full_mode_honor_ask_rules_desc": "Im Vollzugriffsmodus wird bei einer Ask-Regel oder einem Hook von Claude Code, der eine Berechtigung anfordert (z. B. `git push --force`), eine Genehmigungskarte angezeigt, statt automatisch zu genehmigen.",
+  "general_full_mode_honor_ask_rules_desc": "Im Vollzugriffsmodus wird bei einer Ask-Regel oder einem Hook von Claude Code, der eine Berechtigung anfordert (z. B. git push --force), eine Genehmigungskarte angezeigt, statt automatisch zu genehmigen.",
   "general_claudette_terminal": "Claudette-Terminal",
   "general_claudette_terminal_desc": "Zeigt einen nur-lesenden Terminal-Tab, der Workspace-Provisioning, Agent-Shell-Befehle und Background-Task-Output spiegelt. Provisioning und Background-Task-Abschluss laufen auch weiter, wenn das aus ist.",
   "general_system_tray": "System-Tray",
