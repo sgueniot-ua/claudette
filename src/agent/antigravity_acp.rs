@@ -2198,6 +2198,7 @@ pub fn acp_server_request_to_control_event(
                         tool_name: "AskUserQuestion".to_string(),
                         tool_use_id: tool_call_id,
                         input,
+                        decision_reason_type: None,
                     },
                 })));
             }
@@ -2266,6 +2267,7 @@ pub fn acp_server_request_to_control_event(
                     tool_name: tool_name.to_string(),
                     tool_use_id: tool_call_id,
                     input: Value::Object(input),
+                    decision_reason_type: None,
                 },
             })))
         }
@@ -2350,6 +2352,7 @@ pub fn acp_server_request_to_control_event(
                     tool_name: "AskUserQuestion".to_string(),
                     tool_use_id,
                     input,
+                    decision_reason_type: None,
                 },
             })))
         }

@@ -176,6 +176,7 @@ mod tests {
 
     fn pending(tool_name: &str, input: serde_json::Value) -> PendingPermission {
         PendingPermission {
+            child_owned: false,
             request_id: "r".to_string(),
             tool_name: tool_name.to_string(),
             original_input: input,

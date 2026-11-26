@@ -115,6 +115,7 @@ impl ChildApprovals {
                 tool_name,
                 tool_use_id: host_id.clone(),
                 input,
+                decision_reason_type: None,
             },
             request_id: request_id.clone(),
         };
@@ -196,6 +197,7 @@ mod tests {
                 tool_name: "CodexCommandApproval".into(),
                 tool_use_id: "provider-item".into(),
                 input: json!({"command":"echo ok"}),
+                decision_reason_type: None,
             },
         });
         let force_lag = |rx: &mut broadcast::Receiver<AgentEvent>| {
@@ -245,6 +247,7 @@ mod tests {
                 tool_use_id: "t".into(),
                 tool_name: "CodexCommandApproval".into(),
                 input: json!({}),
+                decision_reason_type: None,
             },
         });
         first.forward(envelope.clone(), "codex", "child", &tx);

@@ -470,6 +470,7 @@ mod tests {
 
     fn permission_approval() -> PendingPermission {
         PendingPermission {
+            child_owned: false,
             request_id: "request-1".to_string(),
             tool_name: "ClaudePermissionApproval".to_string(),
             original_input: serde_json::json!({
