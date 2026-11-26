@@ -302,6 +302,38 @@ describe("ModelSettings", () => {
     ).not.toBeNull();
   });
 
+  it("shows the full-mode ask-rules toggle off when the setting is unset", async () => {
+    const container = await renderModelSettings();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(serviceMocks.getAppSetting).toHaveBeenCalledWith(
+      "full_mode_honor_ask_rules",
+    );
+    const toggle = container.querySelector(
+      'button[aria-label="models_full_mode_honor_ask_rules"]',
+    );
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("writes full_mode_honor_ask_rules when the full-mode ask-rules toggle is clicked", async () => {
+    const container = await renderModelSettings();
+    const toggle = container.querySelector(
+      'button[aria-label="models_full_mode_honor_ask_rules"]',
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      toggle.click();
+    });
+
+    expect(serviceMocks.setAppSetting).toHaveBeenCalledWith(
+      "full_mode_honor_ask_rules",
+      "true",
+    );
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  });
+
   it("shows default plan mode when the selected default backend is Codex", async () => {
     serviceMocks.getAppSetting.mockImplementation((key: string) => {
       if (key === "default_model") return Promise.resolve("gpt-5.4");

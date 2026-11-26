@@ -47,7 +47,6 @@ export function GeneralSettings() {
     "auto" | "light" | "dark" | "color"
   >("auto");
   const [archiveOnMerge, setArchiveOnMerge] = useState(false);
-  const [fullModeHonorAskRules, setFullModeHonorAskRules] = useState(false);
   const [language, setLanguageState] = useState("en");
   const [error, setError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("");
@@ -72,9 +71,6 @@ export function GeneralSettings() {
       .catch(() => {});
     getAppSetting("archive_on_merge")
       .then((val) => setArchiveOnMerge(val === "true"))
-      .catch(() => {});
-    getAppSetting("full_mode_honor_ask_rules")
-      .then((val) => setFullModeHonorAskRules(val === "true"))
       .catch(() => {});
     getAppSetting("language")
       .then((val) => { if (val && isSupportedLanguage(val)) setLanguageState(val); })
@@ -164,18 +160,6 @@ export function GeneralSettings() {
       await setAppSetting("archive_on_merge", next ? "true" : "false");
     } catch (e) {
       setArchiveOnMerge(!next);
-      setError(String(e));
-    }
-  };
-
-  const handleFullModeHonorAskRulesToggle = async () => {
-    const next = !fullModeHonorAskRules;
-    setFullModeHonorAskRules(next);
-    try {
-      setError(null);
-      await setAppSetting("full_mode_honor_ask_rules", next ? "true" : "false");
-    } catch (e) {
-      setFullModeHonorAskRules(!next);
       setError(String(e));
     }
   };
@@ -358,29 +342,6 @@ export function GeneralSettings() {
             aria-label={t("general_archive_on_merge")}
             data-checked={archiveOnMerge}
             onClick={handleArchiveOnMergeToggle}
-          >
-            <div className={styles.toggleKnob} />
-          </button>
-        </div>
-      </div>
-
-      <div className={styles.settingRow}>
-        <div className={styles.settingInfo}>
-          <div className={styles.settingLabel}>
-            {t("general_full_mode_honor_ask_rules")}
-          </div>
-          <div className={styles.settingDescription}>
-            {t("general_full_mode_honor_ask_rules_desc")}
-          </div>
-        </div>
-        <div className={styles.settingControl}>
-          <button
-            className={styles.toggle}
-            role="switch"
-            aria-checked={fullModeHonorAskRules}
-            aria-label={t("general_full_mode_honor_ask_rules")}
-            data-checked={fullModeHonorAskRules}
-            onClick={handleFullModeHonorAskRulesToggle}
           >
             <div className={styles.toggleKnob} />
           </button>

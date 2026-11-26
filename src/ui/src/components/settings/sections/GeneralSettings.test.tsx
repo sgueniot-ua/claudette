@@ -202,36 +202,4 @@ describe("GeneralSettings", () => {
     expect(container.textContent).not.toContain("auth_status_signed_in");
   });
 
-  it("shows the full-mode ask-rules toggle off when the setting is unset", async () => {
-    const container = await renderGeneralSettings();
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(serviceMocks.getAppSetting).toHaveBeenCalledWith(
-      "full_mode_honor_ask_rules",
-    );
-    const toggle = container.querySelector(
-      'button[aria-label="general_full_mode_honor_ask_rules"]',
-    );
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-  });
-
-  it("writes full_mode_honor_ask_rules when the full-mode ask-rules toggle is clicked", async () => {
-    const container = await renderGeneralSettings();
-    const toggle = container.querySelector(
-      'button[aria-label="general_full_mode_honor_ask_rules"]',
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      toggle.click();
-    });
-
-    expect(serviceMocks.setAppSetting).toHaveBeenCalledWith(
-      "full_mode_honor_ask_rules",
-      "true",
-    );
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-  });
-
 });

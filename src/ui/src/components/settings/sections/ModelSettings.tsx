@@ -56,6 +56,7 @@ export function ModelSettings() {
   const [defaultBackend, setDefaultBackend] = useState("anthropic");
   const [defaultThinking, setDefaultThinking] = useState(false);
   const [defaultPlanMode, setDefaultPlanMode] = useState(false);
+  const [fullModeHonorAskRules, setFullModeHonorAskRules] = useState(false);
   const [defaultFastMode, setDefaultFastMode] = useState(false);
   const [defaultChrome, setDefaultChrome] = useState(false);
   const [teamAgentSessionTabs, setTeamAgentSessionTabs] = useState(true);
@@ -114,6 +115,9 @@ export function ModelSettings() {
       .catch(() => {});
     getAppSetting("default_plan_mode")
       .then((val) => setDefaultPlanMode(val === "true"))
+      .catch(() => {});
+    getAppSetting("full_mode_honor_ask_rules")
+      .then((val) => setFullModeHonorAskRules(val === "true"))
       .catch(() => {});
     getAppSetting("default_fast_mode")
       .then((val) => setDefaultFastMode(val === "true"))
@@ -504,6 +508,31 @@ export function ModelSettings() {
             aria-label={t("models_default_plan_mode")}
             data-checked={defaultPlanMode}
             onClick={handleToggle(defaultPlanMode, setDefaultPlanMode, "default_plan_mode")}
+          >
+            <div className={styles.toggleKnob} />
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.settingRow}>
+        <div className={styles.settingInfo}>
+          <div className={styles.settingLabel}>{t("models_full_mode_honor_ask_rules")}</div>
+          <div className={styles.settingDescription}>
+            {t("models_full_mode_honor_ask_rules_desc")}
+          </div>
+        </div>
+        <div className={styles.settingControl}>
+          <button
+            className={styles.toggle}
+            role="switch"
+            aria-checked={fullModeHonorAskRules}
+            aria-label={t("models_full_mode_honor_ask_rules")}
+            data-checked={fullModeHonorAskRules}
+            onClick={handleToggle(
+              fullModeHonorAskRules,
+              setFullModeHonorAskRules,
+              "full_mode_honor_ask_rules",
+            )}
           >
             <div className={styles.toggleKnob} />
           </button>
